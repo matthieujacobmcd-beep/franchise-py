@@ -941,10 +941,18 @@ function populateDetail() {
       const partial = (DASHBOARD_DATA.meta || {}).partial_by_resto || {};
       // Un mois est partiel si au moins un resto a ce mois comme mois partiel
       const isPartialMonth = Object.values(partial).some(p => p.month === m);
-      const isPartialForResto = (r) => COMPARABLE_KPIS.has(monthlyId) && 
-        ((partial[r] && partial[r].month === m) || 
+      const partialLabel = (() => {
+        if (!isPartialMonth || !COMPARABLE_KPIS.has(monthlyId)) return '';
+        const fc = (DASHBOARD_DATA.meta || {}).franchise_cutoff || {};
+        const dateStr = fc[m];
+        if (!dateStr) return '';
+        const dt = new Date(dateStr);
+        return `au ${dt.getDate()} ${m.charAt(0)+m.slice(1).toLowerCase()}`;
+      })();
+      const isPartialForResto = (r) => COMPARABLE_KPIS.has(monthlyId) &&
+        ((partial[r] && partial[r].month === m) ||
          (r === 'FRANCHISE' && isPartialMonth));
-      html += `<tr><td>${m}${isPartialMonth && COMPARABLE_KPIS.has(monthlyId) ? `<br><span style="font-size:.65rem;color:var(--blue)">à date</span>` : ''}</td>`;
+      html += `<tr><td>${m}${partialLabel ? `<br><span style="font-size:.65rem;color:var(--blue)">${partialLabel}</span>` : ''}</td>`;
       for (const r of restos) {
         if (compareMode) {
           const v25 = isPartialForResto(r)
