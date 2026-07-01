@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Franchise PY — Demande d'intervention</title>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #b8860b;
+  --gold2: #d4a017;
+  --green: #27ae60;
+  --green2: #1e8449;
+  --red: #c0392b;
+  --blue: #1a6eb5;
+  --bg: #f0f2f5;
+  --card: #ffffff;
+  --border: #dde1ea;
+  --text: #1a1d2e;
+  --muted: #6b7280;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  padding: 0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  background: #fff;
+  border-bottom: 3px solid var(--gold);
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-logo { font-size: 1.1rem; font-weight: 800; color: var(--gold); }
+.topbar-title { font-size: .85rem; color: var(--muted); }
+.btn-back {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px;
+  background: var(--bg); border: 1.5px solid var(--border);
+  font-size: .82rem; font-weight: 600; color: var(--text);
+  cursor: pointer; text-decoration: none;
+  transition: background .15s;
+}
+.btn-back:hover { background: #e5e7eb; }
+
+/* ── MAIN ── */
+.main {
+  max-width: 720px;
+  margin: 32px auto;
+  padding: 0 20px 60px;
+}
+
+.page-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.page-sub {
+  font-size: .88rem;
+  color: var(--muted);
+  margin-bottom: 28px;
+}
+
+/* ── CARD ── */
+.card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.07);
+  padding: 28px;
+  margin-bottom: 20px;
+}
+.card-title {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── FORM ELEMENTS ── */
+.field { margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+
+label {
+  display: block;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+label .req { color: var(--red); margin-left: 2px; }
+
+input[type=text],
+input[type=date],
+select,
+textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: .92rem;
+  font-family: inherit;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+  transition: border-color .15s;
+}
+input[type=text]:focus,
+input[type=date]:focus,
+select:focus,
+textarea:focus { border-color: var(--gold); }
+
+textarea { resize: vertical; min-height: 120px; }
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ── TECHNICIENS ── */
+.tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tech-card {
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all .15s;
+  position: relative;
+}
+.tech-card:hover { border-color: var(--gold2); background: #fffdf0; }
+.tech-card.selected { border-color: var(--green); background: #f0faf4; }
+.tech-card input[type=checkbox] {
+  position: absolute; opacity: 0; width: 0; height: 0;
+}
+.tech-avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--gold); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 800;
+  margin-bottom: 10px;
+}
+.tech-card.selected .tech-avatar { background: var(--green); }
+.tech-name { font-size: .92rem; font-weight: 700; color: var(--text); }
+.tech-role { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+.tech-check {
+  position: absolute; top: 12px; right: 12px;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--border);
+  background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem;
+  transition: all .15s;
+}
+.tech-card.selected .tech-check {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.tech-check::after { content: '✓'; display: none; color: #fff; font-weight: 900; }
+.tech-card.selected .tech-check::after { display: block; }
+
+/* ── UPLOAD PHOTOS ── */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+  background: #f8f9fb;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--gold2); background: #fffdf0; }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-icon { font-size: 2rem; margin-bottom: 8px; }
+.upload-label { font-size: .92rem; font-weight: 600; color: var(--text); }
+.upload-sub { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+
+.photos-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.photo-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+.photo-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.photo-remove {
+  position: absolute; top: 4px; right: 4px;
+  background: rgba(0,0,0,.6); color: #fff;
+  border: none; border-radius: 50%;
+  width: 22px; height: 22px;
+  font-size: .7rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── URGENCE ── */
+.urgence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.urgence-btn {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .15s;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.urgence-btn:hover { border-color: var(--gold2); }
+.urgence-btn.sel-low    { border-color: var(--green); background: #f0faf4; color: var(--green); }
+.urgence-btn.sel-medium { border-color: #f39c12; background: #fef9ec; color: #f39c12; }
+.urgence-btn.sel-high   { border-color: var(--red); background: #fdf0ee; color: var(--red); }
+.urgence-icon { font-size: 1.4rem; display: block; margin-bottom: 4px; }
+
+/* ── SUBMIT ── */
+.btn-submit {
+  width: 100%;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--gold);
+  color: #fff;
+  border: none;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .2s, transform .1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-submit:hover:not(:disabled) { background: var(--gold2); transform: translateY(-1px); }
+.btn-submit:disabled { background: #d1d5db; cursor: not-allowed; }
+
+/* ── SUCCESS ── */
+.success-screen {
+  display: none;
+  text-align: center;
+  padding: 60px 20px;
+}
+.success-screen.show { display: block; }
+.success-icon { font-size: 4rem; margin-bottom: 16px; }
+.success-title { font-size: 1.4rem; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+.success-sub { color: var(--muted); font-size: .92rem; margin-bottom: 28px; }
+.btn-new {
+  display: inline-block;
+  padding: 12px 28px;
+  border-radius: 10px;
+  background: var(--gold);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  font-size: .95rem;
+}
+
+/* ── ERROR ── */
+.error-msg {
+  color: var(--red);
+  font-size: .78rem;
+  margin-top: 4px;
+  display: none;
+}
+.field.error input,
+.field.error select,
+.field.error textarea { border-color: var(--red); }
+.field.error .error-msg { display: block; }
+
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 600px) {
+  .field-row { grid-template-columns: 1fr; }
+  .tech-grid { grid-template-columns: 1fr; }
+  .urgence-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div style="font-size:1.5rem">🍔</div>
+    <div>
+      <div class="topbar-logo">Franchise PY</div>
+      <div class="topbar-title">Demande d'intervention</div>
+    </div>
+  </div>
+  <a href="dashboard_restogroup.html" class="btn-back">
+    ← Retour au dashboard
+  </a>
+</div>
+
+<div class="main">
+
+  <!-- FORM -->
+  <div id="formSection">
+    <div class="page-title">🔧 Nouvelle demande d'intervention</div>
+    <div class="page-sub">Remplissez ce formulaire pour signaler une panne ou demander une intervention technique.</div>
+
+    <!-- IDENTIFICATION -->
+    <div class="card">
+      <div class="card-title">📋 Identification</div>
+
+      <div class="field-row">
+        <div class="field" id="f-prenom">
+          <label>Prénom <span class="req">*</span></label>
+          <input type="text" id="prenom" placeholder="Votre prénom">
+          <div class="error-msg">Ce champ est requis</div>
+        </div>
+        <div class="field" id="f-nom">
+          <label>Nom <span class="req">*</span></label>
+          <input type="text" id="nom" placeholder="Votre nom">
+          <div class="error-msg">Ce champ est requis</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field" id="f-restaurant">
+          <label>Restaurant <span class="req">*</span></label>
+          <select id="restaurant">
+            <option value="">Veuillez sélectionner</option>
+            <option>CHAMBERY</option>
+            <option>AIX LES BAINS</option>
+            <option>BELLEY</option>
+            <option>ST ALBAN</option>
+            <option>LES ABRETS</option>
+            <option>PDB</option>
+            <option>FRANCIN</option>
+            <option>VIVIERS</option>
+          </select>
+          <div class="error-msg">Veuillez sélectionner un restaurant</div>
+        </div>
+        <div class="field">
+          <label>Date de la demande</label>
+          <input type="date" id="date_demande">
+        </div>
+      </div>
+    </div>
+
+    <!-- PANNE -->
+    <div class="card">
+      <div class="card-title">⚠️ Descriptif de l'intervention</div>
+
+      <div class="field" id="f-description">
+        <label>Descriptif de la panne <span class="req">*</span> <span style="font-weight:400;color:var(--muted)">(N'oublions pas les formules de politesse 😉)</span></label>
+        <textarea id="description" placeholder="Décrivez la panne ou l'intervention nécessaire avec précision..."></textarea>
+        <div class="error-msg">Veuillez décrire la panne</div>
+      </div>
+
+      <div class="field">
+        <label>Niveau d'urgence</label>
+        <div class="urgence-grid">
+          <div class="urgence-btn" onclick="setUrgence('low', this)">
+            <span class="urgence-icon">🟢</span>
+            Pas urgent
+          </div>
+          <div class="urgence-btn" onclick="setUrgence('medium', this)">
+            <span class="urgence-icon">🟡</span>
+            À traiter
+          </div>
+          <div class="urgence-btn" onclick="setUrgence('high', this)">
+            <span class="urgence-icon">🔴</span>
+            Urgent
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TECHNICIENS -->
+    <div class="card">
+      <div class="card-title">👷 Intervenant(s) <span class="req">*</span></div>
+      <div class="tech-grid" id="f-tech">
+        <div class="tech-card" onclick="toggleTech('geraldine', this)">
+          <input type="checkbox" id="tech-geraldine">
+          <div class="tech-avatar">G</div>
+          <div class="tech-name">Géraldine</div>
+          <div class="tech-role">Technicienne maintenance</div>
+          <div class="tech-check"></div>
+        </div>
+        <div class="tech-card" onclick="toggleTech('jean', this)">
+          <input type="checkbox" id="tech-jean">
+          <div class="tech-avatar">JP</div>
+          <div class="tech-name">Jean Philippe</div>
+          <div class="tech-role">Technicien maintenance</div>
+          <div class="tech-check"></div>
+        </div>
+      </div>
+      <div class="error-msg" id="tech-error" style="margin-top:8px">Veuillez sélectionner au moins un intervenant</div>
+    </div>
+
+    <!-- PHOTOS -->
+    <div class="card">
+      <div class="card-title">📸 Photos</div>
+      <div class="upload-zone" id="uploadZone"
+           ondragover="dragOver(event)"
+           ondragleave="dragLeave(event)"
+           ondrop="dropFiles(event)">
+        <input type="file" id="photoInput" accept="image/*" multiple onchange="addPhotos(this.files)">
+        <div class="upload-icon">📷</div>
+        <div class="upload-label">Cliquez ou glissez vos photos ici</div>
+        <div class="upload-sub">JPG, PNG, HEIC — Max 5 photos</div>
+      </div>
+      <div class="photos-preview" id="photosPreview"></div>
+    </div>
+
+    <!-- SUBMIT -->
+    <button class="btn-submit" id="btnSubmit" onclick="submitForm()">
+      <span id="btnText">📨 Envoyer la demande</span>
+      <div class="spinner" id="spinner"></div>
+    </button>
+  </div>
+
+  <!-- SUCCESS -->
+  <div class="success-screen" id="successScreen">
+    <div class="card" style="padding:48px 32px">
+      <div class="success-icon">✅</div>
+      <div class="success-title">Demande envoyée !</div>
+      <div class="success-sub" id="successMsg">Votre demande a été transmise aux intervenants sélectionnés.</div>
+      <button class="btn-new" onclick="resetForm()">➕ Nouvelle demande</button>
+      <br><br>
+      <a href="dashboard_restogroup.html" class="btn-back" style="display:inline-flex;margin:0 auto">
+        ← Retour au dashboard
+      </a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIGURATION EMAILJS
+// ============================================================
+const EMAILJS_PUBLIC_KEY  = 'QhTvhXaaoI4WVRmeW';
+const EMAILJS_SERVICE_ID  = 'matthieu.jacob.mcd@gmail';
+const EMAILJS_TEMPLATE_ID = 'template_id1adnz';
+
+const TECHS = {
+  geraldine: { name: 'Géraldine',    email: 'geraldine.bourgeoismcdo@gmail.com' },
+  jean:      { name: 'Jean Philippe', email: 'jpraeck@gmail.com' },
+};
+
+const FROM_EMAIL = 'matthieu.jacob.mcd@gmail.com';
+
+// ============================================================
+// ÉTAT
+// ============================================================
+let urgence     = '';
+let selectedTechs = new Set();
+let photos      = [];
+
+// Init date
+document.getElementById('date_demande').valueAsDate = new Date();
+
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
+// ============================================================
+// URGENCE
+// ============================================================
+function setUrgence(level, el) {
+  urgence = level;
+  document.querySelectorAll('.urgence-btn').forEach(b => {
+    b.classList.remove('sel-low','sel-medium','sel-high');
+  });
+  el.classList.add('sel-' + level);
+}
+
+// ============================================================
+// TECHNICIENS
+// ============================================================
+function toggleTech(id, card) {
+  if (selectedTechs.has(id)) {
+    selectedTechs.delete(id);
+    card.classList.remove('selected');
+  } else {
+    selectedTechs.add(id);
+    card.classList.add('selected');
+  }
+  document.getElementById('tech-error').style.display = 'none';
+}
+
+// ============================================================
+// PHOTOS
+// ============================================================
+function dragOver(e) { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag'); }
+function dragLeave(e) { document.getElementById('uploadZone').classList.remove('drag'); }
+function dropFiles(e) {
+  e.preventDefault();
+  dragLeave(e);
+  addPhotos(e.dataTransfer.files);
+}
+
+function addPhotos(files) {
+  for (const file of files) {
+    if (photos.length >= 5) break;
+    if (!file.type.startsWith('image/')) continue;
+    const reader = new FileReader();
+    reader.onload = e => {
+      photos.push({ name: file.name, data: e.target.result });
+      renderPhotos();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function removePhoto(idx) {
+  photos.splice(idx, 1);
+  renderPhotos();
+}
+
+function renderPhotos() {
+  const preview = document.getElementById('photosPreview');
+  preview.innerHTML = photos.map((p,i) => `
+    <div class="photo-thumb">
+      <img src="${p.data}" alt="${p.name}">
+      <button class="photo-remove" onclick="removePhoto(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// VALIDATION
+// ============================================================
+function validate() {
+  let ok = true;
+  const fields = [
+    { id: 'f-prenom',     input: 'prenom',      check: v => v.trim() },
+    { id: 'f-nom',        input: 'nom',          check: v => v.trim() },
+    { id: 'f-restaurant', input: 'restaurant',   check: v => v },
+    { id: 'f-description',input: 'description',  check: v => v.trim().length > 5 },
+  ];
+  fields.forEach(f => {
+    const val = document.getElementById(f.input).value;
+    const field = document.getElementById(f.id);
+    if (!f.check(val)) { field.classList.add('error'); ok = false; }
+    else               { field.classList.remove('error'); }
+  });
+  if (selectedTechs.size === 0) {
+    document.getElementById('tech-error').style.display = 'block';
+    ok = false;
+  }
+  return ok;
+}
+
+// ============================================================
+// ENVOI
+// ============================================================
+async function submitForm() {
+  if (!validate()) return;
+
+  const btn     = document.getElementById('btnSubmit');
+  const spinner = document.getElementById('spinner');
+  const btnText = document.getElementById('btnText');
+  btn.disabled  = true;
+  spinner.style.display = 'block';
+  btnText.textContent   = 'Envoi en cours...';
+
+  const urgenceLabels = { low: '🟢 Pas urgent', medium: '🟡 À traiter', high: '🔴 URGENT' };
+  const prenom      = document.getElementById('prenom').value.trim();
+  const nom         = document.getElementById('nom').value.trim();
+  const restaurant  = document.getElementById('restaurant').value;
+  const date        = document.getElementById('date_demande').value;
+  const description = document.getElementById('description').value.trim();
+  const techNames   = [...selectedTechs].map(id => TECHS[id].name).join(' & ');
+  const techEmails  = [...selectedTechs].map(id => TECHS[id].email);
+
+  // Photos en base64 (3 max pour les emails)
+  const photoLinks = photos.slice(0,3).map((p,i) =>
+    `Photo ${i+1}: ${p.data.substring(0,100)}...`
+  ).join('\n');
+
+  const templateParams = {
+    from_name:   `${prenom} ${nom}`,
+    from_email:  FROM_EMAIL,
+    restaurant:  restaurant,
+    date_demande:date,
+    description: description,
+    urgence:     urgenceLabels[urgence] || '—',
+    techniciens: techNames,
+    nb_photos:   photos.length,
+    reply_to:    FROM_EMAIL,
+  };
+
+  try {
+    // Envoyer un email par technicien sélectionné
+    const promises = techEmails.map(email =>
+      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        ...templateParams,
+        to_email: email,
+        to_name:  TECHS[Object.keys(TECHS).find(k => TECHS[k].email === email)]?.name,
+      })
+    );
+    await Promise.all(promises);
+
+    // Succès
+    document.getElementById('formSection').style.display = 'none';
+    document.getElementById('successScreen').classList.add('show');
+    document.getElementById('successMsg').textContent =
+      `Votre demande a été transmise à ${techNames} pour le restaurant ${restaurant}.`;
+
+  } catch(err) {
+    console.error('EmailJS error:', err);
+    alert(`Erreur d'envoi : ${err.text || JSON.stringify(err)}\n\nVérifiez votre configuration EmailJS.`);
+    btn.disabled = false;
+    spinner.style.display = 'none';
+    btnText.textContent = '📨 Envoyer la demande';
+  }
+}
+
+// ============================================================
+// RESET
+// ============================================================
+function resetForm() {
+  document.getElementById('formSection').style.display = 'block';
+  document.getElementById('successScreen').classList.remove('show');
+  document.getElementById('prenom').value      = '';
+  document.getElementById('nom').value         = '';
+  document.getElementById('restaurant').value  = '';
+  document.getElementById('description').value = '';
+  document.getElementById('date_demande').valueAsDate = new Date();
+  urgence = ''; selectedTechs.clear(); photos = [];
+  document.querySelectorAll('.urgence-btn').forEach(b =>
+    b.classList.remove('sel-low','sel-medium','sel-high'));
+  document.querySelectorAll('.tech-card').forEach(c => c.classList.remove('selected'));
+  renderPhotos();
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = false;
+  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('btnText').textContent = '📨 Envoyer la demande';
+}
+</script>
+</body>
+</html>
