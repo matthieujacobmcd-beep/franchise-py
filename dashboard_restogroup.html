@@ -1135,42 +1135,12 @@ renderMain();
   }
 })();
 </script>
-<!-- BOUTON FLOTTANT + MODAL JOTFORM -->
+<!-- BOUTON FLOTTANT -->
 <div class="fab-container">
-  <button class="fab-btn primary" onclick="openJotForm()">
+  <a href="intervention.html" class="fab-btn primary" style="text-decoration:none">
     🔧 <span class="fab-label">Demande d'intervention</span>
-  </button>
+  </a>
 </div>
-
-<!-- MODALE JOTFORM -->
-<div class="jot-overlay" id="jotOverlay" onclick="closeJotForm(event)">
-  <div class="jot-modal">
-    <div class="jot-modal-header">
-      <span class="jot-modal-title">🔧 Demande d'intervention</span>
-      <button class="jot-modal-close" onclick="closeJotFormBtn()">✕</button>
-    </div>
-    <div class="jot-iframe-wrap">
-      <iframe
-        id="JotFormIFrame-231593373388062"
-        title="Demande d'intervention"
-        allowtransparency="true"
-        allow="geolocation; microphone; camera; fullscreen; payment"
-        src="https://form.jotform.com/231593373388062"
-        frameborder="0"
-        scrolling="no">
-      </iframe>
-    </div>
-  </div>
-</div>
-<script src='https://cdn.jotfor.ms/s/umd/latest/for-form-embed-handler.js'></script>
-<script>
-  if (typeof window.jotformEmbedHandler === 'function') {
-    window.jotformEmbedHandler("iframe[id='JotFormIFrame-231593373388062']", "https://form.jotform.com/");
-  }
-  function openJotForm() { document.getElementById('jotOverlay').classList.add('open'); }
-  function closeJotFormBtn() { document.getElementById('jotOverlay').classList.remove('open'); }
-  function closeJotForm(e) { if (e.target === document.getElementById('jotOverlay')) closeJotFormBtn(); }
-</script>
 
 </div><!-- fin #app -->
 </body>
