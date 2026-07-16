@@ -5,5 +5,12 @@
     "title": "Bienvenue 👋",
     "msg": "Voici notre nouveau Dashboard \"Indice de gestion\". Plus complet, plus fluide et plus interactif. Enjoy",
     "date": ""
+  },
+  {
+    "id": 1784228548164,
+    "type": "campagne",
+    "title": "Nouveau Happy Meal",
+    "msg": "Cette campagne propose une expérience ludique et immersive qui engage petits et grands autour d’un même\nunivers avec deux temps forts :\n• Du 21 juillet au 31 août (6 semaines) : 12 jouets Spider-Man ou 1 livre d’activités Spider-Man ou 1 des 4 livres-jeux Le Super club des mini-aventuriers.",
+    "date": "21/07 au 31/08"
   }
 ]
