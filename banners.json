@@ -5,5 +5,12 @@
     "title": "Bienvenue 👋",
     "msg": "Voici notre nouveau Dashboard \"Indice de gestion\". Plus complet, plus fluide et plus interactif. Enjoy",
     "date": ""
+  },
+  {
+    "id": 1786365858954,
+    "type": "objectif",
+    "title": "Hello McDo",
+    "msg": "Attention au suivi des enquêtes auprès de vos clients qui ne sont pas dans les attentes de QSP pour certains restaurants.",
+    "date": ""
   }
 ]
