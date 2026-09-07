@@ -1,23 +1,9 @@
 [
   {
-    "id": 1,
-    "type": "info",
-    "title": "Bienvenue 👋",
-    "msg": "Voici notre nouveau Dashboard \"Indice de gestion\". Plus complet, plus fluide et plus interactif. Enjoy",
-    "date": ""
-  },
-  {
-    "id": 1784796483169,
+    "id": 1788803951432,
     "type": "objectif",
-    "title": "Attention aux notes Réseaux",
-    "msg": "3 restaurants sont en dessous de l'objectif - A surveiller",
+    "title": "Résultats d'Aout - BRAVO et MERCI ☺️",
+    "msg": "Nous tenons à vous féliciter pour les excellents résultats financiers du mois d'aout. Nous remercions vos équipes pour leur engagement et leur ténacité. 💪",
     "date": ""
-  },
-  {
-    "id": 1787148864548,
-    "type": "campagne",
-    "title": "Nouvelle Campagne Chicago",
-    "msg": "Bon lancement à tous",
-    "date": "Du 18 aout au 21 septembre"
   }
 ]
