@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Franchise PY — Saisie KPI</title>
+<style>
+  :root{ --bg:#f0f2f5; --card:#fff; --card2:#f5f6f8; --border:#dde1ea; --gold:#b8860b; --gold2:#d4a017;
+    --text:#1a1d2e; --muted:#6b7280; --green:#1e8449; --red:#c0392b; --font:'Segoe UI',system-ui,sans-serif; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); font-family:var(--font); color:var(--text); }
+  /* Login */
+  #login{ position:fixed; inset:0; background:linear-gradient(135deg,#1a1d2e,#2b2f45); display:flex; align-items:center; justify-content:center; z-index:100; }
+  .login-box{ background:#fff; border-radius:18px; padding:30px 30px 26px; width:min(360px,92vw); box-shadow:0 24px 70px rgba(0,0,0,.4); text-align:center; }
+  .login-logo{ width:60px; height:60px; border-radius:16px; background:var(--gold); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; font-size:32px; font-weight:800; color:#fff; }
+  .login-box h1{ font-size:1.15rem; margin:0 0 4px; }
+  .login-box p{ font-size:.82rem; color:var(--muted); margin:0 0 18px; }
+  .login-box input{ width:100%; padding:11px 13px; border:1.5px solid var(--border); border-radius:11px; font-size:1rem; font-family:inherit; margin-bottom:12px; }
+  .login-box button{ width:100%; padding:11px; border:none; border-radius:11px; background:var(--gold); color:#fff; font-size:1rem; font-weight:800; cursor:pointer; font-family:inherit; }
+  .login-err{ color:var(--red); font-size:.8rem; height:18px; margin-top:4px; }
+  /* App */
+  #app{ display:none; }
+  .topbar{ background:#fff; border-bottom:1px solid var(--border); padding:14px 22px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; position:sticky; top:0; z-index:20; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-logo{ width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,var(--gold),var(--gold2)); display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:800; color:#fff; }
+  .brand-name{ font-size:1.05rem; font-weight:800; line-height:1.1; }
+  .brand-sub{ font-size:.72rem; color:var(--muted); }
+  .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .dash-link{ text-decoration:none; font-size:.8rem; font-weight:700; color:var(--gold); border:1.5px solid var(--gold); border-radius:10px; padding:8px 14px; white-space:nowrap; }
+  .dash-link:hover{ background:rgba(184,134,11,.1); }
+  .resto-bar{ background:#fff; border-bottom:1px solid var(--border); padding:10px 22px; display:flex; gap:8px; overflow-x:auto; }
+  .resto-pill{ flex-shrink:0; border:1.5px solid var(--border); background:var(--card); color:var(--text); font-family:inherit; font-size:.8rem; font-weight:700; padding:7px 15px; border-radius:999px; cursor:pointer; white-space:nowrap; transition:all .15s; }
+  .resto-pill:hover{ border-color:var(--gold); }
+  .resto-pill.on{ background:var(--gold); border-color:var(--gold); color:#fff; box-shadow:0 2px 9px rgba(184,134,11,.3); }
+  .tab-bar{ display:flex; gap:8px; overflow-x:auto; padding:14px 22px 0; max-width:1100px; margin:0 auto; }
+  .tab{ flex-shrink:0; border:1.5px solid var(--border); border-bottom:none; background:var(--card2); color:var(--muted); font-family:inherit; font-size:.82rem; font-weight:700; padding:10px 18px; border-radius:12px 12px 0 0; cursor:pointer; }
+  .tab.on{ background:#fff; color:var(--gold); border-color:var(--border); position:relative; top:1px; }
+  .wrap{ max-width:1100px; margin:0 auto; padding:0 22px 60px; }
+  .panel{ background:#fff; border:1.5px solid var(--border); border-radius:0 16px 16px 16px; padding:22px; box-shadow:0 2px 14px rgba(0,0,0,.05); }
+  .panel-head{ display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+  .panel-title{ font-size:1.05rem; font-weight:800; }
+  .period{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-left:auto; }
+  .period label{ font-size:.75rem; font-weight:700; color:var(--muted); }
+  .period input, .period select{ font-family:inherit; font-size:.9rem; padding:8px 11px; border:1.5px solid var(--border); border-radius:10px; background:#fff; color:var(--text); }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px 18px; }
+  .field label{ display:block; font-size:.75rem; font-weight:700; color:var(--text); margin-bottom:5px; }
+  .field .new-tag{ font-size:.6rem; font-weight:800; color:#7a4a00; background:#fde9c8; border-radius:5px; padding:1px 6px; margin-left:5px; text-transform:uppercase; letter-spacing:.3px; }
+  .field input, .field textarea, .field select{ width:100%; font-family:inherit; font-size:.95rem; padding:9px 11px; border:1.5px solid var(--border); border-radius:10px; background:#fff; color:var(--text); }
+  .field input:focus, .field textarea:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 0 2px rgba(184,134,11,.15); }
+  .field input.auto{ background:var(--card2); color:var(--muted); font-weight:700; }
+  .field textarea{ min-height:74px; resize:vertical; grid-column:1/-1; }
+  .field-full{ grid-column:1/-1; }
+  .foot{ display:flex; align-items:center; gap:14px; margin-top:22px; }
+  .btn-save{ border:none; background:var(--gold); color:#fff; font-family:inherit; font-size:.95rem; font-weight:800; padding:12px 26px; border-radius:12px; cursor:pointer; box-shadow:0 2px 10px rgba(184,134,11,.3); }
+  .btn-save:hover{ filter:brightness(1.06); } .btn-save:disabled{ opacity:.6; cursor:default; }
+  .save-msg{ font-size:.85rem; font-weight:700; }
+  .save-msg.ok{ color:var(--green); } .save-msg.err{ color:var(--red); }
+  .hint{ font-size:.72rem; color:var(--muted); margin-top:4px; }
+  .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
+  @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="login-box">
+    <div class="login-logo">M</div>
+    <h1>Franchise PY — Saisie</h1>
+    <p>Saisie des indicateurs par restaurant</p>
+    <input type="password" id="pwd" placeholder="Mot de passe" autocomplete="current-password">
+    <button onclick="checkPwd()">Accéder</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div><div class="brand-name">Franchise PY</div><div class="brand-sub">Saisie KPI</div></div>
+    </div>
+    <div class="topbar-right">
+      <a class="dash-link" href="dashboard_restogroup.html" target="_blank" rel="noopener">Voir le dashboard →</a>
+    </div>
+  </div>
+  <div class="resto-bar" id="restoBar"></div>
+  <div class="tab-bar" id="tabBar"></div>
+  <div class="wrap"><div class="panel" id="panel"></div></div>
+  <div class="cfg-warn" id="cfgWarn" style="display:none">⚙️ La page n'est pas encore reliée au Google Sheet — remplace <b>APPS_SCRIPT_URL</b> en haut du script par l'URL de ton Apps Script (étape 3). En attendant, l'enregistrement est désactivé.</div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  CONFIG — à compléter à l'étape 3 (après déploiement de l'Apps Script)
+// ══════════════════════════════════════════════════════════════════
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXMj0WBqA1lZueFh6rVm1E8UQAvb7ClCh3JUmbcjOfvs0zPphuw/exec';   // …/exec
+const PWD_HASH = '08c8196053521a48310c141260c4a9475488de7b7828a2f8c2e4ee964b6cf941'; // « FranchisePY2026 »
+
+// ── Mot de passe ──
+async function sha256(s){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+async function checkPwd(){
+  const v=document.getElementById('pwd').value;
+  if(await sha256(v)===PWD_HASH){ sessionStorage.setItem('py_saisie','1'); showApp(); }
+  else { const e=document.getElementById('loginErr'); e.textContent='Mot de passe incorrect'; setTimeout(()=>e.textContent='',2500); }
+}
+function showApp(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='block'; init(); }
+
+// ── Modèle ──
+const RESTOS=[['CHAMBERY','Chambéry'],['AIX LES BAINS','Aix les Bains'],['BELLEY','Belley'],['ST ALBAN','St Alban'],['LES ABRETS','Les Abrets'],['PDB','Pont-de-Beauvoisin'],['FRANCIN','Francin'],['VIVIERS','Viviers']];
+const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT','SEPTEMBRE','OCTOBRE','NOVEMBRE','DÉCEMBRE'];
+const TABS=[['quotidien','Quotidien'],['mensuel','Mensuel'],['rgrv','RGRV (visite)'],['annuel','Annuel'],['previsionnel','Prévisionnel']];
+const FIELDS={
+  quotidien:[
+    {k:'ca_net_total',l:'CA Net Total (€)'},{k:'ca_net_alim',l:'CA Net Alimentaire (€)'},{k:'transactions',l:"Transactions (TAC'S)"},
+    {k:'panier_moyen',l:'Panier Moyen (€)',auto:'pm'},
+    {k:'pertes',l:'Pertes (€)'},{k:'remboursement',l:'Remboursement (€)',neuf:1},{k:'promotion',l:'Promotion (€)',neuf:1},{k:'ecart_caisse',l:'Écart de Caisse (€)',neuf:1},
+    {k:'heures_equipier',l:'Heures Équipier'},{k:'heures_totales',l:'Heures Totales'},
+    {k:'vphe',l:'VPHE (€/h équipier)',auto:'vphe'},{k:'vphg',l:'VPHG (€/h globale)',auto:'vphg'},
+  ],
+  mensuel:[
+    {k:'oepe',l:'OEPE (s)'},{k:'r2p',l:'R2P (s)'},{k:'oph',l:'OPH'},{k:'hello_mcdo',l:'Hello McDo (%)'},{k:'reseaux',l:'Réseaux Sociaux (/5)'},
+    {k:'uvhe',l:'UVHE'},{k:'tche',l:'TCHE'},{k:'vphe_rh',l:'VPHE RH (€/h)'},
+    {k:'effectif',l:'Effectif'},{k:'etp',l:'ETP'},{k:'heures_comp',l:'Heures Complémentaires'},{k:'heures_sup',l:'Heures Supplémentaires'},
+    {k:'to_12m',l:'Turn Over 12 mois (%)'},{k:'to_90j',l:'Turn Over 90 jours (%)'},{k:'abs_imprevu',l:'Absentéisme imprévu (%)'},{k:'abs_injust',l:'Absentéisme injustifié (%)'},
+    {k:'marge',l:'Marge (%)'},{k:'pac',l:'PAC (%)'},{k:'cout_mo',l:"Coût Main d'Œuvre (%)"},{k:'cash_flow',l:'Cash Flow (€)'},{k:'resultat_net',l:'Résultat Net (€)'},
+    {k:'remboursement_mois',l:'Remboursement (%)'},{k:'ecart_rendement',l:'Écart de Rendement (%)'},
+    {k:'fid_actifs',l:'Comptes FID Actifs (%)'},{k:'cc_ca',l:'C&C / CA (%)'},{k:'uber_ca',l:'Uber Eats / CA (%)'},{k:'lad_ca',l:'LAD M+ / CA (%)'},
+  ],
+  rgrv:[
+    {k:'qualite',l:'Qualité (%)'},{k:'service',l:'Service (%)'},{k:'proprete',l:'Propreté (%)'},{k:'gestion_quart',l:'Gestion de Quart (%)'},
+    {k:'securite_prevention',l:'Sécurité / Prévention (%)'},{k:'securite_alimentaire',l:'Sécurité Alimentaire (%)',neuf:1},
+    {k:'score_global',l:'Score global (%)',auto:'rgrv'},{k:'commentaire',l:'Commentaire',type:'textarea'},
+  ],
+  annuel:[
+    {k:'silliker',l:'Analyse Silliker / Mérieux (%)'},{k:'merieux',l:'Audit Mérieux (%)'},{k:'cfv',l:'CFV (%)'},{k:'ppfv',l:'PPFV (%)'},
+  ],
+  previsionnel:[
+    {k:'ca_prev',l:'CA Net Total prév (€)'},{k:'ca_alim_prev',l:'CA Alimentaire prév (€)'},{k:'marge_prev',l:'Marge prév (%)'},{k:'pac_prev',l:'PAC prév (%)'},
+    {k:'cout_mo_prev',l:"Coût MO prév (%)"},{k:'cash_flow_prev',l:'Cash Flow prév (€)'},{k:'resultat_net_prev',l:'Résultat Net prév (€)'},
+  ],
+};
+let curResto=RESTOS[0][0], curTab='quotidien';
+// Champs « (%) » : saisis en pourcentage (94,4) mais stockés en fraction (0,944), comme l'historique du Sheet
+const isPct=f=>/\(%\)/.test(f.l)&&!f.auto;
+
+function init(){
+  if(APPS_SCRIPT_URL.indexOf('REMPLACER')===0) document.getElementById('cfgWarn').style.display='block';
+  const rb=document.getElementById('restoBar');
+  rb.innerHTML=RESTOS.map(([k,n])=>`<button class="resto-pill ${k===curResto?'on':''}" data-r="${k}" onclick="setResto('${k}')">${n}</button>`).join('');
+  const tb=document.getElementById('tabBar');
+  tb.innerHTML=TABS.map(([k,n])=>`<button class="tab ${k===curTab?'on':''}" data-t="${k}" onclick="setTab('${k}')">${n}</button>`).join('');
+  renderPanel();
+}
+function setResto(r){ curResto=r; document.querySelectorAll('.resto-pill').forEach(p=>p.classList.toggle('on',p.dataset.r===r)); renderPanel(); }
+function setTab(t){ curTab=t; document.querySelectorAll('.tab').forEach(p=>p.classList.toggle('on',p.dataset.t===t)); renderPanel(); }
+
+function periodControls(tab){
+  const now=new Date(), y=now.getFullYear(), mIdx=now.getMonth();
+  const years=[y,y-1,y-2].map(v=>`<option value="${v}">${v}</option>`).join('');
+  const months=MONTHS.map((m,i)=>`<option value="${m}" ${i===mIdx?'selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
+  if(tab==='quotidien') return `<label>Date</label><input type="date" id="pDate" value="${now.toISOString().slice(0,10)}" onchange="loadExisting()">`;
+  if(tab==='rgrv')     return `<label>Date de la visite</label><input type="date" id="pDate" value="${now.toISOString().slice(0,10)}" onchange="loadExisting()">`;
+  if(tab==='annuel')   return `<label>Année</label><select id="pYear" onchange="loadExisting()">${years}</select>`;
+  // mensuel + previsionnel
+  return `<label>Mois</label><select id="pMonth" onchange="loadExisting()">${months}</select><label>Année</label><select id="pYear" onchange="loadExisting()">${years}</select>`;
+}
+function renderPanel(){
+  const p=document.getElementById('panel');
+  const label=TABS.find(t=>t[0]===curTab)[1];
+  const restoName=RESTOS.find(r=>r[0]===curResto)[1];
+  const flds=FIELDS[curTab];
+  const fieldHtml=flds.map(f=>{
+    if(f.type==='textarea') return `<div class="field field-full"><label>${f.l}</label><textarea id="f_${f.k}"></textarea></div>`;
+    const auto=f.auto?'auto':'';
+    const tag=f.neuf?'<span class="new-tag">nouveau</span>':'';
+    const ro=f.auto?'readonly':'';
+    const oninput=f.auto?'':'oninput="recompute()"';
+    return `<div class="field"><label>${f.l}${tag}</label><input type="${f.auto?'text':'number'}" step="any" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé automatiquement"':''}></div>`;
+  }).join('');
+  p.innerHTML=`
+    <div class="panel-head">
+      <div class="panel-title">${label} — ${restoName}</div>
+      <div class="period">${periodControls(curTab)}</div>
+    </div>
+    <div class="grid">${fieldHtml}</div>
+    <div class="foot">
+      <button class="btn-save" id="btnSave" onclick="save()">Enregistrer</button>
+      <span class="save-msg" id="saveMsg"></span>
+    </div>
+    <div class="hint">Les champs grisés se calculent tout seuls. Choisis une période déjà saisie pour la modifier.</div>`;
+  loadExisting();
+}
+function num(id){ const v=document.getElementById(id); if(!v) return null; const t=String(v.value).replace(',','.').trim(); if(t==='') return null; const n=parseFloat(t); return isNaN(n)?null:n; }
+function recompute(){
+  if(curTab==='quotidien'){
+    const alim=num('f_ca_net_alim'), tacs=num('f_transactions'), he=num('f_heures_equipier'), ht=num('f_heures_totales');
+    setAuto('f_panier_moyen', (alim!=null&&tacs)?alim/tacs:null, 2);
+    setAuto('f_vphe', (alim!=null&&he)?alim/he:null, 2);
+    setAuto('f_vphg', (alim!=null&&ht)?alim/ht:null, 2);
+  }
+  if(curTab==='rgrv'){
+    const subs=['qualite','service','proprete','gestion_quart','securite_prevention','securite_alimentaire'].map(k=>num('f_'+k)).filter(v=>v!=null);
+    const g=subs.length?subs.reduce((a,b)=>a+b,0)/subs.length:null;   // sous-notes déjà en %
+    const el=document.getElementById('f_score_global'); if(el) el.value = g==null?'':g.toFixed(1)+' %';
+  }
+}
+function setAuto(id,val,dec,pct){ const el=document.getElementById(id); if(!el) return; el.value = val==null?'' : (pct?(val*100).toFixed(dec)+' %':val.toFixed(dec)); }
+
+// ── Période courante (clé) ──
+function currentPeriode(){
+  if(curTab==='quotidien'||curTab==='rgrv') return document.getElementById('pDate').value;
+  if(curTab==='annuel') return document.getElementById('pYear').value;
+  return document.getElementById('pMonth').value+' '+document.getElementById('pYear').value;
+}
+// ── Charger une saisie existante (pré-remplissage) ──
+async function loadExisting(){
+  FIELDS[curTab].forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el && !f.auto) el.value=''; });
+  recompute();
+  if(APPS_SCRIPT_URL.indexOf('REMPLACER')===0) return;
+  try{
+    const u=APPS_SCRIPT_URL+'?frequence='+encodeURIComponent(curTab)+'&restaurant='+encodeURIComponent(curResto)+'&periode='+encodeURIComponent(currentPeriode())+'&_='+Date.now();
+    const res=await fetch(u); if(!res.ok) return; const j=await res.json();
+    if(j&&j.data){ Object.entries(j.data).forEach(([k,v])=>{
+      const el=document.getElementById('f_'+k); if(!el||v==null||v==='') return;
+      const f=FIELDS[curTab].find(x=>x.k===k);
+      el.value=(f&&isPct(f)&&typeof v==='number')?Math.round(v*1e6)/1e4:v;
+    }); recompute(); }
+  }catch(e){}
+}
+// ── Enregistrer ──
+async function save(){
+  const btn=document.getElementById('btnSave'), msg=document.getElementById('saveMsg');
+  if(APPS_SCRIPT_URL.indexOf('REMPLACER')===0){ msg.className='save-msg err'; msg.textContent='Non relié au Sheet (voir étape 3).'; return; }
+  const data={};
+  FIELDS[curTab].forEach(f=>{
+    const el=document.getElementById('f_'+f.k); if(!el||f.auto) return;
+    let v=(f.type==='textarea')?el.value.trim():num('f_'+f.k);
+    if(v!=null&&v!==''&&isPct(f)) v=v/100;
+    if(v!=null&&v!=='') data[f.k]=v;
+  });
+  if(Object.keys(data).length===0){ msg.className='save-msg err'; msg.textContent='Rien à enregistrer.'; return; }
+  const payload={ action:'save', frequence:curTab, restaurant:curResto, periode:currentPeriode(), data };
+  btn.disabled=true; msg.className='save-msg'; msg.textContent='Enregistrement…';
+  try{
+    await fetch(APPS_SCRIPT_URL,{ method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(payload) });
+    msg.className='save-msg ok'; msg.textContent='✅ Enregistré ('+RESTOS.find(r=>r[0]===curResto)[1]+' · '+currentPeriode()+')';
+  }catch(e){ msg.className='save-msg err'; msg.textContent='Erreur : '+e.message; }
+  btn.disabled=false; setTimeout(()=>{ if(msg.classList.contains('ok')) msg.textContent=''; },4000);
+}
+
+// ── Démarrage ──
+document.getElementById('pwd').addEventListener('keydown',e=>{ if(e.key==='Enter') checkPwd(); });
+if(sessionStorage.getItem('py_saisie')==='1') showApp();
+</script>
+</body>
+</html>
