@@ -1129,6 +1129,10 @@ window.addEventListener('DOMContentLoaded', () => {
         Classement
       </button>
     </div>
+    <a id="btnSaisie" href="saisie_franchise_py.html" target="_blank" rel="noopener" class="topbar-intervention" title="Saisir les KPI (quotidien, mensuel, RGRV…)" style="cursor:pointer;border-color:#16a34a;color:#15803d;text-decoration:none">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      <span>Saisie</span>
+    </a>
     <a id="btnRecherche" onclick="openSearchModal()" class="topbar-intervention" title="Recherche par période" style="cursor:pointer;border-color:#8b5cf6;color:#7c3aed">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span>Recherche</span>
@@ -5122,6 +5126,25 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // index : periode → store → row
     const idx = (rows, keyOf) => { const o = {}; for (const r of rows || []) { const p = keyOf(normPeriode(r.periode)); const s = String(r.restaurant || '').trim().toUpperCase(); if (!p || !STORES.includes(s)) continue; (o[p] = o[p] || {})[s] = r; } return o; };
     const MEN = idx(S.mensuel, p => p);
+    // HEBDOMADAIRE : semaine ISO « AAAA-Www » rattachée au mois de son jeudi.
+    // Tant qu'un mois n'est pas validé dans Mensuel, on prend la moyenne des semaines.
+    const weekMonth = p => {
+      const m = String(p).match(/^(\d{4})-W(\d{2})$/); if (!m) return null;
+      const jan4 = utc(+m[1], 1, 4), d = new Date(jan4).getUTCDay() || 7;
+      const thu = new Date(jan4 - (d - 1) * DAY_MS + ((+m[2] - 1) * 7 + 3) * DAY_MS);
+      return `${MONTHS[thu.getUTCMonth()]} ${thu.getUTCFullYear()}`;
+    };
+    const HEB = {};
+    for (const r of S.hebdomadaire || []) {
+      const mk = weekMonth(normPeriode(r.periode).replace(/^(\d{4})-W(\d)$/, '$1-W0$2')), s = String(r.restaurant || '').trim().toUpperCase();
+      if (!mk || !STORES.includes(s)) continue;
+      ((HEB[mk] = HEB[mk] || {})[s] = HEB[mk][s] || []).push(r);
+    }
+    const hebdo = sk => (v, s, m, y) => {
+      if (v != null) return v;
+      const rows = ((HEB[`${m} ${y}`] || {})[s]) || [];
+      return mean(rows.map(r => numOrNull(r[sk])));
+    };
     const PREV = idx(S.previsionnel, p => p);
     const val = (T, p, s, k) => numOrNull(((T[p] || {})[s] || {})[k]);
 
@@ -5145,7 +5168,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         const p = `${m} ${y}`; const row = {};
         for (const s of STORES) row[s] = val(opts.table || MEN, p, s, sheetKey);
         const brow = base[m];
-        if (opts.transform) for (const s of STORES) row[s] = opts.transform(row[s], s, m);
+        if (opts.transform) for (const s of STORES) row[s] = opts.transform(row[s], s, m, y);
         const vals = STORES.map(s => row[s]).filter(isNum);
         const diff = STORES.filter(s => !same(row[s], brow ? brow[s] : null));
         diff.forEach(s => ch.add(s));
@@ -5161,12 +5184,12 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
 
     for (const y of ['2026', '2025']) {
       const Y = OUT[y];
-      Y.oepe = monthlyTable(y, 'oepe', 'oepe', AGG.mean, { filter: 'none' });
-      Y.r2p = monthlyTable(y, 'r2p', 'r2p', AGG.mean, { filter: 'none' });
-      Y.hello_mcdo = monthlyTable(y, 'hello_mcdo', 'hello_mcdo', AGG.mean, { filter: 'none' });
-      Y.reseau = monthlyTable(y, 'reseau', 'reseaux', AGG.mean, { filter: 'none' });
-      Y.oph = monthlyTable(y, 'oph', 'oph', AGG.mean, { filter: 'nonzero' });
-      Y.tche_monthly = monthlyTable(y, 'tche_monthly', 'tche', AGG.mean, { filter: 'nonzero' });
+      Y.oepe = monthlyTable(y, 'oepe', 'oepe', AGG.mean, { filter: 'none', transform: hebdo('oepe') });
+      Y.r2p = monthlyTable(y, 'r2p', 'r2p', AGG.mean, { filter: 'none', transform: hebdo('r2p') });
+      Y.hello_mcdo = monthlyTable(y, 'hello_mcdo', 'hello_mcdo', AGG.mean, { filter: 'none', transform: hebdo('hello_mcdo') });
+      Y.reseau = monthlyTable(y, 'reseau', 'reseaux', AGG.mean, { filter: 'none', transform: hebdo('reseaux') });
+      Y.oph = monthlyTable(y, 'oph', 'oph', AGG.mean, { filter: 'nonzero', transform: hebdo('oph') });
+      Y.tche_monthly = monthlyTable(y, 'tche_monthly', 'tche', AGG.mean, { filter: 'nonzero', transform: hebdo('tche') });
       Y.effectif_monthly = monthlyTable(y, 'effectif_monthly', 'effectif', AGG.sum, { filter: 'nonzero' });
       Y.etp_monthly = monthlyTable(y, 'etp_monthly', 'etp', AGG.sum, { filter: 'nonzero' });
       Y.hcomp_monthly = monthlyTable(y, 'hcomp_monthly', 'heures_comp', AGG.sum, { filter: 'none' });
@@ -5199,7 +5222,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         },
       });
     }
-    Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero' });
+    Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
     for (const [k, sk] of [['dig_fid_actifs', 'fid_actifs'], ['dig_cc_ca', 'cc_ca'], ['dig_uber_ca', 'uber_ca'], ['dig_lad_ca', 'lad_ca']]) {
       Y26[k + '_m'] = monthlyTable('2026', k + '_m', sk, wTot('2026'), { filter: 'any' });
     }
@@ -6797,7 +6820,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20260930-141408';
+const BUILD_VERSION = '20260930-152521';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
