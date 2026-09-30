@@ -295,7 +295,7 @@ async function loadExisting(){
   let data=null;
   try{
     const u=APPS_SCRIPT_URL+'?frequence='+encodeURIComponent(tab)+'&restaurant='+encodeURIComponent(resto)+'&periode='+encodeURIComponent(currentPeriode())+'&_='+Date.now();
-    const res=await fetch(u); if(res.ok){ const j=await res.json(); data=j&&j.data; }
+    const res=await fetch(u); if(res.ok){ const j=await res.json(); data=j&&j.data; if(data&&!Object.keys(data).length) data=null; }
   }catch(e){ if(seq===loadSeq) setBanner('err','⚠️ Impossible de vérifier les saisies existantes (connexion ?). Tu peux quand même saisir.'); return; }
   if(seq!==loadSeq) return;   // l'utilisateur a changé de période entre-temps
   if(data){

@@ -5125,7 +5125,9 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // ── 3. MENSUEL ──
     // index : periode → store → row
     const idx = (rows, keyOf) => { const o = {}; for (const r of rows || []) { const p = keyOf(normPeriode(r.periode)); const s = String(r.restaurant || '').trim().toUpperCase(); if (!p || !STORES.includes(s)) continue; (o[p] = o[p] || {})[s] = r; } return o; };
-    const MEN = idx(S.mensuel, p => p);
+    // Google Sheets peut convertir « JUILLET 2026 » en date → relu « 2026-07-01 »
+    const monthKey = p => /^\d{4}-\d{2}-01$/.test(p) ? `${MONTHS[+p.slice(5, 7) - 1]} ${p.slice(0, 4)}` : p;
+    const MEN = idx(S.mensuel, monthKey);
     // HEBDOMADAIRE : semaine ISO « AAAA-Www » rattachée au mois de son jeudi.
     // Tant qu'un mois n'est pas validé dans Mensuel, on prend la moyenne des semaines.
     const weekMonth = p => {
@@ -5145,7 +5147,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       const rows = ((HEB[`${m} ${y}`] || {})[s]) || [];
       return mean(rows.map(r => numOrNull(r[sk])));
     };
-    const PREV = idx(S.previsionnel, p => p);
+    const PREV = idx(S.previsionnel, monthKey);
     const val = (T, p, s, k) => numOrNull(((T[p] || {})[s] || {})[k]);
 
     // Règles d'agrégat FRANCHISE (déduites du classeur)
@@ -6820,7 +6822,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20260930-152521';
+const BUILD_VERSION = '20260930-164238';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
