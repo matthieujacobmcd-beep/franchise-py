@@ -28,6 +28,16 @@
   .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:10px; }
   .dash-link{ text-decoration:none; font-size:.8rem; font-weight:700; color:var(--gold); border:1.5px solid var(--gold); border-radius:10px; padding:8px 14px; white-space:nowrap; }
   .dash-link:hover{ background:rgba(184,134,11,.1); }
+  /* Choix du restaurant */
+  #restoPick{ position:fixed; inset:0; background:linear-gradient(135deg,#1a1d2e,#2b2f45); display:none; align-items:center; justify-content:center; z-index:90; padding:16px; }
+  .pick-box{ background:#fff; border-radius:18px; padding:26px; width:min(560px,100%); box-shadow:0 24px 70px rgba(0,0,0,.4); text-align:center; }
+  .pick-box h2{ font-size:1.15rem; margin:0 0 4px; } .pick-box p{ font-size:.82rem; color:var(--muted); margin:0 0 18px; }
+  .pick-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .pick-btn{ border:1.5px solid var(--border); background:var(--card); font-family:inherit; font-size:.95rem; font-weight:700; color:var(--text); padding:14px 10px; border-radius:12px; cursor:pointer; transition:all .15s; }
+  .pick-btn:hover{ border-color:var(--gold); background:#fff8e1; }
+  .pick-cancel{ margin-top:14px; background:none; border:none; color:var(--muted); font-family:inherit; font-size:.82rem; cursor:pointer; text-decoration:underline; }
+  .resto-badge{ display:flex; align-items:center; gap:8px; background:#fff8e1; border:1.5px solid var(--gold); color:#7a4a00; border-radius:10px; padding:6px 8px 6px 12px; font-size:.88rem; font-weight:800; white-space:nowrap; }
+  .resto-badge button{ border:none; background:var(--gold); color:#fff; font-family:inherit; font-size:.72rem; font-weight:700; border-radius:7px; padding:5px 9px; cursor:pointer; }
   .resto-bar{ background:#fff; border-bottom:1px solid var(--border); padding:10px 22px; display:flex; gap:8px; overflow-x:auto; }
   .resto-pill{ flex-shrink:0; border:1.5px solid var(--border); background:var(--card); color:var(--text); font-family:inherit; font-size:.8rem; font-weight:700; padding:7px 15px; border-radius:999px; cursor:pointer; white-space:nowrap; transition:all .15s; }
   .resto-pill:hover{ border-color:var(--gold); }
@@ -88,10 +98,18 @@
       <div><div class="brand-name">Franchise PY</div><div class="brand-sub">Saisie KPI</div></div>
     </div>
     <div class="topbar-right">
+      <div class="resto-badge" id="restoBadge" style="display:none">📍 <span id="restoBadgeName"></span><button onclick="showPicker()">Changer</button></div>
       <a class="dash-link" href="dashboard_restogroup.html" target="_blank" rel="noopener">Voir le dashboard →</a>
     </div>
   </div>
-  <div class="resto-bar" id="restoBar"></div>
+  <div id="restoPick">
+    <div class="pick-box">
+      <h2>Quel est votre restaurant ?</h2>
+      <p>Toutes les saisies de cette session seront enregistrées pour ce restaurant.</p>
+      <div class="pick-grid" id="pickGrid"></div>
+      <button class="pick-cancel" id="pickCancel" onclick="hidePicker()" style="display:none">Annuler</button>
+    </div>
+  </div>
   <div class="tab-bar" id="tabBar"></div>
   <div class="wrap"><div class="panel" id="panel"></div></div>
   <div class="cfg-warn" id="cfgWarn" style="display:none">⚙️ La page n'est pas encore reliée au Google Sheet — remplace <b>APPS_SCRIPT_URL</b> en haut du script par l'URL de ton Apps Script (étape 3). En attendant, l'enregistrement est désactivé.</div>
@@ -154,7 +172,7 @@ const FIELDS={
     {k:'cout_mo_prev',l:"Coût MO prév (%)"},{k:'cash_flow_prev',l:'Cash Flow prév (€)'},{k:'resultat_net_prev',l:'Résultat Net prév (€)'},
   ],
 };
-let curResto=RESTOS[0][0], curTab='quotidien';
+let curResto=null, curTab='quotidien';   // restaurant : choisi explicitement à l'ouverture
 // Champs « (%) » : saisis en pourcentage (94,4) mais stockés en fraction (0,944), comme l'historique du Sheet
 const isPct=f=>/\(%\)/.test(f.l)&&!f.auto;
 const configured=()=>APPS_SCRIPT_URL.indexOf('REMPLACER')!==0;
@@ -182,14 +200,21 @@ function weekMonthKey(p){
 
 function init(){
   if(!configured()) document.getElementById('cfgWarn').style.display='block';
-  const rb=document.getElementById('restoBar');
-  rb.innerHTML=RESTOS.map(([k,n])=>`<button class="resto-pill ${k===curResto?'on':''}" data-r="${k}" onclick="setResto('${k}')">${n}</button>`).join('');
+  document.getElementById('pickGrid').innerHTML=RESTOS.map(([k,n])=>`<button class="pick-btn" onclick="setResto('${k}')">${n}</button>`).join('');
   const tb=document.getElementById('tabBar');
   tb.innerHTML=TABS.map(([k,n])=>`<button class="tab ${k===curTab?'on':''}" data-t="${k}" onclick="setTab('${k}')">${n}</button>`).join('');
-  renderPanel();
+  let saved=null; try{ saved=sessionStorage.getItem('py_resto'); }catch(e){}
+  if(saved && RESTOS.some(r=>r[0]===saved)) setResto(saved); else showPicker();
 }
-function setResto(r){ curResto=r; document.querySelectorAll('.resto-pill').forEach(p=>p.classList.toggle('on',p.dataset.r===r)); renderPanel(); }
-function setTab(t){ curTab=t; document.querySelectorAll('.tab').forEach(p=>p.classList.toggle('on',p.dataset.t===t)); renderPanel(); }
+function showPicker(){ document.getElementById('pickCancel').style.display=curResto?'inline':'none'; document.getElementById('restoPick').style.display='flex'; }
+function hidePicker(){ document.getElementById('restoPick').style.display='none'; }
+function setResto(r){
+  curResto=r; try{ sessionStorage.setItem('py_resto',r); }catch(e){}
+  document.getElementById('restoBadgeName').textContent=RESTOS.find(x=>x[0]===r)[1];
+  document.getElementById('restoBadge').style.display='flex';
+  hidePicker(); renderPanel();
+}
+function setTab(t){ curTab=t; document.querySelectorAll('.tab').forEach(p=>p.classList.toggle('on',p.dataset.t===t)); if(curResto) renderPanel(); }
 
 function weekOptions(year,sel){
   let o=''; for(let w=1;w<=weeksInYear(year);w++){ const mon=weekMonday(year,w), sun=new Date(mon); sun.setUTCDate(mon.getUTCDate()+6);
@@ -237,7 +262,7 @@ function renderPanel(){
     <div class="entry-banner" id="entryBanner"></div>
     <div class="grid">${fieldHtml}</div>
     <div class="foot">
-      <button class="btn-save" id="btnSave" onclick="save()">Enregistrer</button>
+      <button class="btn-save" id="btnSave" onclick="save()">Enregistrer pour ${restoName}</button>
       <span class="save-msg" id="saveMsg"></span>
     </div>
     <div class="hint">${hint}</div>`;
