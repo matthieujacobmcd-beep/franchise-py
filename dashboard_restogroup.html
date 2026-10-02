@@ -3911,19 +3911,24 @@ function _normBanner(b) {
            ts: String(b.horodatage || '') };
 }
 async function loadBanners() {
-  try { const c = localStorage.getItem(BANNERS_CACHE); if (c) { BANNERS = JSON.parse(c); renderBanners(); } } catch (e) {}
-  try {
-    const res = await fetch(BANNERS_API + '?action=banners&_=' + Date.now());
-    const j = await res.json();
-    if (j && j.ok && Array.isArray(j.rows)) {
-      BANNERS = j.rows.map(_normBanner).sort((a, b) => b.ts.localeCompare(a.ts));
-      try { localStorage.setItem(BANNERS_CACHE, JSON.stringify(BANNERS)); } catch (e) {}
-    } else {
-      // transition : ancien fichier banners.json tant que le Sheet n'a pas d'onglet Bannieres
-      const r2 = await fetch('banners.json?t=' + Date.now());
-      if (r2.ok) { const d = await r2.json(); if (Array.isArray(d)) BANNERS = d.map(_normBanner); }
-    }
-  } catch (e) { console.log('Bannières non disponibles', e); }
+  // Affichage immédiat : cache local, sinon ancien banners.json (transition).
+  // Les bannières à jour arrivent ensuite avec les données du Sheet (un seul appel : sheet_live_loader.js).
+  let ok = false;
+  try { const c = localStorage.getItem(BANNERS_CACHE); if (c) { BANNERS = JSON.parse(c); ok = true; } } catch (e) {}
+  if (!ok) {
+    try { const r2 = await fetch('banners.json?t=' + Date.now()); if (r2.ok) { const d = await r2.json(); if (Array.isArray(d)) BANNERS = d.map(_normBanner); } } catch (e) {}
+  }
+  renderBanners();
+  if (document.getElementById('bannerModal')?.classList.contains('open')) renderBannerModal();
+}
+// Après un ajout / une suppression : relit le Sheet (appel unique, sans concurrence)
+async function reloadBannersFromSheet() {
+  const res = await fetch(BANNERS_API + '?action=banners&_=' + Date.now());
+  const j = await res.json();
+  if (j && j.ok && Array.isArray(j.rows)) {
+    BANNERS = j.rows.map(_normBanner).sort((a, b) => b.ts.localeCompare(a.ts));
+    try { localStorage.setItem(BANNERS_CACHE, JSON.stringify(BANNERS)); } catch (e) {}
+  }
   renderBanners();
   if (document.getElementById('bannerModal')?.classList.contains('open')) renderBannerModal();
 }
@@ -3978,7 +3983,7 @@ async function addBanner() {
     if (!j.ok) { _bannerStatus('Erreur : ' + (j.error || 'inconnue'), true); return; }
     ['bTitle', 'bMsg', 'bDate'].forEach(id => { document.getElementById(id).value = ''; });
     _bannerStatus('✓ Publiée — visible par tous.');
-    await loadBanners();
+    await reloadBannersFromSheet();
   } catch (e) { _bannerStatus("Erreur d'envoi (connexion ?).", true); }
 }
 async function deleteBanner(id) {
@@ -3987,7 +3992,7 @@ async function deleteBanner(id) {
   try {
     const j = await _bannerPost({ action: 'banner_delete', id: String(id) });
     _bannerStatus(j.ok ? '✓ Supprimée.' : 'Erreur : ' + (j.error || 'inconnue'), !j.ok);
-    await loadBanners();
+    await reloadBannersFromSheet();
   } catch (e) { _bannerStatus("Erreur d'envoi (connexion ?).", true); }
 }
 function renderBannerModal() {
@@ -5427,6 +5432,13 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
       if (cur && typeof cur === 'object' && !Array.isArray(cur) && nxt && typeof nxt === 'object') replaceInPlace(cur, nxt);
       else DASHBOARD_DATA[k] = nxt;
     }
+    // Bannières : elles arrivent dans la même réponse (un seul appel au Sheet)
+    if (Array.isArray(sheet.bannieres) && typeof _normBanner === 'function') {
+      try {
+        BANNERS = sheet.bannieres.map(_normBanner).sort((a, b) => b.ts.localeCompare(a.ts));
+        localStorage.setItem('fpy_banners_cache', JSON.stringify(BANNERS));
+      } catch (e) {}
+    }
     try { renderTabs(); renderMain(); } catch (e) { console.error('[Sheet] rendu', e); }
   }
 
@@ -5438,25 +5450,38 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
   }
   setDateLabel(' · synchronisation…');
 
-  // 2) Lecture fraîche du Sheet ; ré-affichage seulement si quelque chose a changé
-  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = setTimeout(() => ctrl && ctrl.abort(), 30000);
-  fetch(SHEET_URL + '?action=all&_=' + Date.now(), ctrl ? { signal: ctrl.signal } : {})
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-    .then(txt => {
-      clearTimeout(timer);
-      if (txt !== cached) {
-        apply(JSON.parse(txt));
-        try { localStorage.setItem(CACHE_KEY, txt); } catch (e) {}
-        console.info('[Sheet] données live chargées');
+  // 2) Lecture fraîche du Sheet. L'Apps Script de Google répond parfois très lentement :
+  //    on patiente jusqu'à 60 s et on retente (3 essais) avant d'abandonner.
+  function fetchOnce(timeoutMs) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
+    return fetch(SHEET_URL + '?action=all&_=' + Date.now() + Math.floor(Math.random() * 1000), ctrl ? { signal: ctrl.signal } : {})
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .finally(() => clearTimeout(timer));
+  }
+  async function sync() {
+    let lastErr = null;
+    for (let essai = 1; essai <= 3; essai++) {
+      try {
+        const txt = await fetchOnce(60000);
+        if (txt !== cached) {
+          apply(JSON.parse(txt));
+          try { localStorage.setItem(CACHE_KEY, txt); } catch (e) {}
+          console.info('[Sheet] données live chargées');
+        }
+        setDateLabel('');
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.warn('[Sheet] essai ' + essai + '/3 échoué :', err);
+        setDateLabel(' · synchronisation (nouvel essai)…');
+        await new Promise(r => setTimeout(r, 1500 * essai));
       }
-      setDateLabel('');
-    })
-    .catch(err => {
-      clearTimeout(timer);
-      setDateLabel(cached ? ' · hors ligne (dernière synchro)' : ' · hors ligne');
-      console.warn('[Sheet] lecture impossible, données précédentes conservées :', err);
-    });
+    }
+    setDateLabel(cached ? ' · hors ligne (dernière synchro)' : ' · hors ligne');
+    console.warn('[Sheet] lecture impossible, données précédentes conservées :', lastErr);
+  }
+  sync();
 })();
 
 </script>
@@ -7177,7 +7202,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261001-114457';
+const BUILD_VERSION = '20261002-111339';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
