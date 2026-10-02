@@ -74,6 +74,12 @@
   .entry-banner.suggest{ background:#ecfdf3; color:#166534; border:1.5px solid #b7ebc9; }
   .entry-banner.err{ background:#fdecea; color:var(--red); border:1.5px solid #f5c2bd; }
   .field input.suggest{ border-color:#34a853; background:#f3fbf5; }
+  .inwrap{ position:relative; }
+  .inwrap.has-unit input{ padding-right:52px; }
+  .inwrap .unit{ position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:.78rem; font-weight:800; color:var(--gold); background:#fff8e1; border-radius:6px; padding:2px 7px; pointer-events:none; }
+  .inwrap input.auto + .unit{ background:transparent; color:var(--muted); }
+  .last-saisie{ font-size:.74rem; color:var(--muted); margin-top:3px; }
+  .last-saisie b{ color:var(--gold); }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
 </style>
@@ -134,51 +140,63 @@ function showApp(){ document.getElementById('login').style.display='none'; docum
 // ── Modèle ──
 const RESTOS=[['CHAMBERY','Chambéry'],['AIX LES BAINS','Aix les Bains'],['BELLEY','Belley'],['ST ALBAN','St Alban'],['LES ABRETS','Les Abrets'],['PDB','Pont-de-Beauvoisin'],['FRANCIN','Francin'],['VIVIERS','Viviers']];
 const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT','SEPTEMBRE','OCTOBRE','NOVEMBRE','DÉCEMBRE'];
-const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['rgrv','RGRV (visite)'],['annuel','Annuel'],['previsionnel','Prévisionnel']];
+const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel']];
 // Indicateurs saisis chaque semaine : le mois correspondant (onglet Mensuel)
 // se pré-remplit avec la moyenne des semaines tant qu'il n'a pas été validé.
 const HEBDO_KEYS=['oepe','r2p','oph','hello_mcdo','reseaux','uvhe','tche'];
+// u = unité affichée dans le champ ; pct = saisi en % (94,4) mais stocké en fraction (0,944)
+const METEO=[['','—'],['soleil','☀️ Soleil'],['nuageux','⛅ Nuageux'],['pluie','🌧️ Pluie'],['orage','⛈️ Orage'],['neige','❄️ Neige'],['brouillard','🌫️ Brouillard'],['canicule','🥵 Canicule'],['vent','💨 Vent fort']];
 const FIELDS={
   quotidien:[
-    {k:'ca_net_total',l:'CA Net Total (€)'},{k:'ca_net_alim',l:'CA Net Alimentaire (€)'},{k:'transactions',l:"Transactions (TAC'S)"},
-    {k:'panier_moyen',l:'Panier Moyen (€)',auto:'pm'},
-    {k:'pertes',l:'Pertes (€)'},{k:'remboursement',l:'Remboursement (€)',neuf:1},{k:'promotion',l:'Promotion (€)',neuf:1},{k:'ecart_caisse',l:'Écart de Caisse (€)',neuf:1},
-    {k:'heures_equipier',l:'Heures Équipier'},{k:'heures_totales',l:'Heures Totales'},
-    {k:'vphe',l:'VPHE (€/h équipier)',auto:'vphe'},{k:'vphg',l:'VPHG (€/h globale)',auto:'vphg'},
+    {k:'ca_net_total',l:'CA Net Total',u:'€'},{k:'ca_net_alim',l:'CA Net Alimentaire',u:'€'},{k:'transactions',l:"Transactions (TAC'S)",u:'nb'},
+    {k:'panier_moyen',l:'Panier Moyen',u:'€',auto:'pm'},
+    {k:'pertes',l:'Pertes',u:'€'},{k:'remboursement',l:'Remboursement',u:'€'},{k:'promotion',l:'Promotion',u:'€'},{k:'ecart_caisse',l:'Écart de Caisse',u:'€'},
+    {k:'heures_equipier',l:'Heures Équipier',u:'h'},{k:'heures_totales',l:'Heures Totales',u:'h'},
+    {k:'vphe',l:'VPHE (vente / h équipier)',u:'€/h',auto:'vphe'},{k:'vphg',l:'VPHG (vente / h globale)',u:'€/h',auto:'vphg'},
+    {k:'meteo',l:'Météo',type:'select',opts:METEO},
+    {k:'commentaire',l:'Commentaire de la journée',type:'textarea',ph:'Événement, travaux, panne, affluence…'},
   ],
   hebdomadaire:[
-    {k:'oepe',l:'OEPE (s)'},{k:'r2p',l:'R2P (s)'},{k:'oph',l:'OPH'},{k:'hello_mcdo',l:'Hello McDo (%)'},{k:'reseaux',l:'Réseaux Sociaux (/5)'},
-    {k:'uvhe',l:'UVHE'},{k:'tche',l:'TCHE'},
+    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'oph',l:'OPH',u:''},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
+    {k:'uvhe',l:'UVHE',u:''},{k:'tche',l:'TCHE',u:''},
   ],
   mensuel:[
-    {k:'oepe',l:'OEPE (s)'},{k:'r2p',l:'R2P (s)'},{k:'oph',l:'OPH'},{k:'hello_mcdo',l:'Hello McDo (%)'},{k:'reseaux',l:'Réseaux Sociaux (/5)'},
-    {k:'uvhe',l:'UVHE'},{k:'tche',l:'TCHE'},{k:'vphe_rh',l:'VPHE RH (€/h)'},
-    {k:'effectif',l:'Effectif'},{k:'etp',l:'ETP'},{k:'heures_comp',l:'Heures Complémentaires'},{k:'heures_sup',l:'Heures Supplémentaires'},
-    {k:'to_12m',l:'Turn Over 12 mois (%)'},{k:'to_90j',l:'Turn Over 90 jours (%)'},{k:'abs_imprevu',l:'Absentéisme imprévu (%)'},{k:'abs_injust',l:'Absentéisme injustifié (%)'},
-    {k:'marge',l:'Marge (%)'},{k:'pac',l:'PAC (%)'},{k:'cout_mo',l:"Coût Main d'Œuvre (%)"},{k:'cash_flow',l:'Cash Flow (€)'},{k:'resultat_net',l:'Résultat Net (€)'},
-    {k:'remboursement_mois',l:'Remboursement (%)'},{k:'ecart_rendement',l:'Écart de Rendement (%)'},
-    {k:'fid_actifs',l:'Comptes FID Actifs (%)'},{k:'cc_ca',l:'C&C / CA (%)'},{k:'uber_ca',l:'Uber Eats / CA (%)'},{k:'lad_ca',l:'LAD M+ / CA (%)'},
-  ],
-  rgrv:[
-    {k:'qualite',l:'Qualité (%)'},{k:'service',l:'Service (%)'},{k:'proprete',l:'Propreté (%)'},{k:'gestion_quart',l:'Gestion de Quart (%)'},
-    {k:'securite_prevention',l:'Sécurité / Prévention (%)'},{k:'securite_alimentaire',l:'Sécurité Alimentaire (%)',neuf:1},
-    {k:'score_global',l:'Score global (%)',auto:'rgrv'},{k:'commentaire',l:'Commentaire',type:'textarea'},
-  ],
-  annuel:[
-    {k:'silliker',l:'Analyse Silliker / Mérieux (%)'},{k:'merieux',l:'Audit Mérieux (%)'},{k:'cfv',l:'CFV (%)'},{k:'ppfv',l:'PPFV (%)'},
+    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'oph',l:'OPH',u:''},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
+    {k:'uvhe',l:'UVHE',u:''},{k:'tche',l:'TCHE',u:''},
+    {k:'effectif',l:'Effectif',u:'pers.'},{k:'etp',l:'ETP',u:'ETP'},{k:'heures_comp',l:'Heures Complémentaires',u:'h'},{k:'heures_sup',l:'Heures Supplémentaires',u:'h'},
+    {k:'to_12m',l:'Turn Over 12 mois',u:'%',pct:1},{k:'to_90j',l:'Turn Over 90 jours',u:'%',pct:1},{k:'abs_imprevu',l:'Absentéisme imprévu',u:'%',pct:1},{k:'abs_injust',l:'Absentéisme injustifié',u:'%',pct:1},
+    {k:'marge',l:'Marge',u:'%',pct:1},{k:'pac',l:'PAC',u:'%',pct:1},{k:'cout_mo',l:"Coût Main d'Œuvre",u:'%',pct:1},{k:'cash_flow',l:'Cash Flow',u:'€'},{k:'resultat_net',l:'Résultat Net',u:'€'},
+    {k:'ecart_rendement',l:'Écart de Rendement',u:'%',pct:1},
+    {k:'fid_actifs',l:'Comptes FID Actifs',u:'%',pct:1},{k:'cc_ca',l:'C&C / CA',u:'%',pct:1},{k:'uber_ca',l:'Uber Eats / CA',u:'%',pct:1},{k:'lad_ca',l:'LAD M+ / CA',u:'%',pct:1},
   ],
   previsionnel:[
-    {k:'ca_prev',l:'CA Net Total prév (€)'},{k:'ca_alim_prev',l:'CA Alimentaire prév (€)'},{k:'marge_prev',l:'Marge prév (%)'},{k:'pac_prev',l:'PAC prév (%)'},
-    {k:'cout_mo_prev',l:"Coût MO prév (%)"},{k:'cash_flow_prev',l:'Cash Flow prév (€)'},{k:'resultat_net_prev',l:'Résultat Net prév (€)'},
+    {k:'ca_prev',l:'CA Net Total prév.',u:'€'},{k:'ca_alim_prev',l:'CA Alimentaire prév.',u:'€'},{k:'marge_prev',l:'Marge prév.',u:'%',pct:1},{k:'pac_prev',l:'PAC prév.',u:'%',pct:1},
+    {k:'cout_mo_prev',l:"Coût MO prév.",u:'%',pct:1},{k:'cash_flow_prev',l:'Cash Flow prév.',u:'€'},{k:'resultat_net_prev',l:'Résultat Net prév.',u:'€'},
   ],
 };
+// Ponctuel : les champs dépendent du type de visite
+const PONCT_TYPES=[['RGRV','RGRV'],['CFV','CFV'],['PPFV','PPFV'],['AUDIT_MERIEUX','Audit Mérieux'],['ANALYSE_SILLIKER','Analyse Silliker / Mérieux']];
+const RGRV_SUBS=['qualite','service','proprete','gestion_quart','securite_prevention','securite_alimentaire'];
+const PONCT_FIELDS={
+  RGRV:[
+    {k:'qualite',l:'Qualité',u:'%',pct:1},{k:'service',l:'Service',u:'%',pct:1},{k:'proprete',l:'Propreté',u:'%',pct:1},{k:'gestion_quart',l:'Gestion de Quart',u:'%',pct:1},
+    {k:'securite_prevention',l:'Sécurité / Prévention',u:'%',pct:1},{k:'securite_alimentaire',l:'Sécurité Alimentaire',u:'%',pct:1},
+    {k:'score',l:'Score global',u:'%',pct:1,auto:'rgrv'},
+  ],
+  _default:[ {k:'score',l:'Score',u:'%',pct:1} ],
+};
+const COMMENT_FIELD={k:'commentaire',l:'Commentaire',type:'textarea',ph:'Points forts, axes de progrès…'};
+function fieldsFor(tab){
+  if(tab!=='ponctuel') return FIELDS[tab];
+  const t=currentType(); return [...(PONCT_FIELDS[t]||PONCT_FIELDS._default), COMMENT_FIELD];
+}
 let curResto=null, curTab='quotidien';   // restaurant : choisi explicitement à l'ouverture
-// Champs « (%) » : saisis en pourcentage (94,4) mais stockés en fraction (0,944), comme l'historique du Sheet
-const isPct=f=>/\(%\)/.test(f.l)&&!f.auto;
+const isPct=f=>!!f.pct&&!f.auto;
 const configured=()=>APPS_SCRIPT_URL.indexOf('REMPLACER')!==0;
 
-// ── Semaines ISO ──
+// ── Dates & semaines ──
 const pad2=n=>String(n).padStart(2,'0');
+const isoDate=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 function isoWeekOf(d){ // d : Date locale → {year, week}
   const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
   const day=t.getUTCDay()||7; t.setUTCDate(t.getUTCDate()+4-day);
@@ -191,11 +209,41 @@ function weekMonday(year,week){
 }
 const weeksInYear=y=>isoWeekOf(new Date(y,11,28)).week;
 const fmtDM=d=>pad2(d.getUTCDate())+'/'+pad2(d.getUTCMonth()+1);
-// Mois (« MOIS ANNEE ») auquel appartient une semaine « AAAA-Www » : celui de son jeudi
 function weekMonthKey(p){
   const m=String(p||'').match(/^(\d{4})-W(\d{2})$/); if(!m) return null;
   const thu=weekMonday(+m[1],+m[2]); thu.setUTCDate(thu.getUTCDate()+3);
   return MONTHS[thu.getUTCMonth()]+' '+thu.getUTCFullYear();
+}
+
+// ── Dernière période saisie (pour se placer sur la suivante) ──
+let LAST=null;
+async function loadLast(){
+  if(!configured()) return;
+  try{ const r=await fetch(APPS_SCRIPT_URL+'?action=last&_='+Date.now()); const j=await r.json(); if(j&&j.last) LAST=j.last; }catch(e){}
+}
+const lastOf=(tab)=>LAST&&LAST[tab]&&curResto?LAST[tab][curResto]:null;
+function nextPeriod(tab){
+  const p=lastOf(tab), now=new Date();
+  if(tab==='quotidien'){
+    if(!p) return {date:isoDate(now)};
+    const d=new Date(p+'T12:00:00'); d.setDate(d.getDate()+1); return {date:isoDate(d)};
+  }
+  if(tab==='hebdomadaire'){
+    if(!p){ const w=isoWeekOf(now); return {year:w.year,week:w.week}; }
+    const m=p.match(/^(\d{4})-W(\d{2})$/); let y=+m[1], w=+m[2]+1; if(w>weeksInYear(y)){ y++; w=1; } return {year:y,week:w};
+  }
+  if(tab==='mensuel'||tab==='previsionnel'){
+    const m=p&&p.match(/^([A-ZÉÛ]+) (\d{4})$/);
+    if(!m) return {month:now.getMonth(), year:now.getFullYear()};
+    let mi=MONTHS.indexOf(m[1])+1, y=+m[2]; if(mi>11){ mi=0; y++; } return {month:mi, year:y};
+  }
+  return {date:isoDate(now)};
+}
+function lastLabel(tab){
+  const p=lastOf(tab); if(!p) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(p)){ const [y,m,d]=p.split('-'); return `${d}/${m}/${y}`; }
+  if(/^\d{4}-W\d{2}$/.test(p)) return 'S'+p.slice(6)+' '+p.slice(0,4);
+  return p.charAt(0)+p.slice(1).toLowerCase();
 }
 
 function init(){
@@ -203,8 +251,9 @@ function init(){
   document.getElementById('pickGrid').innerHTML=RESTOS.map(([k,n])=>`<button class="pick-btn" onclick="setResto('${k}')">${n}</button>`).join('');
   const tb=document.getElementById('tabBar');
   tb.innerHTML=TABS.map(([k,n])=>`<button class="tab ${k===curTab?'on':''}" data-t="${k}" onclick="setTab('${k}')">${n}</button>`).join('');
+  const lastP=loadLast();
   let saved=null; try{ saved=sessionStorage.getItem('py_resto'); }catch(e){}
-  if(saved && RESTOS.some(r=>r[0]===saved)) setResto(saved); else showPicker();
+  if(saved && RESTOS.some(r=>r[0]===saved)) lastP.then(()=>setResto(saved)); else showPicker();
 }
 function showPicker(){ document.getElementById('pickCancel').style.display=curResto?'inline':'none'; document.getElementById('restoPick').style.display='flex'; }
 function hidePicker(){ document.getElementById('restoPick').style.display='none'; }
@@ -222,79 +271,81 @@ function weekOptions(year,sel){
   return o;
 }
 function onWeekYear(){ const y=+document.getElementById('pYear').value; const s=document.getElementById('pWeek'); const cur=Math.min(+s.value,weeksInYear(y)); s.innerHTML=weekOptions(y,cur); loadExisting(); }
+function yearOpts(sel){ const y=new Date().getFullYear(); return [y+1,y,y-1,y-2].map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v}</option>`).join(''); }
 function periodControls(tab){
-  const now=new Date(), y=now.getFullYear(), mIdx=now.getMonth();
-  const today=`${y}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-  const years=[y,y-1,y-2].map(v=>`<option value="${v}">${v}</option>`).join('');
-  const months=MONTHS.map((m,i)=>`<option value="${m}" ${i===mIdx?'selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
-  if(tab==='quotidien') return `<label>Date</label><input type="date" id="pDate" value="${today}" onchange="loadExisting()">`;
-  if(tab==='rgrv')     return `<label>Date de la visite</label><input type="date" id="pDate" value="${today}" onchange="loadExisting()">`;
-  if(tab==='hebdomadaire'){
-    const cw=isoWeekOf(now);
-    const ys=[cw.year,cw.year-1,cw.year-2].map(v=>`<option value="${v}">${v}</option>`).join('');
-    return `<label>Semaine</label><select id="pWeek" onchange="loadExisting()">${weekOptions(cw.year,cw.week)}</select><label>Année</label><select id="pYear" onchange="onWeekYear()">${ys}</select>`;
+  const np=nextPeriod(tab);
+  if(tab==='quotidien') return `<label>Date</label><input type="date" id="pDate" value="${np.date}" onchange="loadExisting()">`;
+  if(tab==='ponctuel'){
+    const types=PONCT_TYPES.map(([k,n])=>`<option value="${k}">${n}</option>`).join('');
+    return `<label>Type</label><select id="pType" onchange="renderPanel(true)">${types}</select><label>Date de la visite</label><input type="date" id="pDate" value="${np.date}" onchange="loadExisting()">`;
   }
-  if(tab==='annuel')   return `<label>Année</label><select id="pYear" onchange="loadExisting()">${years}</select>`;
-  // mensuel + previsionnel
-  return `<label>Mois</label><select id="pMonth" onchange="loadExisting()">${months}</select><label>Année</label><select id="pYear" onchange="loadExisting()">${years}</select>`;
+  if(tab==='hebdomadaire')
+    return `<label>Semaine</label><select id="pWeek" onchange="loadExisting()">${weekOptions(np.year,np.week)}</select><label>Année</label><select id="pYear" onchange="onWeekYear()">${yearOpts(np.year)}</select>`;
+  const months=MONTHS.map((m,i)=>`<option value="${m}" ${i===np.month?'selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
+  return `<label>Mois</label><select id="pMonth" onchange="loadExisting()">${months}</select><label>Année</label><select id="pYear" onchange="loadExisting()">${yearOpts(np.year)}</select>`;
 }
-function renderPanel(){
+const currentType=()=>{ const el=document.getElementById('pType'); return el?el.value:'RGRV'; };
+function fieldHtml(f){
+  if(f.type==='textarea') return `<div class="field field-full"><label>${f.l}</label><textarea id="f_${f.k}" placeholder="${f.ph||''}"></textarea></div>`;
+  if(f.type==='select') return `<div class="field"><label>${f.l}</label><select id="f_${f.k}">${f.opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></div>`;
+  const auto=f.auto?'auto':'', ro=f.auto?'readonly':'', oninput=f.auto?'':'oninput="recompute()"';
+  const unit=f.u?`<span class="unit">${f.u}</span>`:'';
+  return `<div class="field"><label>${f.l}</label><div class="inwrap ${f.u?'has-unit':''}"><input type="${f.auto?'text':'number'}" step="any" inputmode="decimal" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé"':''}>${unit}</div></div>`;
+}
+function renderPanel(keepPeriod){
   const p=document.getElementById('panel');
   const label=TABS.find(t=>t[0]===curTab)[1];
   const restoName=RESTOS.find(r=>r[0]===curResto)[1];
-  const flds=FIELDS[curTab];
-  const fieldHtml=flds.map(f=>{
-    if(f.type==='textarea') return `<div class="field field-full"><label>${f.l}</label><textarea id="f_${f.k}"></textarea></div>`;
-    const auto=f.auto?'auto':'';
-    const tag=f.neuf?'<span class="new-tag">nouveau</span>':'';
-    const ro=f.auto?'readonly':'';
-    const oninput=f.auto?'':'oninput="recompute()"';
-    return `<div class="field"><label>${f.l}${tag}</label><input type="${f.auto?'text':'number'}" step="any" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé automatiquement"':''}></div>`;
-  }).join('');
+  // en ponctuel, changer de type redessine les champs sans perdre type ni date
+  const keep=keepPeriod&&curTab==='ponctuel'?{t:currentType(),d:document.getElementById('pDate').value}:null;
+  const ll=lastLabel(curTab);
   const hint = curTab==='hebdomadaire'
     ? 'Les moyennes des semaines pré-remplissent le mois correspondant (onglet Mensuel) : il suffit d\'y vérifier puis d\'enregistrer pour valider le mois.'
-    : 'Les champs grisés se calculent tout seuls. Les champs en % se saisissent en pourcentage (ex. 94,4). Choisis une période déjà saisie pour la modifier.';
+    : curTab==='ponctuel'
+    ? 'Une ligne par visite. Le dashboard retient la dernière visite de l\'année (RGRV, CFV, PPFV) ou la moyenne de l\'année (audits et analyses).'
+    : 'Les champs grisés se calculent tout seuls. Les pourcentages se saisissent en % (ex. 94,4). Choisis une période déjà saisie pour la modifier.';
   p.innerHTML=`
     <div class="panel-head">
-      <div class="panel-title">${label} — ${restoName}</div>
+      <div><div class="panel-title">${label} — ${restoName}</div>${ll&&curTab!=='ponctuel'?`<div class="last-saisie">Dernière saisie : <b>${ll}</b> — période suivante proposée</div>`:''}</div>
       <div class="period">${periodControls(curTab)}</div>
     </div>
     <div class="entry-banner" id="entryBanner"></div>
-    <div class="grid">${fieldHtml}</div>
+    <div class="grid" id="fieldsGrid"></div>
     <div class="foot">
       <button class="btn-save" id="btnSave" onclick="save()">Enregistrer pour ${restoName}</button>
       <span class="save-msg" id="saveMsg"></span>
     </div>
     <div class="hint">${hint}</div>`;
+  if(keep){ document.getElementById('pType').value=keep.t; document.getElementById('pDate').value=keep.d; }
+  document.getElementById('fieldsGrid').innerHTML=fieldsFor(curTab).map(fieldHtml).join('');
   loadExisting();
 }
 function num(id){ const v=document.getElementById(id); if(!v) return null; const t=String(v.value).replace(',','.').trim(); if(t==='') return null; const n=parseFloat(t); return isNaN(n)?null:n; }
 function recompute(){
   if(curTab==='quotidien'){
-    const alim=num('f_ca_net_alim'), tacs=num('f_transactions'), he=num('f_heures_equipier'), ht=num('f_heures_totales');
-    setAuto('f_panier_moyen', (alim!=null&&tacs)?alim/tacs:null, 2);
+    const tot=num('f_ca_net_total'), alim=num('f_ca_net_alim'), tacs=num('f_transactions'), he=num('f_heures_equipier'), ht=num('f_heures_totales');
+    setAuto('f_panier_moyen', (tot!=null&&tacs)?tot/tacs:null, 2);      // PM = CA net TOTAL ÷ transactions
     setAuto('f_vphe', (alim!=null&&he)?alim/he:null, 2);
     setAuto('f_vphg', (alim!=null&&ht)?alim/ht:null, 2);
   }
-  if(curTab==='rgrv'){
-    const subs=['qualite','service','proprete','gestion_quart','securite_prevention','securite_alimentaire'].map(k=>num('f_'+k)).filter(v=>v!=null);
-    const g=subs.length?subs.reduce((a,b)=>a+b,0)/subs.length:null;   // sous-notes déjà en %
-    const el=document.getElementById('f_score_global'); if(el) el.value = g==null?'':g.toFixed(1)+' %';
+  if(curTab==='ponctuel' && currentType()==='RGRV'){
+    const subs=RGRV_SUBS.map(k=>num('f_'+k)).filter(v=>v!=null);
+    setAuto('f_score', subs.length?subs.reduce((a,b)=>a+b,0)/subs.length:null, 1);   // sous-notes déjà en %
   }
 }
-function setAuto(id,val,dec){ const el=document.getElementById(id); if(!el) return; el.value = val==null?'' : val.toFixed(dec); }
+function setAuto(id,val,dec){ const el=document.getElementById(id); if(!el) return; el.value = val==null?'' : val.toFixed(dec).replace('.',','); }
 
 // ── Période courante (clé) ──
 function currentPeriode(){
-  if(curTab==='quotidien'||curTab==='rgrv') return document.getElementById('pDate').value;
+  if(curTab==='quotidien'||curTab==='ponctuel') return document.getElementById('pDate').value;
   if(curTab==='hebdomadaire') return document.getElementById('pYear').value+'-W'+pad2(document.getElementById('pWeek').value);
-  if(curTab==='annuel') return document.getElementById('pYear').value;
   return document.getElementById('pMonth').value+' '+document.getElementById('pYear').value;
 }
 function periodeLabel(){
   if(curTab==='hebdomadaire'){ const s=document.getElementById('pWeek'); return s.options[s.selectedIndex].text+' '+document.getElementById('pYear').value; }
   const p=currentPeriode();
-  if(/^\d{4}-\d{2}-\d{2}$/.test(p)){ const [y,m,d]=p.split('-'); return `${d}/${m}/${y}`; }
+  const typ=curTab==='ponctuel'?PONCT_TYPES.find(t=>t[0]===currentType())[1]+' · ':'';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(p)){ const [y,m,d]=p.split('-'); return `${typ}${d}/${m}/${y}`; }
   return p.charAt(0)+p.slice(1).toLowerCase();
 }
 function setBanner(kind,html){ const b=document.getElementById('entryBanner'); if(!b) return; b.className='entry-banner'+(kind?' '+kind:''); b.innerHTML=html||''; }
@@ -311,22 +362,23 @@ async function hebdoRows(resto){
 // ── Charger une saisie existante (pré-remplissage + bandeau) ──
 let loadSeq=0;
 async function loadExisting(){
-  const seq=++loadSeq, tab=curTab, resto=curResto;
-  FIELDS[tab].forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el && !f.auto) el.value=''; });
+  const seq=++loadSeq, tab=curTab, resto=curResto, flds=fieldsFor(tab);
+  flds.forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el && !f.auto) el.value=''; });
   recompute();
   const msg=document.getElementById('saveMsg'); if(msg){ msg.className='save-msg'; msg.textContent=''; }
   if(!configured()){ setBanner('',''); return; }
   setBanner('loading','⏳ Recherche d\'une saisie existante…');
   let data=null;
   try{
-    const u=APPS_SCRIPT_URL+'?frequence='+encodeURIComponent(tab)+'&restaurant='+encodeURIComponent(resto)+'&periode='+encodeURIComponent(currentPeriode())+'&_='+Date.now();
-    const res=await fetch(u); if(res.ok){ const j=await res.json(); data=j&&j.data; if(data&&!Object.keys(data).length) data=null; }
+    let u=APPS_SCRIPT_URL+'?frequence='+encodeURIComponent(tab)+'&restaurant='+encodeURIComponent(resto)+'&periode='+encodeURIComponent(currentPeriode());
+    if(tab==='ponctuel') u+='&type='+encodeURIComponent(currentType());
+    const res=await fetch(u+'&_='+Date.now()); if(res.ok){ const j=await res.json(); data=j&&j.data; if(data&&!Object.keys(data).length) data=null; }
   }catch(e){ if(seq===loadSeq) setBanner('err','⚠️ Impossible de vérifier les saisies existantes (connexion ?). Tu peux quand même saisir.'); return; }
   if(seq!==loadSeq) return;   // l'utilisateur a changé de période entre-temps
   if(data){
     Object.entries(data).forEach(([k,v])=>{
       const el=document.getElementById('f_'+k); if(!el||v==null||v==='') return;
-      el.value=showVal(FIELDS[tab].find(x=>x.k===k),v);
+      el.value=showVal(flds.find(x=>x.k===k),v);
     });
     recompute();
     setBanner('exists','📝 <b>Une saisie existe déjà pour cette période</b> — les valeurs ci-dessous sont celles déjà enregistrées. Modifie-les puis clique sur « Enregistrer » pour les mettre à jour.');
@@ -344,7 +396,7 @@ async function loadExisting(){
         const vals=rows.map(r=>r[k]).filter(v=>typeof v==='number');
         if(!vals.length) return;
         const f=FIELDS.mensuel.find(x=>x.k===k), el=document.getElementById('f_'+k);
-        el.value=showVal(f, Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*1e6)/1e6); el.classList.add('suggest'); filled.push(f.l.replace(/ \(.*\)/,''));
+        el.value=showVal(f, Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*1e6)/1e6); el.classList.add('suggest'); filled.push(f.l);
       });
       if(filled.length){
         const cur=new Date(), cm=MONTHS[cur.getMonth()]+' '+cur.getFullYear();
@@ -358,15 +410,19 @@ async function loadExisting(){
 async function save(){
   const btn=document.getElementById('btnSave'), msg=document.getElementById('saveMsg');
   if(!configured()){ msg.className='save-msg err'; msg.textContent='Non relié au Sheet.'; return; }
+  if(!currentPeriode()){ msg.className='save-msg err'; msg.textContent='Choisis une date.'; return; }
   const data={};
-  FIELDS[curTab].forEach(f=>{
-    const el=document.getElementById('f_'+f.k); if(!el||f.auto) return;
-    let v=(f.type==='textarea')?el.value.trim():num('f_'+f.k);
+  fieldsFor(curTab).forEach(f=>{
+    const el=document.getElementById('f_'+f.k); if(!el) return;
+    if(f.auto && !(curTab==='ponctuel'&&f.k==='score')) return;          // le score RGRV calculé est enregistré
+    let v=(f.type==='textarea'||f.type==='select')?el.value.trim():num('f_'+f.k);
     if(v!=null&&v!==''&&isPct(f)) v=v/100;
+    if(f.auto&&v!=null&&v!=='') v=v/100;                                  // score RGRV affiché en %
     if(v!=null&&v!=='') data[f.k]=v;
   });
   if(Object.keys(data).length===0){ msg.className='save-msg err'; msg.textContent='Rien à enregistrer.'; return; }
   const payload={ action:'save', frequence:curTab, restaurant:curResto, periode:currentPeriode(), data };
+  if(curTab==='ponctuel') payload.type=currentType();
   const where=RESTOS.find(r=>r[0]===curResto)[1]+' · '+periodeLabel();
   btn.disabled=true; msg.className='save-msg'; msg.textContent='Enregistrement…';
   try{
@@ -377,6 +433,10 @@ async function save(){
       setBanner('exists','📝 <b>Une saisie existe pour cette période</b> — tu peux encore modifier les valeurs puis ré-enregistrer.');
       document.querySelectorAll('.field input.suggest').forEach(el=>el.classList.remove('suggest'));
       if(curTab==='hebdomadaire') delete hebdoCache[curResto];
+      // mémorise la dernière saisie pour proposer la période suivante
+      if(curTab!=='ponctuel'){ LAST=LAST||{}; LAST[curTab]=LAST[curTab]||{}; const p=payload.periode, old=LAST[curTab][curResto];
+        const sk=x=>{ const m=String(x||'').match(/^([A-ZÉÛ]+) (\d{4})$/); return m?m[2]+'-'+pad2(MONTHS.indexOf(m[1])+1):String(x||''); };
+        if(!old||sk(p)>sk(old)) LAST[curTab][curResto]=p; }
     } else {
       msg.className='save-msg err'; msg.textContent='Erreur : '+((j&&j.error)||'réponse inattendue du Sheet');
     }

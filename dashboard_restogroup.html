@@ -1137,7 +1137,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span>Recherche</span>
     </a>
-    <a id="btnExporter" onclick="exportView()" class="topbar-intervention" title="Exporter la vue en image" style="cursor:pointer;border-color:#0ea5e9;color:#0284c7">
+    <a id="btnExporter" onclick="openExport()" class="topbar-intervention" title="Exporter en Excel ou en image" style="cursor:pointer;border-color:#0ea5e9;color:#0284c7">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span>Exporter</span>
     </a>
@@ -2035,7 +2035,7 @@ const AVG_KPIS = ['pac','hello_mcdo','analyses_merieux','audit_merieux',
                   'tche_annual','tche_monthly','uvhe_annual','uvhe_monthly',
                   'vphg_annual','vphg_monthly',
                   'marge_fin','pac_fin','cout_mo','marge_annual','pac_annual',
-                  'remboursement_monthly','remboursement_annual',
+                  'remboursement_monthly','remboursement_annual','promotion_monthly','promotion_annual',
                   'pertes_monthly','pertes_annual','ecart_rendement_monthly','ecart_rendement_annual',
                   'effectif_monthly','etp_monthly',
                   'dig_fid_actifs','dig_cc_ca','dig_uber_ca','dig_lad_ca',
@@ -2071,6 +2071,8 @@ const KPIs = [
   { id:'pertes_annual',           label:'Pertes',                     cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'pertes_monthly'  },
   { id:'ecart_rendement_annual',  label:'Écart de Rendement',         cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'ecart_rendement_monthly' },
   { id:'remboursement_annual',    label:'Remboursement',              cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'remboursement_monthly' },
+  { id:'promotion_annual',        label:'Promotion',                  cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'promotion_monthly', noCompare:true },
+  { id:'ecart_caisse_total',      label:'Écart de Caisse',            cat:'fin',  fmt:'euros2',   monthly:false, hasMonthly:'ecart_caisse_monthly', noCompare:true },
   { id:'pac_annual',              label:'PAC',                        cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'pac_fin',      prevKey:'pac_fin_prev'      },
   { id:'cout_mo',                 label:"Coût Main d'Œuvre",          cat:'fin',  fmt:'pct2',     monthly:true,                             prevKey:'cout_mo_prev'      },
   { id:'cash_flow',               label:'Cash Flow',                  cat:'fin',  fmt:'euros',    monthly:true,                             prevKey:'cash_flow_prev'    },
@@ -2114,7 +2116,7 @@ let restoSelection = null; // { members:[...], label:'...' }
 const SUM_RESTO = new Set([
   'ca_total','ca_alim','tacs','cash_flow','resultat_net',
   'hcomp_total','hsup_total','hcomp_monthly','hsup_monthly',
-  'effectif_monthly','etp_monthly'
+  'effectif_monthly','etp_monthly','ecart_caisse_total','ecart_caisse_monthly'
 ]);
 
 // Marchés prédéfinis (modifiables). Par défaut = les 2 secteurs superviseurs.
@@ -2434,6 +2436,15 @@ function calcSemesterComparable(kpiId, resto, year, months, refYear) {
 
 // KPIs qui ont un comparable à date (clé _comparable dans les données 2025)
 const COMPARABLE_KPIS = new Set(['ca_total','ca_alim','tacs','pm','vphe']);
+(function () {
+  const ratio = fn => function (kpiId, ...args) {
+    if (kpiId === 'pm') { const c = fn('ca_total', ...args), t = fn('tacs', ...args); return (c != null && t) ? c / t : null; }
+    return fn(kpiId, ...args);
+  };
+  calcAnnual = ratio(calcAnnual); calcAnnualUpTo = ratio(calcAnnualUpTo);
+  calcSemester = ratio(calcSemester); calcSemesterOverMonths = ratio(calcSemesterOverMonths);
+  calcSemesterComparable = ratio(calcSemesterComparable); calcAnnualComparable = ratio(calcAnnualComparable);
+})();
 
 // Récupère la valeur comparable à date pour 2025 (mois partiel uniquement)
 function getComparableVal(kpiId, resto, year, month) {
@@ -3886,159 +3897,99 @@ const BANNER_TYPES = {
   info:     { label:'Info',     emoji:'💡', color:'#3b82f6', bg:'#eff6ff' },
 };
 
-// Messages stockés en mémoire (modifiables par Matthieu)
-// ── BANNIÈRES GIST SYNC ──────────────────────────────────────
-// Lecture publique (sans token) + Écriture avec token stocké localement
-const GIST_ID    = 'cab2599441f4b8373d43f6aea982a1c6';
-const GIST_FILE  = 'banners.json';
-const GIST_RAW   = `https://gist.githubusercontent.com/matthieujacobmcd-beep/${GIST_ID}/raw/${GIST_FILE}`;
-const GIST_API   = `https://api.github.com/gists/${GIST_ID}`;
-const TOKEN_KEY  = 'fpy_gist_token'; // stocké en localStorage sur TON appareil uniquement
-
+/* PATCH_20261001 */
+// ── BANNIÈRES : enregistrées dans le Google Sheet (onglet « Bannieres ») ──
+// Publication directe depuis le dashboard (double-clic / appui long sur le logo),
+// visibles par tous dès l'ajout. Comme pour Franchise MJ.
+const BANNERS_API = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXMj0WBqA1lZueFh6rVm1E8UQAvb7ClCh3JUmbcjOfvs0zPphuw/exec';
+const BANNERS_CACHE = 'fpy_banners_cache';
 let BANNERS = [];
 
-function getGistToken() {
-  return localStorage.getItem(TOKEN_KEY) || '';
+function _normBanner(b) {
+  return { id: String(b.id), type: b.type || 'info', restaurant: b.restaurant || '',
+           title: b.titre || b.title || '', msg: b.message || b.msg || '', date: b.date || '',
+           ts: String(b.horodatage || '') };
 }
-
 async function loadBanners() {
-  // SANS TOKEN : les bannières sont lues depuis banners.json hébergé dans le
-  // même dépôt GitHub Pages que le dashboard (lecture publique, tous appareils).
-  // Bascule sur l'ancien Gist tant que banners.json n'existe pas encore.
+  try { const c = localStorage.getItem(BANNERS_CACHE); if (c) { BANNERS = JSON.parse(c); renderBanners(); } } catch (e) {}
   try {
-    let res = await fetch('banners.json?t=' + Date.now());
-    if (!res.ok) res = await fetch(GIST_RAW + '?t=' + Date.now());
-    if (res.ok) {
-      const data = await res.json();
-      BANNERS = Array.isArray(data) ? data : [];
+    const res = await fetch(BANNERS_API + '?action=banners&_=' + Date.now());
+    const j = await res.json();
+    if (j && j.ok && Array.isArray(j.rows)) {
+      BANNERS = j.rows.map(_normBanner).sort((a, b) => b.ts.localeCompare(a.ts));
+      try { localStorage.setItem(BANNERS_CACHE, JSON.stringify(BANNERS)); } catch (e) {}
+    } else {
+      // transition : ancien fichier banners.json tant que le Sheet n'a pas d'onglet Bannieres
+      const r2 = await fetch('banners.json?t=' + Date.now());
+      if (r2.ok) { const d = await r2.json(); if (Array.isArray(d)) BANNERS = d.map(_normBanner); }
     }
-  } catch(e) { console.log('Bannières non disponibles', e); }
+  } catch (e) { console.log('Bannières non disponibles', e); }
   renderBanners();
-}
-
-function githubEditUrl() {
-  // Déduit l'URL d'édition GitHub de banners.json à partir de l'adresse du site
-  if (!location.hostname.endsWith('.github.io')) return null;
-  const user = location.hostname.replace('.github.io', '');
-  const segs = location.pathname.split('/').filter(Boolean);
-  const repo = segs.length >= 2 ? segs[0] : location.hostname;
-  return `https://github.com/${user}/${repo}/edit/main/banners.json`;
-}
-
-async function saveBanners() {
-  // SANS TOKEN : le navigateur ne peut pas écrire sur GitHub sans secret.
-  // On copie donc le JSON prêt à coller et on ouvre l'éditeur GitHub
-  // (ta session GitHub habituelle suffit, aucun token à configurer).
-  const json = JSON.stringify(BANNERS, null, 2);
-  let copied = false;
-  try { await navigator.clipboard.writeText(json); copied = true; } catch(e) {}
-  const url = githubEditUrl();
-  if (url) {
-    alert((copied ? '📋 JSON copié dans le presse-papiers.\n\n'
-                  : '') +
-          'GitHub va s\'ouvrir sur banners.json :\n' +
-          '1. Sélectionne tout le contenu (Cmd+A) et colle (Cmd+V)\n' +
-          '2. Clique « Commit changes »\n\n' +
-          'Les bannières seront visibles par tout le monde en ~1 minute.' +
-          (copied ? '' : '\n\n(Copie automatique impossible — le JSON va s\'afficher, copie-le à la main.)'));
-    if (!copied) prompt('Copie ce JSON :', json);
-    window.open(url, '_blank');
-  } else {
-    prompt('Copie ce JSON et colle-le dans banners.json de ton dépôt GitHub :', json);
-  }
+  if (document.getElementById('bannerModal')?.classList.contains('open')) renderBannerModal();
 }
 
 function renderBanners() {
   const el = document.getElementById('bannersWrap');
   const iw = document.getElementById('interventionWrap');
   if (!el) return;
-
-  // Bannières campagnes
-  if (BANNERS.length) {
-    el.innerHTML = `<div class="banners-wrap">` +
-      BANNERS.map(b => {
-        const t = BANNER_TYPES[b.type] || BANNER_TYPES.info;
-        return `<div class="banner" style="--b-color:${t.color};--b-bg:${t.bg}">
-          <div class="banner-ico">${t.emoji}</div>
-          <div class="banner-body">
-            <div class="banner-type">${t.label}</div>
-            <div class="banner-title">${b.title}</div>
-            <div class="banner-msg">${b.msg}</div>
-            ${b.date ? `<div class="banner-date">${b.date}</div>` : ''}
-          </div>
-        </div>`;
-      }).join('') +
-`</div>`;
-  } else {
-    el.innerHTML = '';
-  }
-
-  // Intervention maintenant dans la topbar
+  const r = (typeof currentResto !== 'undefined') ? currentResto : 'FRANCHISE';
+  const list = BANNERS.filter(b => !b.restaurant || r === 'FRANCHISE' || b.restaurant === r);
+  el.innerHTML = list.length ? `<div class="banners-wrap">` + list.map(b => {
+    const t = BANNER_TYPES[b.type] || BANNER_TYPES.info;
+    const who = b.restaurant ? ` · ${restoDisplay(b.restaurant)}` : '';
+    return `<div class="banner" style="--b-color:${t.color};--b-bg:${t.bg}">
+      <div class="banner-ico">${t.emoji}</div>
+      <div class="banner-body">
+        <div class="banner-type">${t.label}${who}</div>
+        <div class="banner-title">${b.title}</div>
+        <div class="banner-msg">${b.msg}</div>
+        ${b.date ? `<div class="banner-date">${b.date}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('') + `</div>` : '';
   if (iw) iw.innerHTML = '';
-}
-
-function saveToken() {
-  const t = document.getElementById('bTokenInput').value.trim();
-  if (!t) return;
-  localStorage.setItem(TOKEN_KEY, t);
-  updateTokenStatus();
-  alert('✅ Token sauvegardé sur cet appareil !');
-}
-
-function updateTokenStatus() {
-  const el = document.getElementById('bTokenStatus');
-  if (!el) return;
-  const saved = localStorage.getItem(TOKEN_KEY);
-  const input = document.getElementById('bTokenInput')?.value.trim();
-  if (saved) {
-    el.innerHTML = `<span style="color:#16a34a">✅ Token configuré (${saved.slice(0,8)}...)</span>`;
-  } else if (input) {
-    el.innerHTML = `<span style="color:#f59e0b">⚠️ Non sauvegardé — clique Sauver</span>`;
-  } else {
-    el.innerHTML = `<span style="color:#dc2626">❌ Aucun token — tu ne pourras pas modifier les bannières</span>`;
-  }
 }
 
 function openBannerAdmin() {
   const modal = document.getElementById('bannerModal');
   if (!modal) return;
   modal.classList.add('open');
-  renderBannerModal();
-  // Attendre que le DOM soit prêt
-  setTimeout(() => {
-    const saved = localStorage.getItem(TOKEN_KEY);
-    const input = document.getElementById('bTokenInput');
-    if (input && saved) input.value = saved;
-    updateTokenStatus();
-  }, 50);
-}
-
-function closeBannerAdmin() {
-  document.getElementById('bannerModal')?.classList.remove('open');
-}
-
-function deleteBanner(id) {
-  BANNERS = BANNERS.filter(b => b.id !== id);
-  saveBanners();
-  renderBanners();
+  const sel = document.getElementById('bResto');
+  if (sel && !sel.options.length)
+    sel.innerHTML = '<option value="">Tous les restaurants</option>' + RESTOS.map(x => `<option value="${x}">${restoDisplay(x)}</option>`).join('');
   renderBannerModal();
 }
+function closeBannerAdmin() { document.getElementById('bannerModal')?.classList.remove('open'); }
+function _bannerStatus(txt, err) { const s = document.getElementById('bannerStatus'); if (s) { s.textContent = txt; s.style.color = err ? 'var(--red)' : 'var(--muted)'; } }
 
-function addBanner() {
-  const type  = document.getElementById('bType').value;
+async function _bannerPost(body) {
+  const res = await fetch(BANNERS_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) });
+  return res.json();
+}
+async function addBanner() {
   const title = document.getElementById('bTitle').value.trim();
   const msg   = document.getElementById('bMsg').value.trim();
-  const date  = document.getElementById('bDate').value.trim();
-  if (!title || !msg) { alert('Titre et message requis'); return; }
-  BANNERS.push({ id: Date.now(), type, title, msg, date });
-  saveBanners();
-  renderBanners();
-  renderBannerModal();
-  document.getElementById('bTitle').value = '';
-  document.getElementById('bMsg').value = '';
-  document.getElementById('bDate').value = '';
+  if (!title || !msg) { _bannerStatus('Titre et message requis.', true); return; }
+  _bannerStatus('Publication…');
+  try {
+    const j = await _bannerPost({ action: 'banner_add', banner_type: document.getElementById('bType').value,
+      restaurant: document.getElementById('bResto')?.value || '', titre: title, message: msg,
+      date: document.getElementById('bDate').value.trim() });
+    if (!j.ok) { _bannerStatus('Erreur : ' + (j.error || 'inconnue'), true); return; }
+    ['bTitle', 'bMsg', 'bDate'].forEach(id => { document.getElementById(id).value = ''; });
+    _bannerStatus('✓ Publiée — visible par tous.');
+    await loadBanners();
+  } catch (e) { _bannerStatus("Erreur d'envoi (connexion ?).", true); }
 }
-
+async function deleteBanner(id) {
+  if (!confirm('Supprimer cette bannière pour tout le monde ?')) return;
+  _bannerStatus('Suppression…');
+  try {
+    const j = await _bannerPost({ action: 'banner_delete', id: String(id) });
+    _bannerStatus(j.ok ? '✓ Supprimée.' : 'Erreur : ' + (j.error || 'inconnue'), !j.ok);
+    await loadBanners();
+  } catch (e) { _bannerStatus("Erreur d'envoi (connexion ?).", true); }
+}
 function renderBannerModal() {
   const list = document.getElementById('bannerList');
   if (!list) return;
@@ -4046,13 +3997,17 @@ function renderBannerModal() {
     ? '<div style="font-size:.8rem;color:var(--muted);text-align:center;padding:8px">Aucune bannière active</div>'
     : BANNERS.map(b => {
         const t = BANNER_TYPES[b.type] || BANNER_TYPES.info;
+        const who = b.restaurant ? ` <span style="color:var(--muted);font-size:.7rem">(${restoDisplay(b.restaurant)})</span>` : '';
         return `<div class="banner-modal-item">
           <span style="font-size:18px">${t.emoji}</span>
-          <div class="bmi-txt"><b>${b.title}</b><br><span style="color:var(--muted);font-size:.75rem">${b.msg.slice(0,60)}${b.msg.length>60?'…':''}</span></div>
-          <span class="bmi-del" onclick="deleteBanner(${b.id})">✕</span>
+          <div class="bmi-txt"><b>${b.title}</b>${who}<br><span style="color:var(--muted);font-size:.75rem">${b.msg.slice(0,60)}${b.msg.length>60?'…':''}</span></div>
+          <span class="bmi-del" onclick="deleteBanner('${b.id}')" title="Supprimer">✕</span>
         </div>`;
       }).join('');
 }
+// Les bannières suivent le restaurant sélectionné
+const __banOrigRenderMain = renderMain;
+renderMain = function () { __banOrigRenderMain.apply(this, arguments); renderBanners(); };
 
 // ============================================================
 // SPARKLINE
@@ -5010,7 +4965,9 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
 
     // ── 1. QUOTIDIEN → tableaux jour de l'an ──
     const DF = [['ca', 'ca_net_total'], ['alim', 'ca_net_alim'], ['tacs', 'transactions'], ['heures', 'heures_equipier'],
-                ['perte', 'pertes'], ['heures_total', 'heures_totales'], ['remb', 'remboursement']];
+                ['perte', 'pertes'], ['heures_total', 'heures_totales'], ['remb', 'remboursement'],
+                ['promo', 'promotion'], ['ecart', 'ecart_caisse']];
+    const comments = {};   // date ISO → restaurant → { meteo, commentaire }
     const daily = {}; // year -> store -> field -> []
     const years = { 2024: ['ca', 'alim', 'tacs'], 2025: null, 2026: null };
     for (const y of [2024, 2025, 2026]) {
@@ -5026,8 +4983,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const [f, k] of DF) {
         if (years[y] && !years[y].includes(f)) continue;
         const v = numOrNull(row[k]);
-        arrs[f][i] = (v != null && v > 0) ? r2(v) : null;
+        // l'écart de caisse peut être négatif ou nul ; les autres champs : > 0 seulement
+        arrs[f][i] = f === 'ecart' ? (v != null ? r2(v) : null) : ((v != null && v > 0) ? r2(v) : null);
       }
+      const met = String(row.meteo || '').trim(), com = String(row.commentaire || '').trim();
+      if (met || com) (comments[p] = comments[p] || {})[s] = { meteo: met || null, commentaire: com || null };
     }
     // pas de CA 2026 saisi → on garde tout en l'état
     const lastDays = {};
@@ -5224,6 +5184,15 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         },
       });
     }
+    // Promotion (% du CA alim) et Écart de caisse (€) : sommes des saisies quotidiennes
+    Y26.promotion_monthly = monthlyTable('2026', 'promotion_monthly', '__none__', wAlim('2026'), {
+      filter: 'any',
+      transform: (v, s, m) => { const p = dsum(2026, s, MONTHS.indexOf(m) + 1, 'promo'), a = ((Y26.ca_alim[m] || {})[s]); return (p != null && a) ? p / a : null; },
+    });
+    Y26.ecart_caisse_monthly = monthlyTable('2026', 'ecart_caisse_monthly', '__none__', AGG.sum, {
+      filter: 'any',
+      transform: (v, s, m) => dsum(2026, s, MONTHS.indexOf(m) + 1, 'ecart'),
+    });
     Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
     for (const [k, sk] of [['dig_fid_actifs', 'fid_actifs'], ['dig_cc_ca', 'cc_ca'], ['dig_uber_ca', 'uber_ca'], ['dig_lad_ca', 'lad_ca']]) {
       Y26[k + '_m'] = monthlyTable('2026', k + '_m', sk, wTot('2026'), { filter: 'any' });
@@ -5274,6 +5243,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const [k, t] of [['pertes_annual', 'pertes_monthly'], ['ecart_rendement_annual', 'ecart_rendement_monthly'], ['remboursement_annual', 'remboursement_monthly']])
         Y[k] = annual(y, k, [t], () => perStore(colWeighted(Y[t], Y.ca_alim), franchiseWeighted(Y[t], Y.ca_alim)));
     }
+    Y26.promotion_annual = perStore(colWeighted(Y26.promotion_monthly, Y26.ca_alim), franchiseWeighted(Y26.promotion_monthly, Y26.ca_alim));
+    Y26.ecart_caisse_total = perStore(colSum(Y26.ecart_caisse_monthly), r => AGG.sum(r));
     Y26.uvhe_annual = annual('2026', 'uvhe_annual', ['uvhe_monthly'], () => perStore(colMean(Y26.uvhe_monthly)));
     for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca'])
       Y26[k] = annual('2026', k, [k + '_m'], () => perStore(colWeighted(Y26[k + '_m'], Y26.ca_total), franchiseWeighted(Y26[k + '_m'], Y26.ca_total)));
@@ -5298,10 +5269,32 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     Y26.cfv = annualSheet('2026', 'cfv', 'cfv', true);
     Y26.ppfv = annualSheet('2026', 'ppfv', 'ppfv', true);
 
+    // ── 6 bis. PONCTUEL (visites & audits datés) : prend le pas sur l'annuel ──
+    const PONC = (S.ponctuel || []).map(r => ({ p: normPeriode(r.periode), s: String(r.restaurant || '').trim().toUpperCase(),
+                                                t: String(r.type || '').trim().toUpperCase(), r }))
+                                   .filter(x => STORES.includes(x.s) && /^\d{4}-/.test(x.p)).sort((a, b) => a.p < b.p ? -1 : 1);
+    function ponctOverlay(y, key, type, mode) {
+      const rows = PONC.filter(x => x.t === type && x.p.startsWith(y)); if (!rows.length) return;
+      const cur = OUT[y][key] ? clone(OUT[y][key]) : {};
+      for (const s of STORES) {
+        const sc = rows.filter(x => x.s === s).map(x => numOrNull(x.r.score)).filter(isNum);
+        if (sc.length) cur[s] = mode === 'last' ? sc[sc.length - 1] : mean(sc);
+      }
+      cur.FRANCHISE = mean(STORES.map(s => cur[s]));
+      OUT[y][key] = cur;
+    }
+    for (const y of ['2026', '2025']) {
+      ponctOverlay(y, 'audit_merieux_annual', 'AUDIT_MERIEUX', 'mean');
+      ponctOverlay(y, 'analyses_merieux_annual', 'ANALYSE_SILLIKER', 'mean');
+    }
+    ponctOverlay('2026', 'cfv', 'CFV', 'last');
+    ponctOverlay('2026', 'ppfv', 'PPFV', 'last');
+
     // ── 7. RGRV : dernière visite de l'année par restaurant ──
     const RG = [['QUALITE', 'qualite'], ['SERVICE', 'service'], ['PROPRETE', 'proprete'], ['GESTION DE QUART', 'gestion_quart'], ['PREVENTION ET SECURITE', 'securite_prevention']];
     const lastVisit = {};
-    for (const r of S.rgrv || []) {
+    const rgrvRows = [...(S.rgrv || []), ...(S.ponctuel || []).filter(r => String(r.type || '').toUpperCase() === 'RGRV')];
+    for (const r of rgrvRows) {
       const p = normPeriode(r.periode), s = String(r.restaurant || '').trim().toUpperCase();
       if (!STORES.includes(s) || !p.startsWith('2026')) continue;
       if (!lastVisit[s] || p >= lastVisit[s].p) lastVisit[s] = { p, r };
@@ -5322,7 +5315,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       }
       rgDiff = true;
       RG.forEach(([K], i) => { if (v[i] != null) det[K][s] = v[i]; });
-      const m = mean([...v, alim]); if (m != null) det.TOTAL[s] = m;
+      const sc = numOrNull(lastVisit[s].r.score);       // score global saisi (ponctuel) sinon moyenne
+      const m = sc != null ? sc : mean([...v, alim]); if (m != null) det.TOTAL[s] = m;
     }
     if (!rgDiff && B26.rgrv_detail) { Y26.rgrv_detail = clone(B26.rgrv_detail); Y26.rgrv_total = clone(B26.rgrv_total); }
     else {
@@ -5376,7 +5370,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         for (const e of ALL9) { const v = d24[e][f].slice(i0, i1 + 1).filter(x => x != null); Y24[key][m][e] = v.length ? r2(v.reduce((a, b) => a + b, 0)) : null; }
       }
       Y24.pm[m] = {};
-      for (const e of ALL9) { const a = Y24.ca_alim[m][e], t = Y24.tacs[m][e]; Y24.pm[m][e] = (a && t) ? r2(a / t) : null; }
+      for (const e of ALL9) { const c = Y24.ca_total[m][e], t = Y24.tacs[m][e]; Y24.pm[m][e] = (c && t) ? r2(c / t) : null; }
     });
 
     // ordre des clés : celui de BASE (facilite les comparaisons), puis les nouvelles
@@ -5385,6 +5379,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const k of Object.keys(Y)) if (!(k in ordered) && Y[k] !== undefined) ordered[k] = Y[k];
       for (const k of Object.keys(Y)) delete Y[k]; Object.assign(Y, ordered);
     }
+    OUT.comments = comments;
     return OUT;
   }
 
@@ -5476,12 +5471,8 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
 <div class="banner-modal-overlay" id="bannerModal" onclick="if(event.target===this)closeBannerAdmin()">
   <div class="banner-modal">
     <h3>📌 Gérer les bannières</h3>
-    <div id="bannerTokenSection" style="margin-bottom:12px">
-      <div style="font-size:.72rem;color:var(--muted);line-height:1.5;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
-        📡 <b>Publication sans token</b> : compose ou supprime tes bannières ci-dessous,
-        puis « Ajouter » copie le contenu et ouvre <b>banners.json</b> sur GitHub —
-        colle et valide « Commit changes ». Visible par tous en ~1 minute, depuis n'importe quel appareil.
-      </div>
+    <div style="font-size:.72rem;color:var(--muted);line-height:1.5;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+      📡 Les bannières sont enregistrées dans le Google Sheet : <b>« Ajouter » les publie immédiatement</b> pour tout le monde, ✕ les retire.
     </div>
     <div class="banner-modal-list" id="bannerList"></div>
     <div class="banner-form">
@@ -5491,6 +5482,7 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
         <option value="objectif">🎯 Objectif</option>
         <option value="info">💡 Info</option>
       </select>
+      <select id="bResto"></select>
       <input id="bTitle" placeholder="Titre de la bannière *" maxlength="60">
       <textarea id="bMsg" placeholder="Message *" maxlength="300"></textarea>
       <input id="bDate" placeholder="Période (ex: Juillet 2026)">
@@ -5498,6 +5490,7 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
         <button class="btn-cancel-banner" onclick="closeBannerAdmin()">Annuler</button>
         <button class="btn-add-banner" onclick="addBanner()">Ajouter</button>
       </div>
+      <div id="bannerStatus" style="font-size:.78rem;font-weight:600;min-height:16px"></div>
     </div>
   </div>
 </div>
@@ -5528,6 +5521,16 @@ body.dark-mode .wk-label { color: #b794f4; }
 .wk-up { color: #16a34a; } .wk-down { color: #dc2626; }
 .week-detail { margin-top: 12px; background: var(--card); border-radius: 12px; padding: 14px; border: 1px solid var(--border); }
 .week-detail-title { font-size: .8rem; font-weight: 800; margin-bottom: 10px; color: var(--text); }
+.wk-nav { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.wk-nav button { border: 1.5px solid rgba(139,92,246,.35); background: var(--card); color: #7c3aed; border-radius: 8px; padding: 3px 10px; font-weight: 800; cursor: pointer; font-size: .75rem; }
+.wk-nav button:disabled { opacity: .35; cursor: default; }
+.wk-nav .wk-now { background: #8b5cf6; color: #fff; border-color: #8b5cf6; }
+.wk-comments { margin-top: 10px; }
+.wk-days { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.wk-day { font-size: .7rem; font-weight: 700; color: var(--muted); background: var(--card); border: 1.5px solid var(--border); border-radius: 8px; padding: 3px 8px; }
+.wk-day-on { color: var(--text); border-color: rgba(139,92,246,.45); }
+.wk-com { font-size: .76rem; color: var(--text); padding: 3px 2px; line-height: 1.45; }
+.wk-com b { color: #7c3aed; }
 @media (max-width: 700px) {
   .week-cards { grid-template-columns: 1fr 1fr; }
   .week-card { padding: 9px 11px; }
@@ -5537,7 +5540,124 @@ body.dark-mode .wk-label { color: #b794f4; }
 }
 </style>
 <script>
-const WEEK = DASHBOARD_DATA.week || null;
+const WEEK = DASHBOARD_DATA.week || {};
+// ── Navigation semaine : la semaine est recalculée à partir du quotidien ──
+// 0 = semaine en cours (celle du dernier jour saisi), -1 = semaine précédente…
+let weekOffset = 0;
+const _WD = 86400000;
+const _wkIso = t => new Date(t).toISOString().slice(0, 10);
+const _wkFmt = d => d.slice(8, 10) + '/' + d.slice(5, 7);
+function _wkLastDay() {
+  const ld = (DASHBOARD_DATA.meta || {}).last_day_by_resto || {};
+  let m = null; for (const d of Object.values(ld)) if (d && (!m || d > m)) m = d; return m;
+}
+function _wkVal(dateIso, resto, field) {
+  const y = dateIso.slice(0, 4), arr = DASHBOARD_DATA.daily?.[y]?.[resto]?.[field];
+  if (!arr) return null;
+  const i = Math.round((Date.parse(dateIso + 'T00:00:00Z') - Date.UTC(+y, 0, 1)) / _WD);
+  return arr[i] ?? null;
+}
+function _wkIsoWeek(t) {
+  const d = new Date(t); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3);
+  const f = Date.UTC(d.getUTCFullYear(), 0, 4);
+  return 1 + Math.round(((d - f) / _WD - 3 + ((new Date(f).getUTCDay() + 6) % 7)) / 7);
+}
+function _wkMonday(off) {
+  const last = _wkLastDay(); if (!last) return null;
+  const lt = Date.parse(last + 'T00:00:00Z'), dow = (new Date(lt).getUTCDay() + 6) % 7;
+  return lt - dow * _WD + off * 7 * _WD;
+}
+// Première semaine navigable : celle qui contient le 1er janvier de l'année en cours
+function _wkMinOffset() {
+  const last = _wkLastDay(); if (!last) return 0;
+  const jan1 = Date.UTC(+last.slice(0, 4), 0, 1), dow = (new Date(jan1).getUTCDay() + 6) % 7;
+  return Math.round(((jan1 - dow * _WD) - _wkMonday(0)) / (7 * _WD));
+}
+function buildWeek(off) {
+  const last = _wkLastDay(); if (!last || !DASHBOARD_DATA.daily) return false;
+  const mon = _wkMonday(off);
+  const days = [...Array(7)].map((_, i) => _wkIso(mon + i * _WD));
+  const daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
+  const elapsed = days.map(d => d <= last);            // on ne compare que les jours écoulés
+  const nEl = elapsed.filter(Boolean).length;
+  const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte' };
+  // Comparaison équitable : pour chaque restaurant, un jour n'est comparé (N-1 et
+  // prévisionnel) que s'il est saisi cette année. La Franchise = somme des restaurants.
+  const kp = {}, has = {};
+  for (const r of RESTOS) has[r] = days.map((d, i) => elapsed[i] && _wkVal(d, r, 'ca') != null);
+  const sumDay = (obj, i) => { let s = 0, any = false; for (const r of RESTOS) { const v = obj[r][i]; if (v != null) { s += v; any = true; } } return any ? s : null; };
+  for (const [k, f] of Object.entries(F)) {
+    kp[k] = { cur: {}, n1: {} };
+    for (const r of RESTOS) {
+      kp[k].cur[r] = days.map((d, i) => has[r][i] ? _wkVal(d, r, f) : null);
+      kp[k].n1[r]  = daysN1.map((d, i) => has[r][i] ? _wkVal(d, r, f) : null);
+    }
+    kp[k].cur.FRANCHISE = days.map((_, i) => sumDay(kp[k].cur, i));
+    kp[k].n1.FRANCHISE  = days.map((_, i) => sumDay(kp[k].n1, i));
+  }
+  // CA prévisionnel : budget mensuel ramené au jour, sur les jours saisis
+  const prev = {};
+  let pF = 0, pFany = false;
+  for (const r of RESTOS) {
+    let s = 0, any = false;
+    days.forEach((d, i) => {
+      if (!has[r][i]) return;
+      const y = +d.slice(0, 4), mi = +d.slice(5, 7) - 1;
+      const mv = DASHBOARD_DATA[String(y)]?.ca_total_prev?.[MONTHS[mi]]?.[r];
+      if (mv != null) { s += mv / new Date(Date.UTC(y, mi + 1, 0)).getUTCDate(); any = true; }
+    });
+    prev[r] = any ? s : null;
+    if (any) { pF += s; pFany = true; }
+  }
+  prev.FRANCHISE = pFany ? pF : null;
+  const partial = nEl < 7, n1Last = daysN1[Math.max(nEl, 1) - 1];
+  const nw = {
+    label: `Semaine ${_wkIsoWeek(mon)} · du ${_wkFmt(days[0])} au ${_wkFmt(days[6])}/${days[6].slice(0, 4)}` + (partial ? ` · en cours (au ${_wkFmt(last)})` : ''),
+    label_n1: `du ${_wkFmt(daysN1[0])} au ${_wkFmt(n1Last)}/${n1Last.slice(0, 4)}`,
+    days, days_n1: daysN1, kpis: kp, prev, partial, offset: off,
+    yearCur: days[0].slice(0, 4), yearN1: daysN1[0].slice(0, 4),
+  };
+  for (const k of Object.keys(WEEK)) delete WEEK[k];
+  Object.assign(WEEK, nw);
+  return true;
+}
+function weekNav(dir, reset) {
+  const min = _wkMinOffset();
+  weekOffset = reset ? 0 : Math.min(0, Math.max(min, weekOffset + dir));
+  renderWeekStrip();
+  if (typeof renderAutoSummary === 'function') renderAutoSummary();
+}
+buildWeek(weekOffset);
+
+// Météo & commentaires saisis au quotidien
+const METEO_ICO = { soleil: '☀️', nuageux: '⛅', pluie: '🌧️', orage: '⛈️', neige: '❄️', brouillard: '🌫️', canicule: '🥵', vent: '💨' };
+function weekComments(r) {
+  const C = DASHBOARD_DATA.comments || {}, out = [];
+  const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  (WEEK.days || []).forEach((d, i) => {
+    const byR = C[d] || {};
+    for (const [resto, c] of Object.entries(byR)) {
+      if (r !== 'FRANCHISE' && resto !== r) continue;
+      out.push({ i, jour: `${JOURS[i]} ${_wkFmt(d)}`, resto, meteo: c.meteo, txt: c.commentaire });
+    }
+  });
+  return out;
+}
+function renderWeekComments(r) {
+  const list = weekComments(r);
+  if (!list.length) return '';
+  const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  // une pastille par jour : météo du restaurant (ou nombre de commentaires en vue Franchise)
+  const chips = (WEEK.days || []).map((d, i) => {
+    const items = list.filter(x => x.i === i);
+    const ico = r !== 'FRANCHISE' ? (items.map(x => METEO_ICO[x.meteo]).find(Boolean) || '') : '';
+    const n = items.filter(x => x.txt).length;
+    return `<span class="wk-day ${items.length ? 'wk-day-on' : ''}" title="${items.map(x => (r === 'FRANCHISE' ? restoShort(x.resto) + ' : ' : '') + (x.txt || '')).join(' · ').replace(/"/g, '&quot;')}">${JOURS[i]} ${d.slice(8, 10)} ${ico}${n ? ` 💬${r === 'FRANCHISE' && n > 1 ? n : ''}` : ''}</span>`;
+  }).join('');
+  const lines = list.filter(x => x.txt || x.meteo).map(x =>
+    `<div class="wk-com"><b>${x.jour}</b>${r === 'FRANCHISE' ? ` · ${restoShort(x.resto)}` : ''} ${METEO_ICO[x.meteo] || ''} ${x.txt ? '— ' + x.txt.replace(/</g, '&lt;') : ''}</div>`).join('');
+  return `<div class="wk-comments"><div class="wk-days">${chips}</div>${lines}</div>`;
+}
 let weekOpenKpi = null;
 let weekResto = 'FRANCHISE';
 let weekChartInst = null;
@@ -5609,11 +5729,18 @@ function weekDayArr(id, side, r) {
 function renderWeekStrip() {
   const el = document.getElementById('weekStrip');
   if (!el) return;
-  if (!WEEK) { el.innerHTML = ''; return; }
+  if (!buildWeek(weekOffset)) { el.innerHTML = ''; return; }
   const r = weekResto || 'FRANCHISE';
+  const minOff = _wkMinOffset();
+  const nav = `<span class="wk-nav">
+      <button onclick="weekNav(-1)" ${weekOffset > minOff ? '' : 'disabled'} title="Semaine précédente">◀</button>
+      <button onclick="weekNav(1)" ${weekOffset < 0 ? '' : 'disabled'} title="Semaine suivante">▶</button>
+      ${weekOffset < 0 ? '<button class="wk-now" onclick="weekNav(0,true)">Semaine en cours</button>' : ''}
+    </span>`;
   let h = `<div class="week-strip"><div class="week-strip-head">
     <span class="week-strip-title" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${WEEK.label}</span>
-    <span class="week-strip-sub">vs semaine équivalente 2025 (${WEEK.label_n1})</span>
+    <span class="week-strip-sub">vs semaine équivalente ${WEEK.yearN1} (${WEEK.label_n1})</span>
+    ${nav}
   </div>
   ${restoCarousel(weekResto, 'weekNavResto', '#8b5cf6', 'wkCar')}
   <div class="week-cards">`;
@@ -5626,10 +5753,14 @@ function renderWeekStrip() {
     h += `<div class="week-card ${weekOpenKpi === k.id ? 'wk-active' : ''}" onclick="toggleWeekKpi('${k.id}')">
       <div class="wk-label">${k.label}</div>
       <div class="wk-value">${fmt(v, k.fmt)}</div>
-      ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs 2025</span></div>`}
+      ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs ${WEEK.yearN1}</span></div>`}
+      ${(() => { if (k.id !== 'ca_total') return '';
+          const pv = WEEK.prev?.[r]; if (v == null || !pv) return '';
+          const dp = (v - pv) / pv * 100;
+          return `<div class="wk-delta ${dp >= 0 ? 'wk-up' : 'wk-down'}">🎯 ${dp >= 0 ? '▲ +' : '▼ '}${Math.abs(dp).toFixed(1)}% <span>vs prév. (${fmt(pv, 'euros')})</span></div>`; })()}
     </div>`;
   }
-  h += `</div><div id="weekDetail"></div></div>`;
+  h += `</div>${renderWeekComments(r)}<div id="weekDetail"></div></div>`;
   el.innerHTML = h;
   bindCarSwipe('wkCar', weekNavResto);
   if (weekOpenKpi) renderWeekDetail();
@@ -5667,7 +5798,7 @@ function renderWeekDetail() {
     <div class="week-detail-title">${k.label} — détail quotidien · ${r === 'FRANCHISE' ? 'Vue Franchise' : r}</div>
     <div style="height:230px;margin-bottom:12px"><canvas id="weekChartCanvas"></canvas></div>
     <div style="overflow-x:auto"><table class="data-table"><thead>
-      <tr><th>Jour</th><th>2026</th><th>2025 (jour équivalent)</th><th class="delta">Δ</th></tr></thead>
+      <tr><th>Jour</th><th>${WEEK.yearCur}</th><th>${WEEK.yearN1} (jour équivalent)</th><th class="delta">Δ</th></tr></thead>
       <tbody>${rows}
       <tr style="font-weight:800;border-top:2px solid var(--border)"><td>Total semaine</td>
         <td>${fmt(tot, k.fmt)}</td><td>${fmt(totp, k.fmt)}</td>
@@ -5680,9 +5811,9 @@ function renderWeekDetail() {
     weekChartInst = new Chart(canvas, {
       type: 'line',
       data: { labels: dd, datasets: [
-        { label: '2026', data: cur, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.10)',
+        { label: WEEK.yearCur, data: cur, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.10)',
           tension: .3, pointRadius: 3, borderWidth: 2.5, fill: true, spanGaps: true },
-        { label: '2025 (jour équivalent)', data: n1, borderColor: '#3b82f6', borderDash: [5, 3],
+        { label: WEEK.yearN1 + ' (jour équivalent)', data: n1, borderColor: '#3b82f6', borderDash: [5, 3],
           backgroundColor: 'transparent', tension: .3, pointRadius: 3, borderWidth: 2, spanGaps: true } ] },
       options: { responsive: true, maintainAspectRatio: false,
         plugins: { legend: { labels: { color: '#6b7280', font: { size: 11 }, boxWidth: 12 } },
@@ -6353,6 +6484,230 @@ async function exportView() {
 }
 </script>
 
+<!-- ════════ EXPORT EXCEL / IMAGE ════════ -->
+<style>
+#exportModal { display:none; position:fixed; inset:0; z-index:10000; background:rgba(15,17,23,.55); align-items:flex-start; justify-content:center; padding:5vh 14px; overflow-y:auto; }
+#exportModal.open { display:flex; }
+.exp-box { background:var(--bg); border-radius:18px; width:min(860px,100%); padding:20px 22px 22px; box-shadow:0 24px 70px rgba(0,0,0,.4); border:1px solid var(--border); }
+.exp-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.exp-title { font-size:1.02rem; font-weight:800; color:var(--text); display:flex; align-items:center; gap:9px; }
+.exp-title-ico { width:30px; height:30px; border-radius:9px; background:rgba(14,165,233,.14); display:inline-flex; align-items:center; justify-content:center; }
+.exp-close { cursor:pointer; font-size:1.1rem; color:var(--muted); width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:8px; }
+.exp-close:hover { background:var(--card2); color:var(--text); }
+.exp-lbl { font-size:.66rem; font-weight:800; letter-spacing:.7px; text-transform:uppercase; color:var(--muted); margin:14px 2px 8px; display:flex; align-items:center; gap:10px; }
+.exp-lbl a { text-transform:none; letter-spacing:0; font-weight:700; color:#0284c7; cursor:pointer; font-size:.72rem; }
+.exp-seg { display:flex; gap:8px; flex-wrap:wrap; }
+.exp-seg button, .exp-chips button { padding:8px 14px; border-radius:10px; border:1.5px solid var(--border); background:var(--card); color:var(--text); font-size:.78rem; font-weight:700; cursor:pointer; }
+.exp-seg button.on { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.exp-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.exp-chips button { border-radius:999px; padding:6px 13px; font-size:.74rem; }
+.exp-chips button.on { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.exp-cats { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+.exp-cat { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:9px 11px; }
+.exp-cat-h { display:flex; align-items:center; gap:7px; font-size:.78rem; font-weight:800; margin-bottom:5px; cursor:pointer; }
+.exp-cat label { display:flex; align-items:center; gap:7px; font-size:.76rem; color:var(--text); padding:2px 0; cursor:pointer; }
+.exp-cat input { accent-color:#0ea5e9; }
+.exp-opts label { display:flex; align-items:center; gap:8px; font-size:.8rem; color:var(--text); margin:4px 0; cursor:pointer; }
+.exp-foot { display:flex; align-items:center; gap:12px; margin-top:18px; flex-wrap:wrap; }
+.exp-go { border:none; background:#0ea5e9; color:#fff; font-weight:800; font-size:.9rem; padding:11px 22px; border-radius:11px; cursor:pointer; }
+.exp-go:disabled { opacity:.55; cursor:default; }
+.exp-msg { font-size:.78rem; color:var(--muted); }
+.exp-msg.err { color:var(--red); }
+</style>
+<div id="exportModal" onclick="if(event.target===this)closeExport()">
+  <div class="exp-box">
+    <div class="exp-head">
+      <div class="exp-title"><span class="exp-title-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span> Exporter</div>
+      <span class="exp-close" onclick="closeExport()">✕</span>
+    </div>
+    <div class="exp-lbl">Format</div>
+    <div class="exp-seg" id="expFormat">
+      <button data-v="xlsx" onclick="expSet('format','xlsx')">📊 Excel (.xlsx)</button>
+      <button data-v="png" onclick="expSet('format','png')">🖼️ Image de la vue (.png)</button>
+    </div>
+    <div id="expXlsxOpts">
+      <div class="exp-lbl">Année</div>
+      <div class="exp-seg" id="expYear"></div>
+      <div class="exp-lbl">Restaurants <a onclick="expAllRestos(true)">tous</a><a onclick="expAllRestos(false)">aucun</a></div>
+      <div class="exp-chips" id="expRestos"></div>
+      <div class="exp-lbl">Indicateurs <a onclick="expAllKpis(true)">tous</a><a onclick="expAllKpis(false)">aucun</a></div>
+      <div class="exp-cats" id="expKpis"></div>
+      <div class="exp-lbl">Options</div>
+      <div class="exp-opts">
+        <label><input type="checkbox" id="expN1"> Comparaison avec l'année précédente (à date) et évolution</label>
+        <label><input type="checkbox" id="expSynth"> Feuille « Synthèse » : tous les restaurants côte à côte</label>
+      </div>
+    </div>
+    <div class="exp-foot">
+      <button class="exp-go" id="expGo" onclick="doExport()">Exporter</button>
+      <span class="exp-msg" id="expMsg"></span>
+    </div>
+  </div>
+</div>
+<script>
+// ── Export : sélection mémorisée sur l'appareil ──
+const EXP_KEY = 'fpy_export_sel';
+const CAT_COLORS = { ca:['F59E0B','FFF8E1'], digital:['0EA5E9','E0F2FE'], qsp:['22C55E','E8F5E9'], rh:['3B82F6','E3F2FD'],
+  gestion:['14B8A6','E0F2F1'], fin:['A855F7','F3E8FF'], qual:['F43F5E','FFF1F2'], peak:['F97316','FFF7ED'], formation:['8B5CF6','EDE9FE'] };
+let EXP = null;
+function _expLoad() {
+  let s = null; try { s = JSON.parse(localStorage.getItem(EXP_KEY) || 'null'); } catch (e) {}
+  const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
+  EXP = Object.assign({ format: 'xlsx', year: years[0] || '2026', restos: ['FRANCHISE', ...RESTOS],
+                        kpis: KPIs.map(k => k.id), n1: true, synth: true }, s || {});
+  EXP.restos = EXP.restos.filter(r => r === 'FRANCHISE' || RESTOS.includes(r));
+  EXP.kpis = EXP.kpis.filter(id => KPIs.some(k => k.id === id));
+}
+function _expSave() { try { localStorage.setItem(EXP_KEY, JSON.stringify(EXP)); } catch (e) {} }
+function openExport() {
+  _expLoad();
+  document.getElementById('exportModal').classList.add('open');
+  document.getElementById('expMsg').textContent = '';
+  _expRender();
+}
+function closeExport() { document.getElementById('exportModal').classList.remove('open'); }
+function expSet(k, v) { EXP[k] = v; _expSave(); _expRender(); }
+function expToggleResto(r) { const i = EXP.restos.indexOf(r); i < 0 ? EXP.restos.push(r) : EXP.restos.splice(i, 1); _expSave(); _expRender(); }
+function expToggleKpi(id) { const i = EXP.kpis.indexOf(id); i < 0 ? EXP.kpis.push(id) : EXP.kpis.splice(i, 1); _expSave(); _expRender(); }
+function expToggleCat(cat) {
+  const ids = KPIs.filter(k => k.cat === cat).map(k => k.id), all = ids.every(id => EXP.kpis.includes(id));
+  EXP.kpis = all ? EXP.kpis.filter(id => !ids.includes(id)) : [...new Set([...EXP.kpis, ...ids])]; _expSave(); _expRender();
+}
+function expAllRestos(on) { EXP.restos = on ? ['FRANCHISE', ...RESTOS] : []; _expSave(); _expRender(); }
+function expAllKpis(on) { EXP.kpis = on ? KPIs.map(k => k.id) : []; _expSave(); _expRender(); }
+function _expRender() {
+  document.querySelectorAll('#expFormat button').forEach(b => b.classList.toggle('on', b.dataset.v === EXP.format));
+  document.getElementById('expXlsxOpts').style.display = EXP.format === 'xlsx' ? '' : 'none';
+  const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
+  document.getElementById('expYear').innerHTML = years.map(y => `<button class="${y === EXP.year ? 'on' : ''}" onclick="expSet('year','${y}')">${y}</button>`).join('');
+  document.getElementById('expRestos').innerHTML = ['FRANCHISE', ...RESTOS].map(r =>
+    `<button class="${EXP.restos.includes(r) ? 'on' : ''}" onclick="expToggleResto('${r}')">${restoDisplay(r)}</button>`).join('');
+  const cats = [...new Set(KPIs.map(k => k.cat))];
+  document.getElementById('expKpis').innerHTML = cats.map(c => {
+    const ks = KPIs.filter(k => k.cat === c), all = ks.every(k => EXP.kpis.includes(k.id)), col = '#' + (CAT_COLORS[c] || ['64748B'])[0];
+    return `<div class="exp-cat"><div class="exp-cat-h" style="color:${col}" onclick="expToggleCat('${c}')"><input type="checkbox" ${all ? 'checked' : ''} onclick="event.stopPropagation();expToggleCat('${c}')"> ${CAT_LABELS[c] || c}</div>` +
+      ks.map(k => `<label><input type="checkbox" ${EXP.kpis.includes(k.id) ? 'checked' : ''} onchange="expToggleKpi('${k.id}')"> ${k.label}</label>`).join('') + `</div>`;
+  }).join('');
+  document.getElementById('expN1').checked = !!EXP.n1;
+  document.getElementById('expSynth').checked = !!EXP.synth;
+  document.getElementById('expN1').onchange = e => { EXP.n1 = e.target.checked; _expSave(); };
+  document.getElementById('expSynth').onchange = e => { EXP.synth = e.target.checked; _expSave(); };
+}
+
+function _loadXlsx() {
+  return new Promise((resolve, reject) => {
+    if (typeof XLSX !== 'undefined' && XLSX.utils) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    s.onload = () => resolve(); s.onerror = () => reject(new Error('chargement impossible'));
+    document.head.appendChild(s);
+  });
+}
+async function doExport() {
+  const msg = document.getElementById('expMsg'), btn = document.getElementById('expGo');
+  msg.className = 'exp-msg'; msg.textContent = '';
+  if (EXP.format === 'png') { closeExport(); return exportView(); }
+  if (!EXP.restos.length) { msg.className = 'exp-msg err'; msg.textContent = 'Choisis au moins un restaurant.'; return; }
+  if (!EXP.kpis.length) { msg.className = 'exp-msg err'; msg.textContent = 'Choisis au moins un indicateur.'; return; }
+  btn.disabled = true; msg.textContent = 'Préparation du fichier…';
+  try { await _loadXlsx(); exportExcel(EXP); msg.textContent = '✓ Fichier téléchargé.'; }
+  catch (e) { msg.className = 'exp-msg err'; msg.textContent = 'Export impossible : ' + e.message; }
+  btn.disabled = false;
+}
+
+// ── Modèle Excel ──
+const XL_FMT = { euros:'#,##0 "€"', euros2:'#,##0.00 "€"', nb:'#,##0', nb2:'0.0', pct:'0.0%', pct2:'0.00%', pct_sat:'0.0%',
+                 pct_qual:'0.0%', taux:'0.0%', sec:'0 "s"', note:'0.0 "/5"' };
+const XL_PCT = new Set(['pct', 'pct2', 'pct_sat', 'pct_qual', 'taux']);
+const XL_BORDER = { top:{style:'thin',color:{rgb:'DDE1EA'}}, bottom:{style:'thin',color:{rgb:'DDE1EA'}}, left:{style:'thin',color:{rgb:'DDE1EA'}}, right:{style:'thin',color:{rgb:'DDE1EA'}} };
+const xc = (v, s, z) => { if (v == null || (typeof v === 'number' && !isFinite(v))) return { v: '', t: 's', s }; const c = { v, t: typeof v === 'number' ? 'n' : 's', s }; if (z) { c.z = z; c.s = Object.assign({}, s, { numFmt: z }); } return c; };
+function _xlKpiRow(kpi, r, year, opts, zebra) {
+  const y = +year, fz = XL_FMT[kpi.fmt] || '0.00';
+  const mid = kpi.monthly ? kpi.id : kpi.hasMonthly;
+  const src = mid ? getData(y)[mid] : null;
+  const base = { font: { sz: 10, color: { rgb: '1A1D2E' } }, border: XL_BORDER, fill: zebra ? { fgColor: { rgb: 'F7F8FA' } } : undefined, alignment: { vertical: 'center' } };
+  const row = [xc(kpi.label, Object.assign({}, base, { font: { sz: 10, bold: true, color: { rgb: '1A1D2E' } } }))];
+  MONTHS.forEach(m => row.push(xc(src?.[m]?.[r] ?? null, base, fz)));
+  const cur = calcAnnual(kpi.id, r, y);
+  row.push(xc(cur, Object.assign({}, base, { font: { sz: 10, bold: true, color: { rgb: '1A1D2E' } }, fill: { fgColor: { rgb: 'FFF8E1' } } }), fz));
+  if (opts.n1) {
+    const cmp = (kpi.noCompare || !hasYearData(y - 1)) ? null
+      : (typeof COMPARABLE_KPIS !== 'undefined' && COMPARABLE_KPIS.has(kpi.id) ? calcAnnualComparable(kpi.id, r, y - 1) : calcAnnual(kpi.id, r, y - 1));
+    row.push(xc(cmp, base, fz));
+    let ev = null, ez = null;
+    if (cur != null && cmp != null) {
+      if (XL_PCT.has(kpi.fmt)) { ev = (cur - cmp) * 100; ez = '+0.00 "pts";-0.00 "pts";0.00 "pts"'; }
+      else if (cmp) { ev = (cur - cmp) / Math.abs(cmp); ez = '+0.0%;-0.0%;0.0%'; }
+    }
+    const lower = typeof LOWER_IS_BETTER !== 'undefined' && LOWER_IS_BETTER.has(kpi.id);
+    const good = ev == null ? null : (lower ? ev < 0 : ev >= 0);
+    row.push(xc(ev, Object.assign({}, base, { font: { sz: 10, bold: true, color: { rgb: good == null ? '6B7280' : (good ? '1E8449' : 'C0392B') } } }), ez));
+  }
+  return row;
+}
+function _xlSheet(title, sub, header, body, widths) {
+  const ncol = header.length;
+  const tStyle = { font: { sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: 'B8860B' } }, alignment: { vertical: 'center' } };
+  const sStyle = { font: { sz: 9, italic: true, color: { rgb: '6B7280' } } };
+  const hStyle = { font: { sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F2937' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: XL_BORDER };
+  const aoa = [[xc(title, tStyle), ...Array(ncol - 1).fill(xc('', tStyle))], [xc(sub, sStyle)], [], header.map(h => xc(h, hStyle)), ...body];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: ncol - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: ncol - 1 } }];
+  body.forEach((row, i) => { if (row._cat) ws['!merges'].push({ s: { r: 4 + i, c: 0 }, e: { r: 4 + i, c: ncol - 1 } }); });
+  ws['!cols'] = widths.map(w => ({ wch: w }));
+  ws['!rows'] = [{ hpt: 26 }, { hpt: 14 }, { hpt: 6 }, { hpt: 30 }];
+  ws['!freeze'] = { xSplit: 1, ySplit: 4 };
+  ws['!views'] = [{ state: 'frozen', xSplit: 1, ySplit: 4 }];
+  return ws;
+}
+function _xlCatRow(cat, ncol) {
+  const [c, bg] = CAT_COLORS[cat] || ['64748B', 'F1F5F9'];
+  const s = { font: { sz: 10, bold: true, color: { rgb: c } }, fill: { fgColor: { rgb: bg } }, border: XL_BORDER };
+  const row = [xc((CAT_LABELS[cat] || cat).toUpperCase(), s), ...Array(ncol - 1).fill(xc('', s))]; row._cat = true; return row;
+}
+function _sheetName(n, used) {
+  let s = n.replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31), k = 2;
+  while (used.has(s)) s = (n.slice(0, 28) + ' ' + k++).slice(0, 31);
+  used.add(s); return s;
+}
+function exportExcel(opts) {
+  const y = +opts.year, kpis = KPIs.filter(k => opts.kpis.includes(k.id) && (y !== 2024 || hasKpiYear(k.id, 2024)));
+  const restos = ['FRANCHISE', ...RESTOS].filter(r => opts.restos.includes(r));
+  const meta = DASHBOARD_DATA.meta || {};
+  const lastDays = Object.values(meta.last_day_by_resto || {}).filter(Boolean).sort();
+  const dataAu = lastDays.length ? lastDays[lastDays.length - 1].split('-').reverse().join('/') : '';
+  const today = new Date().toLocaleDateString('fr-FR');
+  const sub = `Export du ${today}${dataAu ? ' · données au ' + dataAu : ''}${opts.n1 ? ` · N-1 = ${y - 1} à date` : ''}`;
+  const wb = XLSX.utils.book_new(), used = new Set();
+  const cats = [...new Set(kpis.map(k => k.cat))];
+
+  if (opts.synth && restos.length > 1) {
+    const header = ['Indicateur', ...restos.map(restoDisplay)];
+    const body = [];
+    cats.forEach(cat => {
+      body.push(_xlCatRow(cat, header.length));
+      kpis.filter(k => k.cat === cat).forEach((k, i) => {
+        const base = { font: { sz: 10, color: { rgb: '1A1D2E' } }, border: XL_BORDER, fill: i % 2 ? { fgColor: { rgb: 'F7F8FA' } } : undefined };
+        body.push([xc(k.label, Object.assign({}, base, { font: { sz: 10, bold: true } })),
+                   ...restos.map(r => xc(calcAnnual(k.id, r, y), r === 'FRANCHISE' ? Object.assign({}, base, { fill: { fgColor: { rgb: 'EDE9FE' } }, font: { sz: 10, bold: true } }) : base, XL_FMT[k.fmt] || '0.00'))]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, _xlSheet(`Franchise PY — Synthèse ${y}`, sub, header, body, [30, ...restos.map(() => 15)]), _sheetName('Synthèse', used));
+  }
+  restos.forEach(r => {
+    const header = ['Indicateur', ...MONTH_SHORT, `Cumul ${y}`, ...(opts.n1 ? [`${y - 1} à date`, 'Évolution'] : [])];
+    const body = [];
+    cats.forEach(cat => {
+      body.push(_xlCatRow(cat, header.length));
+      kpis.filter(k => k.cat === cat).forEach((k, i) => body.push(_xlKpiRow(k, r, y, opts, i % 2 === 1)));
+    });
+    const widths = [30, ...MONTHS.map(() => 11), 14, ...(opts.n1 ? [14, 12] : [])];
+    XLSX.utils.book_append_sheet(wb, _xlSheet(`Franchise PY — ${restoDisplay(r)} — ${y}`, sub, header, body, widths), _sheetName(restoDisplay(r), used));
+  });
+  XLSX.writeFile(wb, `Franchise_PY_KPI_${y}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+</script>
+
 <!-- ════════ FAQ / AIDE ════════ -->
 <style>
 #faqModal { display:none; position:fixed; inset:0; z-index:10000; background:rgba(15,17,23,.55); align-items:flex-start; justify-content:center; padding:5vh 14px; overflow-y:auto; }
@@ -6390,9 +6745,9 @@ async function exportView() {
       <div class="faq-item"><div class="faq-q">Les modes (2026 · 2025 · N-1 · Prév · Classement)</div><div class="faq-a"><b>2026</b> : l'année en cours. <b>2025</b> : l'année passée seule. <b>N-1</b> : 2026 face à 2025 côte à côte. <b>Prév</b> : le réel 2026 face au prévisionnel (budget). <b>Classement</b> : comparer les restaurants entre eux sur un indicateur.</div></div>
       <div class="faq-item"><div class="faq-q">Comparable « à date »</div><div class="faq-a">Les écarts avec 2025 ne comptent que la <b>même période écoulée</b> : au 12 juillet 2026, on compare au 1<sup>er</sup>→12 juillet 2025, jamais à l'année pleine. Sur les courbes, 2025 peut s'afficher sur toute l'année pour référence, mais le pourcentage d'évolution reste à date.</div></div>
       <div class="faq-item"><div class="faq-q">Détail d'un indicateur</div><div class="faq-a">Cliquer une carte KPI ouvre le graphique et le tableau mois par mois, avec bascule <b>Annuel / Mensuel</b> et navigation d'un restaurant à l'autre.</div></div>
-      <div class="faq-item"><div class="faq-q">Bandeau semaine</div><div class="faq-a">Sous les bannières, les 4 chiffres clés de la <b>dernière semaine complète</b> (CA, alim, transactions, VPHE, pertes) vs la semaine équivalente 2025. Cliquer déroule le détail jour par jour.</div></div>
+      <div class="faq-item"><div class="faq-q">Bandeau semaine</div><div class="faq-a">Sous les bannières, les chiffres clés de la <b>semaine en cours</b> (CA, alim, transactions, VPHE, pertes) vs la semaine équivalente de l'an dernier, et le CA vs le <b>prévisionnel</b>. Les flèches ◀ ▶ changent de semaine ; la météo et les commentaires saisis s'affichent dessous. Cliquer une carte déroule le détail jour par jour.</div></div>
       <div class="faq-item"><div class="faq-q">Recherche par période 🔍</div><div class="faq-a">Choisir un restaurant et une période — un raccourci (cette semaine, ce mois, cette année) ou des dates au calendrier — pour obtenir CA, alim, transactions et VPHE sur cette période vs 2025.</div></div>
-      <div class="faq-item"><div class="faq-q">Exporter</div><div class="faq-a"><b>Exporter</b> enregistre la vue affichée en image, prête à partager par mail ou en réunion.</div></div>
+      <div class="faq-item"><div class="faq-q">Exporter</div><div class="faq-a"><b>Exporter</b> produit un fichier <b>Excel</b> mis en forme (restaurants et indicateurs au choix, mois par mois, cumul et comparaison N-1) ou une <b>image</b> de la vue affichée.</div></div>
 
       <div class="faq-sec-title" style="color:#0ea5e9;border-color:#0ea5e9">🗄️ Sources des données</div>
       <dl class="faq-def">
@@ -6822,7 +7177,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20260930-164238';
+const BUILD_VERSION = '20261001-114457';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
