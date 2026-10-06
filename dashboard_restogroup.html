@@ -5391,7 +5391,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       })]));
       return out;
     };
-    const F6 = ['ca', 'alim', 'tacs', 'heures', 'perte', 'heures_total'];
+    const F6 = ['ca', 'alim', 'tacs', 'heures', 'perte', 'heures_total', 'remb', 'promo', 'ecart'];
     OUT.daily = { '2026': pack(2026, F6), '2025': pack(2025, F6), '2024': pack(2024, ['ca', 'alim', 'tacs']) };
     const d24 = OUT.daily['2024'], Y24 = OUT['2024'] = { ca_total: {}, ca_alim: {}, tacs: {}, pm: {} };
     MONTHS.forEach((m, k) => {
@@ -5411,6 +5411,12 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const k of Object.keys(Y)) delete Y[k]; Object.assign(Y, ordered);
     }
     OUT.comments = comments;
+    // Données brutes pour l'export par rythme de saisie (semaines, visites)
+    OUT.hebdo = (S.hebdomadaire || []).map(r => Object.assign({}, r, { periode: normPeriode(r.periode), restaurant: String(r.restaurant || '').trim().toUpperCase() }))
+                                      .filter(r => STORES.includes(r.restaurant));
+    OUT.ponctuel = [...(S.ponctuel || []), ...(S.rgrv || []).filter(r => /^\d{4}-\d{2}-\d{2}/.test(String(r.periode))).map(r => Object.assign({ type: 'RGRV' }, r))]
+      .map(r => Object.assign({}, r, { periode: normPeriode(r.periode), restaurant: String(r.restaurant || '').trim().toUpperCase(), type: String(r.type || '').trim().toUpperCase() }))
+      .filter(r => STORES.includes(r.restaurant) && /^\d{4}-\d{2}-\d{2}$/.test(r.periode));
     return OUT;
   }
 
@@ -6572,6 +6578,13 @@ async function exportView() {
 .exp-cat label { display:flex; align-items:center; gap:7px; font-size:.76rem; color:var(--text); padding:2px 0; cursor:pointer; }
 .exp-cat input { accent-color:#0ea5e9; }
 .exp-opts label { display:flex; align-items:center; gap:8px; font-size:.8rem; color:var(--text); margin:4px 0; cursor:pointer; }
+.exp-cal { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.exp-cal label { display:inline-flex; align-items:center; gap:7px; font-size:.78rem; font-weight:700; color:var(--muted); background:var(--card); border:1.5px solid var(--border); border-radius:10px; padding:6px 11px; }
+.exp-cal input[type=date] { border:none; background:transparent; color:var(--text); font-family:inherit; font-size:.82rem; outline:none; }
+.exp-presets { display:flex; flex-wrap:wrap; gap:10px; margin-left:4px; }
+.exp-presets a { color:#0284c7; cursor:pointer; font-size:.72rem; font-weight:700; }
+.exp-lvl { font-size:.74rem; font-weight:700; color:var(--muted); margin:2px 0 6px; }
+.exp-lvl select { font-family:inherit; font-size:.76rem; font-weight:700; border:1.5px solid var(--border); border-radius:8px; padding:4px 8px; background:var(--card); color:var(--text); }
 .exp-foot { display:flex; align-items:center; gap:12px; margin-top:18px; flex-wrap:wrap; }
 .exp-go { border:none; background:#0ea5e9; color:#fff; font-weight:800; font-size:.9rem; padding:11px 22px; border-radius:11px; cursor:pointer; }
 .exp-go:disabled { opacity:.55; cursor:default; }
@@ -6586,9 +6599,11 @@ async function exportView() {
     </div>
     <div class="exp-lbl">Format</div>
     <div class="exp-seg" id="expFormat">
-      <button data-v="xlsx" onclick="expSet('format','xlsx')">📊 Excel (.xlsx)</button>
+      <button data-v="periods" onclick="expSet('format','periods')">📈 Excel — données par période</button>
+      <button data-v="xlsx" onclick="expSet('format','xlsx')">📊 Excel — tableau annuel (N-1)</button>
       <button data-v="png" onclick="expSet('format','png')">🖼️ Image de la vue (.png)</button>
     </div>
+    <div id="expPeriodsOpts"></div>
     <div id="expXlsxOpts">
       <div class="exp-lbl">Année</div>
       <div class="exp-seg" id="expYear"></div>
@@ -6617,17 +6632,17 @@ let EXP = null;
 function _expLoad() {
   let s = null; try { s = JSON.parse(localStorage.getItem(EXP_KEY) || 'null'); } catch (e) {}
   const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
-  EXP = Object.assign({ format: 'xlsx', year: years[0] || '2026', restos: ['FRANCHISE', ...RESTOS],
+  EXP = Object.assign({ format: 'periods', year: years[0] || '2026', restos: ['FRANCHISE', ...RESTOS],
                         kpis: KPIs.map(k => k.id), n1: true, synth: true }, s || {});
   EXP.restos = EXP.restos.filter(r => r === 'FRANCHISE' || RESTOS.includes(r));
   EXP.kpis = EXP.kpis.filter(id => KPIs.some(k => k.id === id));
 }
 function _expSave() { try { localStorage.setItem(EXP_KEY, JSON.stringify(EXP)); } catch (e) {} }
 function openExport() {
-  _expLoad();
+  _expLoad(); exLoad();
   document.getElementById('exportModal').classList.add('open');
   document.getElementById('expMsg').textContent = '';
-  _expRender();
+  _expRender(); ex2Render();
 }
 function closeExport() { document.getElementById('exportModal').classList.remove('open'); }
 function expSet(k, v) { EXP[k] = v; _expSave(); _expRender(); }
@@ -6642,6 +6657,7 @@ function expAllKpis(on) { EXP.kpis = on ? KPIs.map(k => k.id) : []; _expSave(); 
 function _expRender() {
   document.querySelectorAll('#expFormat button').forEach(b => b.classList.toggle('on', b.dataset.v === EXP.format));
   document.getElementById('expXlsxOpts').style.display = EXP.format === 'xlsx' ? '' : 'none';
+  document.getElementById('expPeriodsOpts').style.display = EXP.format === 'periods' ? '' : 'none';
   const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
   document.getElementById('expYear').innerHTML = years.map(y => `<button class="${y === EXP.year ? 'on' : ''}" onclick="expSet('year','${y}')">${y}</button>`).join('');
   document.getElementById('expRestos').innerHTML = ['FRANCHISE', ...RESTOS].map(r =>
@@ -6671,6 +6687,12 @@ async function doExport() {
   const msg = document.getElementById('expMsg'), btn = document.getElementById('expGo');
   msg.className = 'exp-msg'; msg.textContent = '';
   if (EXP.format === 'png') { closeExport(); return exportView(); }
+  if (EXP.format === 'periods') {
+    btn.disabled = true; msg.textContent = 'Préparation du fichier…';
+    try { await _loadXlsx(); exportPeriods(); msg.textContent = '✓ Fichier téléchargé.'; }
+    catch (e) { msg.className = 'exp-msg err'; msg.textContent = e.message; }
+    btn.disabled = false; return;
+  }
   if (!EXP.restos.length) { msg.className = 'exp-msg err'; msg.textContent = 'Choisis au moins un restaurant.'; return; }
   if (!EXP.kpis.length) { msg.className = 'exp-msg err'; msg.textContent = 'Choisis au moins un indicateur.'; return; }
   btn.disabled = true; msg.textContent = 'Préparation du fichier…';
@@ -6769,6 +6791,291 @@ function exportExcel(opts) {
     XLSX.utils.book_append_sheet(wb, _xlSheet(`Franchise PY — ${restoDisplay(r)} — ${y}`, sub, header, body, widths), _sheetName(restoDisplay(r), used));
   });
   XLSX.writeFile(wb, `Franchise_PY_KPI_${y}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+// ════════════════════════════════════════════════════════════════════
+//  EXPORT « DONNÉES PAR PÉRIODE » — selon le rythme de saisie de chaque indicateur
+//  Un onglet par rythme (Quotidien / Hebdomadaire / Mensuel / Ponctuel), une ligne par
+//  restaurant et par période, une colonne par indicateur. Ratios recalculés sur les totaux.
+// ════════════════════════════════════════════════════════════════════
+const EX_GROUPS = {
+  d: { label: 'Quotidien', sub: 'CA, heures, pertes… saisis chaque jour', levels: ['jour', 'semaine', 'mois', 'semestre', 'annee'] },
+  w: { label: 'Hebdomadaire', sub: 'OEPE, R2P, OPH, Hello McDo… saisis chaque semaine', levels: ['semaine', 'mois', 'semestre', 'annee'] },
+  m: { label: 'Mensuel', sub: 'RH, finances, digital… saisis chaque mois', levels: ['mois', 'semestre', 'annee'] },
+  p: { label: 'Ponctuel', sub: 'RGRV, CFV, PPFV, audits (une ligne par visite)', levels: ['visite', 'annee'] },
+};
+const EX_NAME = { FRANCHISE:'Franchise', CHAMBERY:'Chambéry', 'AIX LES BAINS':'Aix les Bains', BELLEY:'Belley', 'ST ALBAN':'St Alban', 'LES ABRETS':'Les Abrets', PDB:'Pont-de-Beauvoisin', FRANCIN:'Francin', VIVIERS:'Viviers' };
+const exName = r => EX_NAME[r] || r;
+const EX_LVL = { jour: 'Jour', semaine: 'Semaine', mois: 'Mois', semestre: 'Semestre', annee: 'Année', visite: 'Par visite' };
+// d = règle de calcul depuis le quotidien ; t = table mensuelle du dashboard ; a = agrégation sur plusieurs mois
+const EXK = [
+  { id: 'ca_total',   l: 'CA Net Total',            g: 'd', fmt: 'euros',  d: { sum: 'ca' } },
+  { id: 'ca_alim',    l: 'CA Net Alimentaire',      g: 'd', fmt: 'euros',  d: { sum: 'alim' } },
+  { id: 'tacs',       l: 'Transactions',            g: 'd', fmt: 'nb',     d: { sum: 'tacs' } },
+  { id: 'pm',         l: 'Panier Moyen',            g: 'd', fmt: 'euros2', d: { ratio: ['ca', 'tacs'] } },
+  { id: 'h_eq',       l: 'Heures Équipier',         g: 'd', fmt: 'nb2',    d: { sum: 'heures' } },
+  { id: 'h_tot',      l: 'Heures Totales',          g: 'd', fmt: 'nb2',    d: { sum: 'heures_total' } },
+  { id: 'vphe',       l: 'VPHE (€/h équipier)',     g: 'd', fmt: 'euros2', d: { ratio: ['alim', 'heures'] } },
+  { id: 'vphg',       l: 'VPHG (€/h globale)',      g: 'd', fmt: 'euros2', d: { ratio: ['alim', 'heures_total'] } },
+  { id: 'pertes_eur', l: 'Pertes (€)',              g: 'd', fmt: 'euros2', d: { sum: 'perte' } },
+  { id: 'pertes_pct', l: 'Pertes (% CA alim)',      g: 'd', fmt: 'pct2',   d: { ratio: ['perte', 'alim'] } },
+  { id: 'remb_eur',   l: 'Remboursement (€)',       g: 'd', fmt: 'euros2', d: { sum: 'remb' } },
+  { id: 'remb_pct',   l: 'Remboursement (% CA alim)', g: 'd', fmt: 'pct2', d: { ratio: ['remb', 'alim'] } },
+  { id: 'promo_eur',  l: 'Promotion (€)',           g: 'd', fmt: 'euros2', d: { sum: 'promo' } },
+  { id: 'promo_pct',  l: 'Promotion (% CA alim)',   g: 'd', fmt: 'pct2',   d: { ratio: ['promo', 'alim'] } },
+  { id: 'ecart',      l: 'Écart de Caisse (€)',     g: 'd', fmt: 'euros2', d: { sum: 'ecart' } },
+
+  { id: 'oepe',       l: 'OEPE (s)',                g: 'w', fmt: 'sec',     t: 'oepe',       a: 'mean', wk: 'oepe' },
+  { id: 'r2p',        l: 'R2P (s)',                 g: 'w', fmt: 'sec',     t: 'r2p',        a: 'mean', wk: 'r2p' },
+  { id: 'oph',        l: 'OPH',                     g: 'w', fmt: 'nb2',     t: 'oph',        a: 'oph',  wk: 'oph' },
+  { id: 'hello',      l: 'Hello McDo',              g: 'w', fmt: 'pct_sat', t: 'hello_mcdo', a: 'mean', wk: 'hello_mcdo' },
+  { id: 'reseaux',    l: 'Réseaux Sociaux (/5)',    g: 'w', fmt: 'note',    t: 'reseau',     a: 'mean', wk: 'reseaux' },
+  { id: 'uvhe',       l: 'UVHE',                    g: 'w', fmt: 'nb2',     t: 'uvhe_monthly', a: 'mean', wk: 'uvhe' },
+  { id: 'tche',       l: 'TCHE',                    g: 'w', fmt: 'nb2',     t: 'tche_monthly', a: 'mean', wk: 'tche' },
+
+  { id: 'effectif',   l: 'Effectif',                g: 'm', fmt: 'nb',     t: 'effectif_monthly', a: 'mean' },
+  { id: 'etp',        l: 'ETP',                     g: 'm', fmt: 'nb2',    t: 'etp_monthly',      a: 'mean' },
+  { id: 'h_comp',     l: 'Heures Complémentaires',  g: 'm', fmt: 'nb2',    t: 'hcomp_monthly',    a: 'sum' },
+  { id: 'h_sup',      l: 'Heures Supplémentaires',  g: 'm', fmt: 'nb2',    t: 'hsup_monthly',     a: 'sum' },
+  { id: 'to12',       l: 'Turn Over 12 mois',       g: 'm', fmt: 'taux',   t: 'to_12m_monthly',   a: 'last' },
+  { id: 'to90',       l: 'Turn Over 90 jours',      g: 'm', fmt: 'taux',   t: 'to_90j_monthly',   a: 'last' },
+  { id: 'abs_imp',    l: 'Absentéisme imprévu',     g: 'm', fmt: 'pct2',   t: 'abs_imp_monthly',  a: 'mean' },
+  { id: 'abs_inj',    l: 'Absentéisme injustifié',  g: 'm', fmt: 'pct2',   t: 'abs_inj_monthly',  a: 'mean' },
+  { id: 'marge',      l: 'Marge',                   g: 'm', fmt: 'pct2',   t: 'marge_fin',        a: 'mean' },
+  { id: 'pac',        l: 'PAC',                     g: 'm', fmt: 'pct2',   t: 'pac_fin',          a: 'mean' },
+  { id: 'cout_mo',    l: "Coût Main d'Œuvre",       g: 'm', fmt: 'pct2',   t: 'cout_mo',          a: 'mean' },
+  { id: 'cash_flow',  l: 'Cash Flow (€)',           g: 'm', fmt: 'euros',  t: 'cash_flow',        a: 'sum' },
+  { id: 'resultat',   l: 'Résultat Net (€)',        g: 'm', fmt: 'euros',  t: 'resultat_net',     a: 'sum' },
+  { id: 'ecart_rdt',  l: 'Écart de Rendement',      g: 'm', fmt: 'pct2',   t: 'ecart_rendement_monthly', a: 'mean' },
+  { id: 'fid',        l: 'Comptes FID Actifs',      g: 'm', fmt: 'pct',    t: 'dig_fid_actifs_m', a: 'mean' },
+  { id: 'cc',         l: 'C&C / CA',                g: 'm', fmt: 'pct',    t: 'dig_cc_ca_m',      a: 'mean' },
+  { id: 'uber',       l: 'Uber Eats / CA',          g: 'm', fmt: 'pct',    t: 'dig_uber_ca_m',    a: 'mean' },
+  { id: 'lad',        l: 'LAD M+ / CA',             g: 'm', fmt: 'pct',    t: 'dig_lad_ca_m',     a: 'mean' },
+  { id: 'poly_eq',    l: 'Polyvalence Équipier',    g: 'm', fmt: 'pct2',   t: 'poly_equipier',    a: 'mean' },
+  { id: 'poly_edg',   l: 'Polyvalence EDG',         g: 'm', fmt: 'pct2',   t: 'poly_edg',         a: 'mean' },
+
+  { id: 'rgrv',       l: 'RGRV',                    g: 'p', type: 'RGRV',             last: true },
+  { id: 'cfv',        l: 'CFV',                     g: 'p', type: 'CFV',              last: true },
+  { id: 'ppfv',       l: 'PPFV',                    g: 'p', type: 'PPFV',             last: true },
+  { id: 'audit',      l: 'Audit Mérieux',           g: 'p', type: 'AUDIT_MERIEUX' },
+  { id: 'analyse',    l: 'Analyse Silliker / Mérieux', g: 'p', type: 'ANALYSE_SILLIKER' },
+];
+const EX_KEY = 'fpy_export2';
+let EX2 = null;
+const exPad = n => String(n).padStart(2, '0');
+const exIso = t => new Date(t).toISOString().slice(0, 10);
+const exT = iso => Date.parse(iso + 'T00:00:00Z');
+const exFr = iso => iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
+function exLastDay() {
+  const ld = (DASHBOARD_DATA.meta || {}).last_day_by_resto || {};
+  let m = null; for (const d of Object.values(ld)) if (d && (!m || d > m)) m = d; return m || exIso(Date.now());
+}
+function exLoad() {
+  let s = null; try { s = JSON.parse(localStorage.getItem(EX_KEY) || 'null'); } catch (e) {}
+  const last = exLastDay();
+  EX2 = Object.assign({ from: last.slice(0, 4) + '-01-01', to: last, restos: ['FRANCHISE', ...RESTOS],
+                        kpis: ['ca_total', 'tacs', 'pm', 'vphe', 'oepe', 'oph', 'etp'],
+                        levels: { d: 'mois', w: 'mois', m: 'mois', p: 'visite' } }, s || {});
+  EX2.restos = EX2.restos.filter(r => r === 'FRANCHISE' || RESTOS.includes(r));
+  EX2.kpis = EX2.kpis.filter(id => EXK.some(k => k.id === id));
+  EX2.levels = Object.assign({ d: 'mois', w: 'mois', m: 'mois', p: 'visite' }, EX2.levels || {});
+}
+function exSave() { try { localStorage.setItem(EX_KEY, JSON.stringify(EX2)); } catch (e) {} }
+function ex2Set(k, v) { EX2[k] = v; exSave(); }
+function ex2Level(g, v) { EX2.levels[g] = v; exSave(); }
+function ex2Preset(p) {
+  const last = exLastDay(), y = +last.slice(0, 4), t = exT(last);
+  if (p === 'annee') { EX2.from = y + '-01-01'; EX2.to = last; }
+  else if (p === 'annee_prec') { EX2.from = (y - 1) + '-01-01'; EX2.to = (y - 1) + '-12-31'; }
+  else if (p === 'mois') { EX2.from = last.slice(0, 8) + '01'; EX2.to = last; }
+  else if (p === '30j') { EX2.from = exIso(t - 29 * 86400000); EX2.to = last; }
+  exSave(); ex2Render();
+}
+function ex2ToggleResto(r) { const i = EX2.restos.indexOf(r); i < 0 ? EX2.restos.push(r) : EX2.restos.splice(i, 1); exSave(); ex2Render(); }
+function ex2AllRestos(on) { EX2.restos = on ? ['FRANCHISE', ...RESTOS] : []; exSave(); ex2Render(); }
+function ex2ToggleKpi(id) { const i = EX2.kpis.indexOf(id); i < 0 ? EX2.kpis.push(id) : EX2.kpis.splice(i, 1); exSave(); ex2Render(); }
+function ex2AllKpis(g, on) {
+  const ids = EXK.filter(k => k.g === g).map(k => k.id);
+  EX2.kpis = on ? [...new Set([...EX2.kpis, ...ids])] : EX2.kpis.filter(id => !ids.includes(id)); exSave(); ex2Render();
+}
+function ex2Render() {
+  const box = document.getElementById('expPeriodsOpts'); if (!box) return;
+  const chip = (on, fn, txt) => `<button class="${on ? 'on' : ''}" onclick="${fn}">${txt}</button>`;
+  let h = `<div class="exp-lbl">Période exportée</div>
+    <div class="exp-cal"><label>Du <input type="date" value="${EX2.from}" onchange="ex2Set('from',this.value)"></label>
+      <label>au <input type="date" value="${EX2.to}" onchange="ex2Set('to',this.value)"></label>
+      <span class="exp-presets"><a onclick="ex2Preset('annee')">Année en cours</a><a onclick="ex2Preset('annee_prec')">Année précédente</a><a onclick="ex2Preset('mois')">Mois en cours</a><a onclick="ex2Preset('30j')">30 derniers jours</a></span></div>
+    <div class="exp-lbl">Restaurants <a onclick="ex2AllRestos(true)">tous</a><a onclick="ex2AllRestos(false)">aucun</a></div>
+    <div class="exp-chips">${['FRANCHISE', ...RESTOS].map(r => chip(EX2.restos.includes(r), `ex2ToggleResto('${r}')`, exName(r))).join('')}</div>
+    <div class="exp-lbl">Indicateurs et niveau d'export, selon le rythme de saisie</div><div class="exp-cats">`;
+  for (const [g, G] of Object.entries(EX_GROUPS)) {
+    const ks = EXK.filter(k => k.g === g), n = ks.filter(k => EX2.kpis.includes(k.id)).length;
+    if (!G.levels.includes(EX2.levels[g])) EX2.levels[g] = G.levels[Math.min(2, G.levels.length - 1)];
+    h += `<div class="exp-cat"><div class="exp-cat-h" style="color:#0284c7">${G.label} <span style="font-weight:600;color:var(--muted)">· ${n}/${ks.length}</span>
+      <a style="margin-left:auto;font-weight:700;font-size:.7rem" onclick="ex2AllKpis('${g}',true)">tous</a><a style="font-weight:700;font-size:.7rem;margin-left:6px" onclick="ex2AllKpis('${g}',false)">aucun</a></div>
+      <div style="font-size:.68rem;color:var(--muted);margin-bottom:6px">${G.sub}</div>
+      <div class="exp-lvl">Niveau : <select onchange="ex2Level('${g}',this.value)">${G.levels.map(l => `<option value="${l}" ${EX2.levels[g] === l ? 'selected' : ''}>${EX_LVL[l]}</option>`).join('')}</select></div>` +
+      ks.map(k => `<label><input type="checkbox" ${EX2.kpis.includes(k.id) ? 'checked' : ''} onchange="ex2ToggleKpi('${k.id}')"> ${k.l}</label>`).join('') + `</div>`;
+  }
+  box.innerHTML = h + '</div>';
+}
+
+// ── Découpage en périodes ──
+function exIsoWeek(t) {
+  const d = new Date(t); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3);
+  const f = Date.UTC(d.getUTCFullYear(), 0, 4);
+  return { year: d.getUTCFullYear(), week: 1 + Math.round(((d - f) / 86400000 - 3 + ((new Date(f).getUTCDay() + 6) % 7)) / 7) };
+}
+const exMonthsOf = (y, m0, m1) => { const a = []; for (let m = m0; m <= m1; m++) a.push({ y, mi: m }); return a; };
+function exBuckets(level, from, to) {
+  const out = [], t0 = exT(from), t1 = exT(to), DAY = 86400000;
+  if (level === 'jour') {
+    for (let t = t0; t <= t1; t += DAY) out.push({ label: exFr(exIso(t)), start: exIso(t), end: exIso(t), months: [{ y: +exIso(t).slice(0, 4), mi: +exIso(t).slice(5, 7) - 1 }] });
+  } else if (level === 'semaine') {
+    const dow = (new Date(t0).getUTCDay() + 6) % 7;
+    for (let t = t0 - dow * DAY; t <= t1; t += 7 * DAY) {
+      const w = exIsoWeek(t), end = t + 6 * DAY;
+      out.push({ label: `S${exPad(w.week)} ${w.year} · ${exFr(exIso(t)).slice(0, 5)} → ${exFr(exIso(end)).slice(0, 5)}`, wkey: `${w.year}-W${exPad(w.week)}`, start: exIso(t), end: exIso(end),
+                 months: [{ y: +exIso(t + 3 * DAY).slice(0, 4), mi: +exIso(t + 3 * DAY).slice(5, 7) - 1 }] });
+    }
+  } else if (level === 'mois') {
+    let y = +from.slice(0, 4), m = +from.slice(5, 7) - 1; const ye = +to.slice(0, 4), me = +to.slice(5, 7) - 1;
+    while (y < ye || (y === ye && m <= me)) {
+      const n = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      out.push({ label: MONTHS[m].charAt(0) + MONTHS[m].slice(1).toLowerCase() + ' ' + y, start: `${y}-${exPad(m + 1)}-01`, end: `${y}-${exPad(m + 1)}-${exPad(n)}`, months: [{ y, mi: m }] });
+      if (++m > 11) { m = 0; y++; }
+    }
+  } else if (level === 'semestre') {
+    for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) for (const s of [0, 1]) {
+      const a = `${y}-${s ? '07' : '01'}-01`, b = s ? `${y}-12-31` : `${y}-06-30`;
+      if (b >= from && a <= to) out.push({ label: `S${s + 1} ${y}`, start: a, end: b, months: exMonthsOf(y, s * 6, s * 6 + 5) });
+    }
+  } else if (level === 'annee') {
+    for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) out.push({ label: String(y), start: `${y}-01-01`, end: `${y}-12-31`, months: exMonthsOf(y, 0, 11) });
+  }
+  return out;
+}
+
+// ── Calcul des valeurs ──
+function exDaySum(r, field, b) {
+  let s = 0, found = false;
+  for (let t = exT(b.start); t <= exT(b.end); t += 86400000) {
+    const iso = exIso(t), y = iso.slice(0, 4), arr = DASHBOARD_DATA.daily?.[y]?.[r]?.[field];
+    if (!arr) continue;
+    const v = arr[Math.round((t - Date.UTC(+y, 0, 1)) / 86400000)];
+    if (v != null) { s += v; found = true; }
+  }
+  return found ? s : null;
+}
+function exMonthVal(k, r, mm) { return DASHBOARD_DATA[String(mm.y)]?.[k.t]?.[MONTHS[mm.mi]]?.[r] ?? null; }
+function exWeekRows(wkey, r) {
+  const rows = (DASHBOARD_DATA.hebdo || []).filter(x => x.periode === wkey && (r === 'FRANCHISE' || x.restaurant === r));
+  return rows;
+}
+function exValue(k, r, b, level) {
+  if (k.d) {
+    if (k.d.sum) return exDaySum(r, k.d.sum, b);
+    const n = exDaySum(r, k.d.ratio[0], b), d = exDaySum(r, k.d.ratio[1], b); return (n != null && d) ? n / d : null;
+  }
+  if (k.g === 'w' && level === 'semaine') {
+    const rows = exWeekRows(b.wkey, r); if (!rows.length) return null;
+    if (k.wk === 'oph') {
+      let avis = 0, tx = 0, any = false;
+      const ents = r === 'FRANCHISE' ? rows : rows;
+      for (const x of ents) { const a = Number(x.avis); if (isFinite(a) && x.avis !== '' && x.avis != null) { avis += a; tx += exDaySum(x.restaurant, 'tacs', b) || 0; any = true; } }
+      return (any && tx) ? avis * 100000 / tx : null;
+    }
+    const v = rows.map(x => Number(x[k.wk])).filter((n, i) => isFinite(n) && rows[i][k.wk] !== '' && rows[i][k.wk] != null);
+    return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null;
+  }
+  // niveaux mois / semestre / année : tables mensuelles du dashboard
+  const vals = b.months.map(mm => ({ v: exMonthVal(k, r, mm), mm })).filter(x => x.v != null);
+  if (!vals.length) return null;
+  if (k.a === 'sum') return vals.reduce((a, x) => a + x.v, 0);
+  if (k.a === 'last') return vals[vals.length - 1].v;
+  if (k.a === 'oph') {
+    let n = 0, d = 0;
+    for (const x of vals) { const w = DASHBOARD_DATA[String(x.mm.y)]?.tacs?.[MONTHS[x.mm.mi]]?.[r]; if (w) { n += x.v * w; d += w; } }
+    return d ? n / d : vals.reduce((a, x) => a + x.v, 0) / vals.length;
+  }
+  return vals.reduce((a, x) => a + x.v, 0) / vals.length;
+}
+
+// ── Construction du classeur ──
+const exCell = (v, s, z) => xc(v, s, z);
+const exSerial = iso => (exT(iso) - Date.UTC(1899, 11, 30)) / 86400000;
+function exRestoStyle(r, bold) {
+  const c = (typeof RESTO_CFG !== 'undefined' && RESTO_CFG[r]) || { bg: '#f1f5f9', color: '#334155' };
+  return { font: { sz: 10, bold: true, color: { rgb: c.color.replace('#', '').toUpperCase() } }, fill: { fgColor: { rgb: c.bg.replace('#', '').toUpperCase() } }, border: XL_BORDER, alignment: { vertical: 'center' } };
+}
+function exGroupSheet(g, kpis, opts, sub) {
+  const level = EX2.levels[g], restos = ['FRANCHISE', ...RESTOS].filter(r => EX2.restos.includes(r));
+  const base = { font: { sz: 10, color: { rgb: '1A1D2E' } }, border: XL_BORDER, alignment: { vertical: 'center' } };
+  const hasCom = g === 'd' && level === 'jour';
+  const header = ['Restaurant', 'Période', 'Du', 'Au', ...(hasCom ? ['Météo', 'Commentaire'] : []), ...kpis.map(k => k.l)];
+  const body = []; const buckets = exBuckets(level, EX2.from, EX2.to);
+  let zebra = 0;
+  for (const r of restos) for (const b of buckets) {
+    const vals = kpis.map(k => exValue(k, r, b, level));
+    if (vals.every(v => v == null)) continue;
+    const zb = (zebra++ % 2) ? { fill: { fgColor: { rgb: 'F7F8FA' } } } : {};
+    const st = Object.assign({}, base, zb);
+    const row = [xc(exName(r), exRestoStyle(r)), xc(b.label, Object.assign({}, st, { font: { sz: 10, bold: true } })),
+                 xc(exSerial(b.start), st, 'dd/mm/yyyy'), xc(exSerial(b.end), st, 'dd/mm/yyyy')];
+    if (hasCom) { const c = (DASHBOARD_DATA.comments || {})[b.start]?.[r] || {}; row.push(xc(c.meteo || '', st), xc(c.commentaire || '', Object.assign({}, st, { alignment: { wrapText: true, vertical: 'center' } }))); }
+    kpis.forEach((k, i) => row.push(xc(vals[i], st, XL_FMT[k.fmt] || '0.00')));
+    body.push(row);
+  }
+  const ws = _xlSheet(`Franchise PY — ${EX_GROUPS[g].label} par ${EX_LVL[level].toLowerCase()}`, sub, header, body,
+    [20, g === 'd' && level === 'semaine' || level === 'semaine' ? 26 : 16, 11, 11, ...(hasCom ? [11, 40] : []), ...kpis.map(() => 15)]);
+  ws['!views'] = [{ state: 'frozen', xSplit: 2, ySplit: 4 }];
+  return { ws, rows: body.length };
+}
+function exPonctuelSheet(kpis, sub) {
+  const level = EX2.levels.p, restos = RESTOS.filter(r => EX2.restos.includes(r));
+  const types = kpis.map(k => k.type), rows = (DASHBOARD_DATA.ponctuel || []).filter(x => types.includes(x.type) && restos.includes(x.restaurant) && x.periode >= EX2.from && x.periode <= EX2.to).sort((a, b) => (a.restaurant + a.periode) < (b.restaurant + b.periode) ? -1 : 1);
+  const base = { font: { sz: 10, color: { rgb: '1A1D2E' } }, border: XL_BORDER, alignment: { vertical: 'center' } };
+  const nom = t => (EXK.find(k => k.type === t) || {}).l || t, body = []; let header, widths;
+  if (level === 'visite') {
+    header = ['Restaurant', 'Date', 'Type', 'Score', 'Qualité', 'Service', 'Propreté', 'Gestion de quart', 'Sécurité / Prévention', 'Sécurité alimentaire', 'Commentaire'];
+    rows.forEach((x, i) => { const st = Object.assign({}, base, i % 2 ? { fill: { fgColor: { rgb: 'F7F8FA' } } } : {}), n = k => (x[k] === '' || x[k] == null) ? null : Number(x[k]);
+      body.push([xc(exName(x.restaurant), exRestoStyle(x.restaurant)), xc(exSerial(x.periode), st, 'dd/mm/yyyy'), xc(nom(x.type), Object.assign({}, st, { font: { sz: 10, bold: true } })), xc(n('score'), st, '0.0%'),
+        ...['qualite', 'service', 'proprete', 'gestion_quart', 'securite_prevention', 'securite_alimentaire'].map(k => xc(n(k), st, '0.0%')), xc(x.commentaire || '', st)]); });
+    widths = [20, 12, 24, 10, 10, 10, 10, 14, 16, 16, 40];
+  } else {
+    header = ['Restaurant', 'Année', 'Type', 'Note retenue', 'Règle', 'Nombre de visites'];
+    const by = {}; rows.forEach(x => { (by[x.restaurant + '|' + x.periode.slice(0, 4) + '|' + x.type] = by[x.restaurant + '|' + x.periode.slice(0, 4) + '|' + x.type] || []).push(x); });
+    Object.keys(by).sort().forEach((key, i) => { const [r, y, t] = key.split('|'), list = by[key], sc = list.map(x => Number(x.score)).filter(isFinite), k = EXK.find(e => e.type === t);
+      const st = Object.assign({}, base, i % 2 ? { fill: { fgColor: { rgb: 'F7F8FA' } } } : {}), v = !sc.length ? null : (k.last ? sc[sc.length - 1] : sc.reduce((a, c) => a + c, 0) / sc.length);
+      body.push([xc(exName(r), exRestoStyle(r)), xc(+y, st), xc(nom(t), Object.assign({}, st, { font: { sz: 10, bold: true } })), xc(v, st, '0.0%'), xc(k.last ? 'Dernière visite' : 'Moyenne des visites', st), xc(list.length, st)]); });
+    widths = [20, 8, 24, 14, 20, 16];
+  }
+  const ws = _xlSheet(`Franchise PY — Ponctuel (${EX_LVL[level].toLowerCase()})`, sub, header, body, widths);
+  return { ws, rows: body.length };
+}
+function exportPeriods() {
+  if (!EX2.restos.length) throw new Error('Choisis au moins un restaurant.');
+  if (!EX2.from || !EX2.to || EX2.from > EX2.to) throw new Error('La période est invalide (date de début après la date de fin).');
+  const groups = Object.keys(EX_GROUPS).filter(g => EXK.some(k => k.g === g && EX2.kpis.includes(k.id)));
+  if (!groups.length) throw new Error('Choisis au moins un indicateur.');
+  const last = exLastDay(), sub = `Export du ${new Date().toLocaleDateString('fr-FR')} · du ${exFr(EX2.from)} au ${exFr(EX2.to)} · données au ${exFr(last)}`;
+  const wb = XLSX.utils.book_new(); const resume = [];
+  for (const g of groups) {
+    const kpis = EXK.filter(k => k.g === g && EX2.kpis.includes(k.id));
+    const { ws, rows } = g === 'p' ? exPonctuelSheet(kpis, sub) : exGroupSheet(g, kpis, null, sub);
+    XLSX.utils.book_append_sheet(wb, ws, EX_GROUPS[g].label);
+    resume.push([EX_GROUPS[g].label, EX_LVL[EX2.levels[g]], kpis.map(k => k.l).join(', '), rows]);
+  }
+  // Notes : ce que contient le fichier et comment les valeurs sont calculées
+  const hS = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F2937' } } }, bS = { font: { sz: 10 }, alignment: { wrapText: true, vertical: 'top' } };
+  const notes = [[xc('Rythme', hS), xc('Niveau', hS), xc('Indicateurs', hS), xc('Lignes', hS)], ...resume.map(r => r.map(v => xc(v, bS))), [], [xc('Règles de calcul', hS)],
+    [xc('Les montants (CA, heures, pertes, remboursement, promotion, écart de caisse, heures comp./sup., cash-flow, résultat) sont additionnés sur la période.', bS)],
+    [xc('Les ratios sont recalculés sur les totaux : Panier Moyen = CA ÷ transactions ; VPHE/VPHG = CA alim ÷ heures ; pertes, remboursement, promotion = % du CA alimentaire ; OPH = avis négatifs × 100 000 ÷ transactions.', bS)],
+    [xc('Effectif, ETP, polyvalence, taux (absentéisme, marge, PAC, coût MO, digital…), OEPE, R2P, Hello McDo, réseaux, UVHE, TCHE : moyenne des périodes. Turn over : dernière valeur de la période.', bS)],
+    [xc('RGRV, CFV, PPFV : dernière visite ; audits et analyses : moyenne des visites (niveau « année »).', bS)],
+    [xc('Une cellule vide = aucune donnée saisie sur la période.', bS)]];
+  const wn = XLSX.utils.aoa_to_sheet(notes); wn['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 80 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, wn, 'Notes');
+  XLSX.writeFile(wb, `Franchise_PY_Donnees_${EX2.from}_${EX2.to}.xlsx`);
 }
 </script>
 
@@ -7241,7 +7548,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-103943';
+const BUILD_VERSION = '20261006-171220';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
