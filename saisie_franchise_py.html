@@ -86,6 +86,9 @@
   .doc-row i{ color:var(--muted); font-size:.74rem; margin-left:6px; font-style:normal; }
   .doc-row button{ border:none; background:transparent; color:var(--red); font-size:1rem; cursor:pointer; }
   .field input[type=file]{ padding:7px 9px; }
+  .period .step{ border:1.5px solid var(--border); background:var(--card); color:var(--text); font-family:inherit; font-size:.8rem; font-weight:700; border-radius:10px; padding:8px 12px; cursor:pointer; white-space:nowrap; }
+  .period .step.next{ background:var(--gold); border-color:var(--gold); color:#fff; }
+  .period .step:hover{ filter:brightness(1.06); }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
 </style>
@@ -234,19 +237,19 @@ async function loadLast(){
 }
 const lastOf=(tab)=>LAST&&LAST[tab]&&curResto?LAST[tab][curResto]:null;
 function nextPeriod(tab){
+  // Période d'ouverture : celle de la DERNIÈRE saisie du restaurant (jamais « aujourd'hui » par défaut),
+  // pour éviter une saisie par mégarde. Sans saisie existante : période en cours.
   const p=lastOf(tab), now=new Date();
-  if(tab==='quotidien'){
-    if(!p) return {date:isoDate(now)};
-    const d=new Date(p+'T12:00:00'); d.setDate(d.getDate()+1); return {date:isoDate(d)};
-  }
+  if(tab==='quotidien') return {date:p||isoDate(now)};
   if(tab==='hebdomadaire'){
-    if(!p){ const w=isoWeekOf(now); return {year:w.year,week:w.week}; }
-    const m=p.match(/^(\d{4})-W(\d{2})$/); let y=+m[1], w=+m[2]+1; if(w>weeksInYear(y)){ y++; w=1; } return {year:y,week:w};
+    const m=p&&p.match(/^(\d{4})-W(\d{2})$/);
+    if(m) return {year:+m[1],week:+m[2]};
+    const w=isoWeekOf(now); return {year:w.year,week:w.week};
   }
   if(tab==='mensuel'||tab==='previsionnel'){
     const m=p&&p.match(/^([A-ZÉÛ]+) (\d{4})$/);
-    if(!m) return {month:now.getMonth(), year:now.getFullYear()};
-    let mi=MONTHS.indexOf(m[1])+1, y=+m[2]; if(mi>11){ mi=0; y++; } return {month:mi, year:y};
+    if(m) return {month:MONTHS.indexOf(m[1]), year:+m[2]};
+    return {month:now.getMonth(), year:now.getFullYear()};
   }
   return {date:isoDate(now)};
 }
@@ -288,17 +291,35 @@ function weekOptions(year,sel){
 }
 function onWeekYear(){ const y=+document.getElementById('pYear').value; const s=document.getElementById('pWeek'); const cur=Math.min(+s.value,weeksInYear(y)); s.innerHTML=weekOptions(y,cur); loadExisting(); }
 function yearOpts(sel){ const y=new Date().getFullYear(); return [y+1,y,y-1,y-2].map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v}</option>`).join(''); }
+const STEP_LBL={quotidien:'Jour suivant',hebdomadaire:'Semaine suivante',mensuel:'Mois suivant',previsionnel:'Mois suivant'};
+const stepBtns=tab=>STEP_LBL[tab]?`<button type="button" class="step" onclick="stepPeriod(-1)" title="Période précédente">◀</button><button type="button" class="step next" onclick="stepPeriod(1)">${STEP_LBL[tab]} ▶</button>`:'';
+function stepPeriod(dir){
+  const ensureYear=(sel,y)=>{ if(![...sel.options].some(o=>+o.value===y)) sel.insertAdjacentHTML('beforeend',`<option value="${y}">${y}</option>`); sel.value=y; };
+  if(curTab==='quotidien'){
+    const el=document.getElementById('pDate'); if(!el.value) return;
+    const d=new Date(el.value+'T12:00:00'); d.setDate(d.getDate()+dir); el.value=isoDate(d);
+  } else if(curTab==='hebdomadaire'){
+    const ys=document.getElementById('pYear'), ws=document.getElementById('pWeek'); let y=+ys.value, w=+ws.value+dir;
+    if(w>weeksInYear(y)){ y++; w=1; } else if(w<1){ y--; w=weeksInYear(y); }
+    ensureYear(ys,y); ws.innerHTML=weekOptions(y,w); ws.value=w;
+  } else {
+    const ms=document.getElementById('pMonth'), ys=document.getElementById('pYear'); let mi=ms.selectedIndex+dir, y=+ys.value;
+    if(mi>11){ mi=0; y++; } else if(mi<0){ mi=11; y--; }
+    ensureYear(ys,y); ms.selectedIndex=mi;
+  }
+  loadExisting();
+}
 function periodControls(tab){
   const np=nextPeriod(tab);
-  if(tab==='quotidien') return `<label>Date</label><input type="date" id="pDate" value="${np.date}" onchange="loadExisting()">`;
+  if(tab==='quotidien') return `<label>Date</label><input type="date" id="pDate" value="${np.date}" onchange="loadExisting()">${stepBtns(tab)}`;
   if(tab==='ponctuel'){
     const types=PONCT_TYPES.map(([k,n])=>`<option value="${k}">${n}</option>`).join('');
     return `<label>Type</label><select id="pType" onchange="renderPanel(true)">${types}</select><label>Date de la visite</label><input type="date" id="pDate" value="${np.date}" onchange="loadExisting()">`;
   }
   if(tab==='hebdomadaire')
-    return `<label>Semaine</label><select id="pWeek" onchange="loadExisting()">${weekOptions(np.year,np.week)}</select><label>Année</label><select id="pYear" onchange="onWeekYear()">${yearOpts(np.year)}</select>`;
+    return `<label>Semaine</label><select id="pWeek" onchange="loadExisting()">${weekOptions(np.year,np.week)}</select><label>Année</label><select id="pYear" onchange="onWeekYear()">${yearOpts(np.year)}</select>${stepBtns(tab)}`;
   const months=MONTHS.map((m,i)=>`<option value="${m}" ${i===np.month?'selected':''}>${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
-  return `<label>Mois</label><select id="pMonth" onchange="loadExisting()">${months}</select><label>Année</label><select id="pYear" onchange="loadExisting()">${yearOpts(np.year)}</select>`;
+  return `<label>Mois</label><select id="pMonth" onchange="loadExisting()">${months}</select><label>Année</label><select id="pYear" onchange="loadExisting()">${yearOpts(np.year)}</select>${stepBtns(tab)}`;
 }
 const currentType=()=>{ const el=document.getElementById('pType'); return el?el.value:'RGRV'; };
 function fieldHtml(f){
@@ -324,7 +345,7 @@ function renderPanel(keepPeriod){
     : 'Les champs grisés se calculent tout seuls. Les pourcentages se saisissent en % (ex. 94,4). Choisis une période déjà saisie pour la modifier.';
   p.innerHTML=`
     <div class="panel-head">
-      <div><div class="panel-title">${label} — ${restoName}</div>${ll&&curTab!=='ponctuel'?`<div class="last-saisie">Dernière saisie : <b>${ll}</b> — période suivante proposée</div>`:''}</div>
+      <div><div class="panel-title">${label} — ${restoName}</div>${ll&&curTab!=='ponctuel'?`<div class="last-saisie">Dernière saisie : <b>${ll}</b> — la page s'ouvre sur cette date ; « ${STEP_LBL[curTab]||'suivant'} ▶ » pour saisir la suite</div>`:''}</div>
       <div class="period">${periodControls(curTab)}</div>
     </div>
     <div class="entry-banner" id="entryBanner"></div>
@@ -422,7 +443,7 @@ async function hebdoRows(resto){
 // ── Charger une saisie existante (pré-remplissage + bandeau) ──
 let loadSeq=0;
 async function loadExisting(){
-  const seq=++loadSeq, tab=curTab, resto=curResto, flds=fieldsFor(tab);
+  const seq=++loadSeq, tab=curTab, resto=curResto, flds=fieldsFor(tab); window.hasExisting=false;
   flds.forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el){ delete el.dataset.legacy; if(!f.auto) el.value=''; } });
   recompute();
   const msg=document.getElementById('saveMsg'); if(msg){ msg.className='save-msg'; msg.textContent=''; }
@@ -435,6 +456,7 @@ async function loadExisting(){
     const res=await fetch(u+'&_='+Date.now()); if(res.ok){ const j=await res.json(); data=j&&j.data; if(data&&!Object.keys(data).length) data=null; }
   }catch(e){ if(seq===loadSeq) setBanner('err','⚠️ Impossible de vérifier les saisies existantes (connexion ?). Tu peux quand même saisir.'); return; }
   if(seq!==loadSeq) return;   // l'utilisateur a changé de période entre-temps
+  window.hasExisting=!!data;
   if(data){
     Object.entries(data).forEach(([k,v])=>{
       const el=document.getElementById('f_'+k); if(!el||v==null||v==='') return;
@@ -467,6 +489,27 @@ async function loadExisting(){
   }
 }
 
+// ── Garde-fous : date dans le futur, saut de période, saisie antérieure à la dernière ──
+function periodOrdinal(tab,p){
+  if(tab==='quotidien') return Math.round(Date.parse(p+'T00:00:00Z')/86400000);
+  if(tab==='hebdomadaire'){ const m=String(p).match(/^(\d{4})-W(\d{2})$/); return m?Math.round(weekMonday(+m[1],+m[2]).getTime()/(7*86400000)):null; }
+  const m=String(p).match(/^([A-ZÉÛ]+) (\d{4})$/); return m?(+m[2])*12+MONTHS.indexOf(m[1]):null;
+}
+function periodWarning(){
+  if(!['quotidien','hebdomadaire','mensuel'].includes(curTab)) return '';
+  const cur=currentPeriode(), oc=periodOrdinal(curTab,cur); if(oc==null) return '';
+  const now=new Date(), nowP=curTab==='quotidien'?isoDate(now):curTab==='hebdomadaire'?(()=>{const w=isoWeekOf(now);return w.year+'-W'+pad2(w.week);})():MONTHS[now.getMonth()]+' '+now.getFullYear();
+  const unit={quotidien:'jour',hebdomadaire:'semaine',mensuel:'mois'}[curTab], plural=n=>n>1?(unit==='mois'?'mois':unit+'s'):unit;
+  const msgs=[];
+  if(oc>periodOrdinal(curTab,nowP)) msgs.push(`⚠️ ${periodeLabel()} est dans le futur.`);
+  const last=lastOf(curTab);
+  if(last && !window.hasExisting){
+    const d=oc-periodOrdinal(curTab,last);
+    if(d>1) msgs.push(`⚠️ La dernière saisie de ${RESTOS.find(r=>r[0]===curResto)[1]} est ${lastLabel(curTab)} : il y aurait ${d-1} ${plural(d-1)} sans saisie entre les deux.`);
+    else if(d<0) msgs.push(`⚠️ ${periodeLabel()} est antérieure à la dernière saisie (${lastLabel(curTab)}) et n'a pas encore de saisie.`);
+  }
+  return msgs.length?msgs.join('\n\n')+'\n\nEnregistrer quand même ?':'';
+}
 // ── Enregistrer ──
 async function save(){
   const btn=document.getElementById('btnSave'), msg=document.getElementById('saveMsg');
@@ -482,6 +525,7 @@ async function save(){
     if(v!=null&&v!=='') data[f.k]=v;
   });
   if(Object.keys(data).length===0){ msg.className='save-msg err'; msg.textContent='Rien à enregistrer.'; return; }
+  const warn=periodWarning(); if(warn && !confirm(warn)){ msg.className='save-msg'; msg.textContent='Enregistrement annulé.'; return; }
   const payload={ action:'save', frequence:curTab, restaurant:curResto, periode:currentPeriode(), data };
   if(curTab==='ponctuel') payload.type=currentType();
   const where=RESTOS.find(r=>r[0]===curResto)[1]+' · '+periodeLabel();
