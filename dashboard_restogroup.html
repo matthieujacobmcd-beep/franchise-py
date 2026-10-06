@@ -5457,6 +5457,19 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
         localStorage.setItem('fpy_banners_cache', JSON.stringify(BANNERS));
       } catch (e) {}
     }
+    // Performance Restaurants : mois téléversés depuis la page de saisie (fusionnés avec ceux d'origine)
+    if (sheet.performance && Array.isArray(sheet.performance.months) && typeof PERFORMANCE_DATA !== 'undefined' && PERFORMANCE_DATA) {
+      try {
+        const sp = sheet.performance, P = PERFORMANCE_DATA, byKey = {};
+        (P.months || []).forEach(m => { byKey[m.key] = m; });
+        sp.months.forEach(m => { byKey[m.key] = m; });
+        P.months = Object.values(byKey).sort((a, b) => a.idx - b.idx);
+        P.data = Object.assign({}, P.data || {}, sp.data || {});
+        if (sp.restos && sp.restos.length) P.restos = sp.restos;
+        if (sp.lexique && sp.lexique.length) P.lexique = sp.lexique;
+        if (typeof currentEspace !== 'undefined' && currentEspace === 'performance' && typeof loadPerformance === 'function') loadPerformance();
+      } catch (e) { console.error('[Sheet] performance', e); }
+    }
     try { renderTabs(); renderMain(); } catch (e) { console.error('[Sheet] rendu', e); }
   }
 
@@ -7220,7 +7233,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261005-183028';
+const BUILD_VERSION = '20261006-100521';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

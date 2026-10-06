@@ -80,6 +80,12 @@
   .inwrap input.auto + .unit{ background:transparent; color:var(--muted); }
   .last-saisie{ font-size:.74rem; color:var(--muted); margin-top:3px; }
   .last-saisie b{ color:var(--gold); }
+  .doc-list{ margin-top:20px; border-top:1.5px solid var(--border); padding-top:6px; }
+  .doc-sec{ font-size:.7rem; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); margin:14px 0 6px; }
+  .doc-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--card2); border-radius:10px; padding:8px 12px; margin-bottom:6px; font-size:.84rem; }
+  .doc-row i{ color:var(--muted); font-size:.74rem; margin-left:6px; font-style:normal; }
+  .doc-row button{ border:none; background:transparent; color:var(--red); font-size:1rem; cursor:pointer; }
+  .field input[type=file]{ padding:7px 9px; }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
 </style>
@@ -132,7 +138,8 @@ const PWD_HASH = '08c8196053521a48310c141260c4a9475488de7b7828a2f8c2e4ee964b6cf9
 async function sha256(s){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
 async function checkPwd(){
   const v=document.getElementById('pwd').value;
-  if(await sha256(v)===PWD_HASH){ sessionStorage.setItem('py_saisie','1'); showApp(); }
+  const hv=await sha256(v);
+  if(hv===PWD_HASH){ sessionStorage.setItem('py_saisie','1'); sessionStorage.setItem('py_pwdhash',hv); showApp(); }
   else { const e=document.getElementById('loginErr'); e.textContent='Mot de passe incorrect'; setTimeout(()=>e.textContent='',2500); }
 }
 function showApp(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='block'; init(); }
@@ -140,7 +147,7 @@ function showApp(){ document.getElementById('login').style.display='none'; docum
 // ── Modèle ──
 const RESTOS=[['CHAMBERY','Chambéry'],['AIX LES BAINS','Aix les Bains'],['BELLEY','Belley'],['ST ALBAN','St Alban'],['LES ABRETS','Les Abrets'],['PDB','Pont-de-Beauvoisin'],['FRANCIN','Francin'],['VIVIERS','Viviers']];
 const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT','SEPTEMBRE','OCTOBRE','NOVEMBRE','DÉCEMBRE'];
-const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel']];
+const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel'],['documents','Documents']];
 // Indicateurs saisis chaque semaine : le mois correspondant (onglet Mensuel)
 // se pré-remplit avec la moyenne des semaines tant qu'il n'a pas été validé.
 const HEBDO_KEYS=['oepe','r2p','oph','hello_mcdo','reseaux','uvhe','tche'];
@@ -219,7 +226,11 @@ function weekMonthKey(p){
 let LAST=null;
 async function loadLast(){
   if(!configured()) return;
-  try{ const r=await fetch(APPS_SCRIPT_URL+'?action=last&_='+Date.now()); const j=await r.json(); if(j&&j.last) LAST=j.last; }catch(e){}
+  try{
+    const c=new AbortController(), to=setTimeout(()=>c.abort(),25000);
+    const r=await fetch(APPS_SCRIPT_URL+'?action=last&_='+Date.now(),{signal:c.signal}); clearTimeout(to);
+    const j=await r.json(); if(j&&j.last) LAST=j.last;
+  }catch(e){}
 }
 const lastOf=(tab)=>LAST&&LAST[tab]&&curResto?LAST[tab][curResto]:null;
 function nextPeriod(tab){
@@ -251,9 +262,14 @@ function init(){
   document.getElementById('pickGrid').innerHTML=RESTOS.map(([k,n])=>`<button class="pick-btn" onclick="setResto('${k}')">${n}</button>`).join('');
   const tb=document.getElementById('tabBar');
   tb.innerHTML=TABS.map(([k,n])=>`<button class="tab ${k===curTab?'on':''}" data-t="${k}" onclick="setTab('${k}')">${n}</button>`).join('');
-  const lastP=loadLast();
   let saved=null; try{ saved=sessionStorage.getItem('py_resto'); }catch(e){}
-  if(saved && RESTOS.some(r=>r[0]===saved)) lastP.then(()=>setResto(saved)); else showPicker();
+  // la page s'affiche tout de suite ; la dernière saisie (pour proposer la période suivante) arrive ensuite
+  if(saved && RESTOS.some(r=>r[0]===saved)) setResto(saved); else showPicker();
+  loadLast().then(()=>{
+    if(!curResto||curTab==='documents'||curTab==='ponctuel') return;
+    const typed=[...document.querySelectorAll('#fieldsGrid input, #fieldsGrid textarea')].some(e=>!e.readOnly&&e.value!=='');
+    if(!typed) renderPanel();                       // rien de saisi : on se cale sur la période suivante
+  });
 }
 function showPicker(){ document.getElementById('pickCancel').style.display=curResto?'inline':'none'; document.getElementById('restoPick').style.display='flex'; }
 function hidePicker(){ document.getElementById('restoPick').style.display='none'; }
@@ -293,6 +309,7 @@ function fieldHtml(f){
   return `<div class="field"><label>${f.l}</label><div class="inwrap ${f.u?'has-unit':''}"><input type="${f.auto?'text':'number'}" step="any" inputmode="decimal" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé"':''}>${unit}</div></div>`;
 }
 function renderPanel(keepPeriod){
+  if(curTab==='documents') return renderDocuments();
   const p=document.getElementById('panel');
   const label=TABS.find(t=>t[0]===curTab)[1];
   const restoName=RESTOS.find(r=>r[0]===curResto)[1];
@@ -444,6 +461,173 @@ async function save(){
     msg.className='save-msg err'; msg.textContent='Erreur de connexion — saisie non confirmée, réessaie.';
   }
   btn.disabled=false;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  DOCUMENTS : Marketing News, Actualité Restaurant (PDF) et Performance Restaurants (Excel)
+// ══════════════════════════════════════════════════════════════════
+const DOC_KINDS=[
+  ['marketing','Marketing News','PDF','.pdf','Marketing News - Octobre'],
+  ['actualite','Actualité Restaurant','PDF','.pdf','2026.10.05 L_Actu Restaurants'],
+  ['performance','Performance Restaurants','Excel (.xlsx)','.xlsx,.xlsm',''],
+];
+const pwdHash=()=>{ try{ return sessionStorage.getItem('py_pwdhash')||''; }catch(e){ return ''; } };
+const fileToB64=file=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=()=>rej(new Error('lecture du fichier impossible')); r.readAsDataURL(file); });
+async function postJson(body){
+  let err='';
+  for(let t=0;t<2;t++){
+    try{
+      const c=new AbortController(), to=setTimeout(()=>c.abort(),150000);
+      const r=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(body),signal:c.signal});
+      clearTimeout(to); return await r.json();
+    }catch(e){ err=e.name==='AbortError'?'délai dépassé':e.message; }
+  }
+  return {ok:false,error:err||'connexion impossible'};
+}
+function docKind(){ const el=document.getElementById('docKind'); return DOC_KINDS.find(k=>k[0]===(el?el.value:'marketing'))||DOC_KINDS[0]; }
+const escH=s=>String(s==null?'':s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+function renderDocuments(){
+  const p=document.getElementById('panel');
+  if(!pwdHash()){
+    p.innerHTML=`<div class="panel-head"><div class="panel-title">Documents</div></div>
+      <div class="entry-banner err" style="display:block">🔒 Pour téléverser des documents, reconnecte-toi avec le mot de passe de la saisie.</div>
+      <div class="foot"><button class="btn-save" onclick="try{sessionStorage.clear()}catch(e){};location.reload()">Se reconnecter</button></div>`; return;
+  }
+  p.innerHTML=`
+    <div class="panel-head"><div><div class="panel-title">Documents</div><div class="last-saisie">Téléverse un document : il apparaît tout de suite dans le dashboard.</div></div></div>
+    <div class="grid">
+      <div class="field"><label>Type de document</label><select id="docKind" onchange="docKindChanged()">${DOC_KINDS.map(k=>`<option value="${k[0]}">${k[1]} — ${k[2]}</option>`).join('')}</select></div>
+      <div class="field"><label>Fichier</label><input type="file" id="docFile" onchange="docFileChanged()"></div>
+      <div class="field field-full" id="docNameWrap"><label>Nom affiché dans le dashboard</label><input type="text" id="docName"><div class="hint" id="docNameHint"></div></div>
+    </div>
+    <div class="foot"><button class="btn-save" id="btnDoc" onclick="uploadDocument()">Téléverser</button><span class="save-msg" id="docMsg"></span></div>
+    <div class="hint" id="docHint"></div>
+    <div class="doc-list" id="docList"><div class="hint">Chargement des documents…</div></div>`;
+  docKindChanged(); loadDocList();
+}
+function docKindChanged(){
+  const k=docKind(), file=document.getElementById('docFile');
+  file.accept=k[3]; file.value=''; document.getElementById('docName').value='';
+  const perf=k[0]==='performance';
+  document.getElementById('docNameWrap').style.display=perf?'none':'';
+  document.getElementById('docNameHint').textContent='Exemple : « '+k[4]+' ». '+(k[0]==='actualite'?'La date en tête classe les plus récents en premier.':'Un document de même nom est remplacé.');
+  document.getElementById('docHint').textContent=perf
+    ? 'Choisis le fichier « PERFORMANCE RESTAURANTS … .xlsx » du mois : la page lit le mois, les restaurants, les rangs et leurs couleurs. Un mois déjà téléversé est remplacé.'
+    : 'Fichiers PDF uniquement (20 Mo maximum).';
+}
+function docFileChanged(){
+  const k=docKind(), f=document.getElementById('docFile').files[0]; if(!f||k[0]==='performance') return;
+  const n=document.getElementById('docName'); if(!n.value) n.value=f.name.replace(/\.[^.]+$/,'');
+}
+async function loadDocList(){
+  const box=document.getElementById('docList'); if(!box) return;
+  try{
+    const [d,pf]=await Promise.all([
+      fetch(APPS_SCRIPT_URL+'?action=docs&_='+Date.now()).then(r=>r.json()),
+      fetch(APPS_SCRIPT_URL+'?action=perf_list&_='+Date.now()).then(r=>r.json()).catch(()=>({months:[]})) ]);
+    if(!d||!d.ok) throw new Error('réponse inattendue');
+    const sec=(title,kind,items)=>`<div class="doc-sec">${title}</div>`+(items.length?items.map(x=>`<div class="doc-row"><span>📄 ${escH(x.mois)} <i>${escH(x.sous_titre||'')}</i></span><button onclick="deleteDocument('${kind}','${x.id}','${escH(x.mois).replace(/'/g,'’')}')" title="Supprimer">✕</button></div>`).join(''):'<div class="hint">Aucun document.</div>');
+    box.innerHTML=sec('Marketing News','marketing',d.marketing||[])+sec('Actualité Restaurant','actualite',d.actualite||[])+
+      `<div class="doc-sec">Performance Restaurants</div>`+((pf.months&&pf.months.length)?`<div class="hint">Mois téléversés depuis cette page : ${pf.months.map(escH).join(', ')}. Les mois plus anciens viennent de la version d'origine du dashboard.</div>`:'<div class="hint">Aucun mois téléversé depuis cette page.</div>');
+  }catch(e){ box.innerHTML='<div class="hint">Impossible de lire la liste des documents (connexion ?).</div>'; }
+}
+function docMsg(cls,txt){ const m=document.getElementById('docMsg'); if(m){ m.className='save-msg '+cls; m.textContent=txt; } }
+async function deleteDocument(kind,id,name){
+  if(!confirm('Supprimer « '+name+' » du dashboard ?')) return;
+  docMsg('','Suppression…');
+  const j=await postJson({action:'doc_delete',kind,id,pwd:pwdHash()});
+  docMsg(j.ok?'ok':'err', j.ok?'✓ Document supprimé.':'Erreur : '+j.error); if(j.ok) loadDocList();
+}
+async function uploadDocument(){
+  const k=docKind(), file=document.getElementById('docFile').files[0], btn=document.getElementById('btnDoc');
+  if(!file){ docMsg('err','Choisis un fichier.'); return; }
+  btn.disabled=true; docMsg('','Lecture du fichier…');
+  try{
+    if(k[0]==='performance'){
+      docMsg('','Lecture du fichier Excel…');
+      const perf=await parsePerfFile(file);
+      docMsg('',`Enregistrement de « ${perf.label} » (${perf.order.length} onglets)…`);
+      const j=await postJson(Object.assign({action:'perf_save',pwd:pwdHash()},perf));
+      if(!j.ok) throw new Error(j.error||'enregistrement refusé');
+      docMsg('ok',`✓ Performance « ${perf.label} » enregistrée (${perf.order.length} onglets).`);
+    } else {
+      const name=document.getElementById('docName').value.trim();
+      if(!name){ docMsg('err','Donne un nom au document.'); btn.disabled=false; return; }
+      if(!/\.pdf$/i.test(file.name)){ docMsg('err','Fichier PDF uniquement.'); btn.disabled=false; return; }
+      if(file.size>20*1024*1024){ docMsg('err','Fichier trop lourd (20 Mo maximum).'); btn.disabled=false; return; }
+      docMsg('','Envoi en cours (peut prendre un moment)…');
+      const j=await postJson({action:'doc_upload',kind:k[0],name,pdf:await fileToB64(file),pwd:pwdHash()});
+      if(!j.ok) throw new Error(j.error||'envoi refusé');
+      docMsg('ok',j.replaced?`✓ « ${name} » remplacé.`:`✓ « ${name} » téléversé.`);
+    }
+    document.getElementById('docFile').value=''; loadDocList();
+  }catch(e){ docMsg('err','Erreur : '+e.message); }
+  btn.disabled=false;
+}
+
+// ── Lecture d'un fichier Performance (xlsx) dans le navigateur — mêmes règles que l'ancien moteur ──
+const PERF_MONTHS=MONTHS;
+const RANK_QUINT={'00B050':1,'92D050':2,'FFC000':3,'FF6969':4,'FF0000':5};
+async function loadJSZip(){
+  if(window.JSZip) return;
+  await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload=res; s.onerror=()=>rej(new Error('lecteur Excel indisponible (connexion ?)')); document.head.appendChild(s); });
+}
+async function parsePerfFile(file){
+  await loadJSZip();
+  const zip=await JSZip.loadAsync(await file.arrayBuffer());
+  const txt=async p=>{ const f=zip.file(p); return f?await f.async('string'):null; };
+  const dom=s=>new DOMParser().parseFromString(s,'application/xml');
+  const wb=dom(await txt('xl/workbook.xml')), rels=dom(await txt('xl/_rels/workbook.xml.rels'));
+  const target={}; [...rels.getElementsByTagName('Relationship')].forEach(r=>{ target[r.getAttribute('Id')]=r.getAttribute('Target'); });
+  const sheets=[...wb.getElementsByTagName('sheet')].map(s=>({name:s.getAttribute('name'),rid:s.getAttribute('r:id')||s.getAttribute('id')}));
+  const ssXml=await txt('xl/sharedStrings.xml'), ss=[];
+  if(ssXml) [...dom(ssXml).getElementsByTagName('si')].forEach(si=>ss.push([...si.getElementsByTagName('t')].map(t=>t.textContent).join('')));
+  // couleurs de remplissage : cellXfs[s].fillId → fgColor
+  const st=dom(await txt('xl/styles.xml')), fills=[...st.getElementsByTagName('fills')[0].getElementsByTagName('fill')].map(f=>{ const pf=f.getElementsByTagName('patternFill')[0], fg=pf&&pf.getElementsByTagName('fgColor')[0]; return { type:pf?pf.getAttribute('patternType'):null, rgb:fg?fg.getAttribute('rgb'):null }; });
+  const xfs=[...st.getElementsByTagName('cellXfs')[0].getElementsByTagName('xf')].map(x=>+x.getAttribute('fillId')||0);
+  const quint=s=>{ const f=fills[xfs[s]]; if(!f||!f.type||f.type==='none'||!f.rgb||f.rgb.length<6) return null; return RANK_QUINT[f.rgb.slice(-6).toUpperCase()]||null; };
+  const colIdx=ref=>{ const m=ref.match(/^([A-Z]+)(\d+)$/); let c=0; for(const ch of m[1]) c=c*26+ch.charCodeAt(0)-64; return [c,+m[2]]; };
+  const num=v=>{ const n=parseFloat(v); return isNaN(n)?String(v):String(n); };
+  async function readSheet(path){
+    const x=dom(await txt(path)), cells={}; let maxRow=0;
+    [...x.getElementsByTagName('c')].forEach(c=>{
+      const [col,row]=colIdx(c.getAttribute('r')); const t=c.getAttribute('t'), vEl=c.getElementsByTagName('v')[0];
+      let v=null;
+      if(t==='inlineStr') v=[...c.getElementsByTagName('t')].map(e=>e.textContent).join('');
+      else if(vEl){ const raw=vEl.textContent; v = t==='s'?ss[+raw] : (t==='str'||t==='e')?raw : t==='b'?(raw==='1'?'True':'False') : {n:raw}; }
+      if(v!==null&&v!==undefined&&v!=='') cells[col+','+row]={v,s:+c.getAttribute('s')||0};
+      if(row>maxRow) maxRow=row;
+    });
+    return {cells,maxRow};
+  }
+  const S=v=>v==null?'':(typeof v==='object'?num(v.n):String(v).trim());
+  let monthKey=null, year=null; const restos={}, order=[]; let lexique=[];
+  for(const sh of sheets){
+    let tg=target[sh.rid]; if(!tg) continue; tg=tg.replace(/^\/?(xl\/)?/,'xl/');
+    const {cells,maxRow}=await readSheet(tg), cell=(r,c)=>cells[c+','+r];
+    if(sh.name.trim().toLowerCase()==='lexique'){
+      for(let r=3;r<=maxRow;r++){ const k=cell(r,1); if(k) lexique.push({kpi:S(k.v),def:S((cell(r,2)||{}).v)}); }
+      continue;
+    }
+    const arr=[];
+    for(let r=3;r<=28;r++){
+      const k=cell(r,1); if(!k) continue;
+      const b=cell(r,2);
+      if(monthKey===null&&b){
+        let m=null,y=null;
+        if(typeof b.v==='object'&&parseFloat(b.v.n)>20000){ const d=new Date(Date.UTC(1899,11,30)+parseFloat(b.v.n)*86400000); m=d.getUTCMonth()+1; y=d.getUTCFullYear(); }
+        else { const mm=S(b.v).match(/^\s*(\d{4})[-\/](\d{1,2})/); if(mm){ y=+mm[1]; m=+mm[2]; } }
+        if(m){ monthKey=PERF_MONTHS[m-1]; year=y; }
+      }
+      const g=cell(r,7);
+      arr.push({kpi:S(k.v),cur:S((cell(r,3)||{}).v),vs25:S((cell(r,4)||{}).v),ytd:S((cell(r,5)||{}).v),vsytd:S((cell(r,6)||{}).v),rang:S((g||{}).v),q:g?quint(g.s):null});
+    }
+    if(arr.length){ restos[sh.name]=arr; order.push(sh.name); }
+  }
+  if(!monthKey) throw new Error('mois introuvable dans le fichier (colonne B des onglets) — est-ce bien un fichier Performance Restaurants ?');
+  if(!order.length) throw new Error('aucun onglet restaurant lu');
+  return { key:monthKey, label:monthKey.charAt(0)+monthKey.slice(1).toLowerCase()+(year?' '+year:''), idx:PERF_MONTHS.indexOf(monthKey), restos, order, lexique:lexique.length?lexique:null };
 }
 
 // ── Démarrage ──
