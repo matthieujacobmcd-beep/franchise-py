@@ -2485,7 +2485,13 @@ function getCutoffLabel(resto) {
   if (months.length === 0) return null;
   const lastM = months[months.length - 1];
   const d = new Date(fc[lastM]);
-  return `au ${d.getDate()} ${lastM.charAt(0)+lastM.slice(1).toLowerCase()}`;
+  let lbl = `au ${d.getDate()} ${lastM.charAt(0)+lastM.slice(1).toLowerCase()}`;
+  const lag = meta.lagging || [];
+  if (lag.length) {
+    const mn = new Date(lag.map(x => x.day).sort()[0]);
+    lbl += ` · ${lag.length} resto${lag.length > 1 ? 's' : ''} saisi${lag.length > 1 ? 's' : ''} seulement au ${String(mn.getDate()).padStart(2, '0')}/${String(mn.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return lbl;
 }
 
 // Version modifiée de calcAnnual utilisant les données déjà agrégées au bon cutoff par resto
@@ -4476,9 +4482,19 @@ function kpiHas25(kpi) {
 // Le quotidien s'ouvre en cliquant sur un mois (évite la surcharge).
 // ══════════════════════════════════════════════════════════════════
 let currentDrillMonth = null;
-const DAILY_KPI_IDS = ['ca_total', 'ca_alim', 'tacs', 'pm'];
+// Indicateurs calculables depuis la saisie quotidienne : [type, champ(s)]
+const DAILY_METRIC = {
+  ca_total: ['sum', 'ca'], ca_alim: ['sum', 'alim'], tacs: ['sum', 'tacs'], pm: ['ratio', 'ca', 'tacs'],
+  vphe_annual: ['ratio', 'alim', 'heures'], vphg_annual: ['ratio', 'alim', 'heures_total'],
+  pertes_annual: ['ratio', 'perte', 'alim'], remboursement_annual: ['ratio', 'remb', 'alim'], promotion_annual: ['ratio', 'promo', 'alim'],
+  ecart_caisse_total: ['sum', 'ecart']
+};
+const DAILY_KPI_IDS = Object.keys(DAILY_METRIC);
+// Indicateurs saisis chaque semaine → champ de l'onglet Hebdomadaire
+const WEEKLY_KPI_MAP = { oepe_annual: 'oepe', r2p_annual: 'r2p', oph_annual: 'oph', hello_mcdo: 'hello_mcdo', reseau: 'reseaux', uvhe_annual: 'uvhe', tche_annual: 'tche' };
+function isWeeklyKpi(kpi) { return !!kpi && !!WEEKLY_KPI_MAP[kpi.id] && Array.isArray(DASHBOARD_DATA.hebdo) && DASHBOARD_DATA.hebdo.length > 0; }
 function isDailyKpi(kpi) {
-  return !!kpi && DAILY_KPI_IDS.includes(kpi.id) && currentResto !== SEL_KEY
+  return !!kpi && (DAILY_KPI_IDS.includes(kpi.id) || isWeeklyKpi(kpi)) && currentResto !== SEL_KEY
       && !prevMode && !compareMode && !!(DASHBOARD_DATA.daily);
 }
 function _doy(y, mo, d) { return Math.round((Date.UTC(y, mo, d) - Date.UTC(y, 0, 1)) / 86400000); }
@@ -4489,19 +4505,50 @@ function _dcell(resto, year, field, dt) {
   return (i >= 0 && i < a.length) ? (a[i] ?? null) : null;
 }
 function dailyKpiRange(kpiId, resto, year, start, end) {
-  let ca = 0, al = 0, tc = 0, has = false;
+  const m = DAILY_METRIC[kpiId]; if (!m) return null;
+  const fields = m.slice(1), s = {}; fields.forEach(f => { s[f] = 0; });
+  let has = false;
   for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
     const dt = new Date(t);
-    const c = _dcell(resto, year, 'ca', dt), a = _dcell(resto, year, 'alim', dt), x = _dcell(resto, year, 'tacs', dt);
-    if (c != null || a != null || x != null) has = true;
-    ca += c || 0; al += a || 0; tc += x || 0;
+    for (const f of fields) { const v = _dcell(resto, year, f, dt); if (v != null) { s[f] += v; has = true; } }
   }
   if (!has) return null;
-  if (kpiId === 'ca_total') return ca || null;
-  if (kpiId === 'ca_alim') return al || null;
-  if (kpiId === 'tacs') return tc || null;
-  if (kpiId === 'pm') return tc ? ca / tc : null;
-  return null;
+  if (m[0] === 'sum') return kpiId === 'ecart_caisse_total' ? s[fields[0]] : (s[fields[0]] || null);
+  return s[fields[1]] ? s[fields[0]] / s[fields[1]] : null;
+}
+// ── Vue hebdomadaire des indicateurs saisis chaque semaine ──
+function _isoWeekMonday(y, w) {
+  const jan4 = Date.UTC(y, 0, 4), dow = (new Date(jan4).getUTCDay() + 6) % 7;
+  return new Date(jan4 - dow * 86400000 + (w - 1) * 7 * 86400000);
+}
+function weeklyKpiValue(field, resto, wkey, y, w) {
+  const rows = (DASHBOARD_DATA.hebdo || []).filter(x => x.periode === wkey && (resto === 'FRANCHISE' || x.restaurant === resto));
+  if (!rows.length) return null;
+  const num = v => (v === '' || v == null || !isFinite(Number(v))) ? null : Number(v);
+  if (field === 'oph') {                       // avis négatifs × 100 000 ÷ transactions (sinon OPH saisi à l'ancienne)
+    const mon = _isoWeekMonday(y, w), sun = new Date(mon.getTime() + 6 * 86400000);
+    let avis = 0, tx = 0, any = false; const old = [];
+    for (const x of rows) {
+      const a = num(x.avis);
+      if (a != null) { const t = dailyKpiRange('tacs', x.restaurant, mon.getUTCFullYear(), mon, sun); if (t) { avis += a; tx += t; any = true; } }   // sans transactions saisies : OPH non calculable
+      else if (num(x.oph) != null) old.push(num(x.oph));
+    }
+    if (any && tx) return avis * 100000 / tx;
+    return old.length ? old.reduce((a, b) => a + b, 0) / old.length : null;
+  }
+  const v = rows.map(x => num(x[field])).filter(n => n != null);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+function weeklySeries(kpi) {
+  const r = currentResto, field = WEEKLY_KPI_MAP[kpi.id], y = currentYear;
+  const keys = [...new Set((DASHBOARD_DATA.hebdo || []).map(x => x.periode).filter(p => p.startsWith(y + '-W')))].sort();
+  const rows = []; let prev = null;
+  for (const k of keys) {
+    const w = +k.slice(6), mon = _isoWeekMonday(y, w), v = weeklyKpiValue(field, r, k, y, w);
+    rows.push({ label: 'S' + String(w).padStart(2, '0'), sub: 'sem. du ' + _fdshort(mon), v, v25: prev, v24: null });
+    if (v != null) prev = v;
+  }
+  return { resto: r, rows, weekly: true, cmpLabel: 'Semaine préc.' };
 }
 function _lastCovered(year) {
   const a = DASHBOARD_DATA.daily?.[year]?.['FRANCHISE']?.['ca'];
@@ -4523,6 +4570,7 @@ function _weekBuckets(year) {
 }
 function _fdshort(dt) { return String(dt.getUTCDate()).padStart(2, '0') + '/' + String(dt.getUTCMonth() + 1).padStart(2, '0'); }
 function dailySeries(kpi) {
+  if (isWeeklyKpi(kpi)) return weeklySeries(kpi);
   const r = (currentResto === 'FRANCHISE') ? 'FRANCHISE' : currentResto;
   const SHIFT = 364 * 86400000;
   const rows = [];
@@ -4560,7 +4608,7 @@ function renderDailyChart(canvas, kpi) {
     tension: .3, pointRadius: many ? 0 : 3, borderWidth: 2.5, fill: true, spanGaps: true,
   }];
   if (has25) datasets.push({
-    label: (currentYear - 1) + ' (équivalent)', data: ser.rows.map(x => x.v25),
+    label: ser.cmpLabel || ((currentYear - 1) + ' (équivalent)'), data: ser.rows.map(x => x.v25),
     borderColor: '#3b82f6', borderDash: [5, 3], backgroundColor: 'transparent',
     tension: .3, pointRadius: many ? 0 : 3, borderWidth: 2, spanGaps: true,
   });
@@ -4583,7 +4631,8 @@ function renderDailyChart(canvas, kpi) {
 }
 function renderDailyTable(body, kpi) {
   const ser = dailySeries(kpi);
-  const goodCls = d => d == null ? 'var(--muted)' : ((kpi.invert ? d < 0 : d >= 0) ? 'var(--green)' : 'var(--red)');
+  const lowerBetter = !!kpi.invert || (typeof LOWER_IS_BETTER !== 'undefined' && LOWER_IS_BETTER.has(kpi.id));
+  const goodCls = d => d == null ? 'var(--muted)' : ((lowerBetter ? d < 0 : d >= 0) ? 'var(--green)' : 'var(--red)');
   const dlt = d => d == null ? '—' : (d >= 0 ? '▲ +' : '▼ ') + d.toFixed(1) + '%';
   const has24 = ser.rows.some(x => x.v24 != null);
   const head = currentPeriod === 'quotidien' ? 'Jour' : 'Semaine';
@@ -4600,11 +4649,15 @@ function renderDailyTable(body, kpi) {
   }
   const cols = has24 ? 6 : 4;
   body.innerHTML = `<div style="overflow-x:auto"><table class="data-table"><thead>
-    <tr><th>${head}</th><th>${currentYear}</th><th>${currentYear - 1}</th><th class="delta">Δ 25</th>`
+    <tr><th>${head}</th><th>${currentYear}</th><th>${ser.cmpLabel || (currentYear - 1)}</th><th class="delta">${ser.weekly ? 'Δ' : 'Δ 25'}</th>`
     + (has24 ? `<th>2024</th><th class="delta">Δ 24</th>` : '') + `</tr></thead>
     <tbody>${rows || `<tr><td colspan="${cols}" style="color:var(--muted)">Aucune donnée.</td></tr>`}</tbody></table></div>`;
 }
-function openMonthDaily(mi) { currentDrillMonth = mi; currentPeriod = 'quotidien'; renderDetail(); }
+function openMonthDaily(mi) {
+  const k = KPIs.find(x => x.id === currentKPI);
+  if (k && isWeeklyKpi(k)) { currentDrillMonth = null; currentPeriod = 'hebdo'; renderDetail(); return; }   // indicateur saisi par semaine : pas de vue jour
+  currentDrillMonth = mi; currentPeriod = 'quotidien'; renderDetail();
+}
 // Tableau semestriel (S1 / S2) par restaurant, avec écart vs même semestre N-1
 function renderSemesterTable(body, kpi) {
   const restos = currentResto === 'FRANCHISE' ? RESTOS : [currentResto];
@@ -5017,7 +5070,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     }
     const commonLast = Math.min(...Object.values(lastDays));
     const cl = new Date(commonLast); const clMonth = cl.getUTCMonth() + 1, clDay = cl.getUTCDate();
-    const MONTHS26 = MONTHS.slice(0, clMonth);
+    // Saisies à des rythmes différents selon les restaurants : on couvre jusqu'au restaurant le plus avancé ;
+    // chaque restaurant garde SON propre dernier jour (comparables N-1 « à date » par restaurant).
+    const maxLast = Math.max(...Object.values(lastDays));
+    const maxMonth = new Date(maxLast).getUTCMonth() + 1;
+    const MONTHS26 = MONTHS.slice(0, maxMonth);
 
     // somme d'un champ sur un mois (optionnellement jusqu'au jour d)
     const dsum = (y, s, mi, f, d) => {
@@ -5029,9 +5086,10 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
 
     OUT.meta = {
       partial_by_resto: Object.fromEntries(STORES.map(s => { const d = new Date(lastDays[s]); return [s, { month: MONTHS[d.getUTCMonth()], day: d.getUTCDate() }]; })),
-      franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < clMonth ? iso(utc(2026, i + 1, daysInMonth(2026, i + 1))) : iso(commonLast)])),
+      franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < maxMonth ? iso(utc(2026, i + 1, daysInMonth(2026, i + 1))) : iso(maxLast)])),
+      lagging: STORES.filter(s => lastDays[s] < maxLast).map(s => ({ resto: s, day: iso(lastDays[s]) })),
       last_day_by_resto: Object.fromEntries(STORES.map(s => [s, iso(lastDays[s])])),
-      current_month_2026: MONTHS[clMonth - 1],
+      current_month_2026: MONTHS[maxMonth - 1],
       import_date: (BASE.meta || {}).import_date || null,
       source: 'sheet',
     };
@@ -5060,9 +5118,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // Comparables 2025 à date
     const comp = { t: {}, a: {}, tc: {}, pm: {}, v: {} };
     MONTHS26.forEach((m, k) => {
-      const mi = k + 1, partial = mi === clMonth; const rt = {}, ra = {}, rtc = {}, rpm = {}, rv = {}; let st = 0, sa = 0, stc = 0, sh = 0;
+      const mi = k + 1; const rt = {}, ra = {}, rtc = {}, rpm = {}, rv = {}; let st = 0, sa = 0, stc = 0, sh = 0;
       for (const s of STORES) {
-        const day = partial ? new Date(lastDays[s]).getUTCDate() : null;
+        const ld = new Date(lastDays[s]), sm = ld.getUTCMonth() + 1;
+        if (mi > sm) { rt[s] = ra[s] = rtc[s] = rpm[s] = rv[s] = null; continue; }     // pas encore de données 2026 ce mois-là
+        const day = mi === sm ? ld.getUTCDate() : null;                                 // mois du dernier jour = partiel, sinon mois entier
         const vt = dsum(2025, s, mi, 'ca', day), va = dsum(2025, s, mi, 'alim', day), vtc = dsum(2025, s, mi, 'tacs', day), vh = dsum(2025, s, mi, 'heures', day);
         rt[s] = vt; ra[s] = va; rtc[s] = vtc; rpm[s] = (vt && vtc) ? vt / vtc : null; rv[s] = (va && vh) ? va / vh : null;
         st += vt || 0; sa += va || 0; stc += vtc || 0; sh += vh || 0;
@@ -6981,7 +7041,7 @@ function exValue(k, r, b, level) {
     if (k.wk === 'oph') {
       let avis = 0, tx = 0, any = false;
       const ents = r === 'FRANCHISE' ? rows : rows;
-      for (const x of ents) { const a = Number(x.avis); if (isFinite(a) && x.avis !== '' && x.avis != null) { avis += a; tx += exDaySum(x.restaurant, 'tacs', b) || 0; any = true; } }
+      for (const x of ents) { const a = Number(x.avis), t = exDaySum(x.restaurant, 'tacs', b); if (isFinite(a) && x.avis !== '' && x.avis != null && t) { avis += a; tx += t; any = true; } }
       return (any && tx) ? avis * 100000 / tx : null;
     }
     const v = rows.map(x => Number(x[k.wk])).filter((n, i) => isFinite(n) && rows[i][k.wk] !== '' && rows[i][k.wk] != null);
@@ -7548,7 +7608,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-171220';
+const BUILD_VERSION = '20261006-202407';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
