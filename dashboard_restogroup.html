@@ -5786,8 +5786,9 @@ function renderWeekComments(r) {
     const n = items.filter(x => x.txt).length;
     return `<span class="wk-day ${items.length ? 'wk-day-on' : ''}" title="${items.map(x => (r === 'FRANCHISE' ? restoShort(x.resto) + ' : ' : '') + (x.txt || '')).join(' · ').replace(/"/g, '&quot;')}">${JOURS[i]} ${d.slice(8, 10)} ${ico}${n ? ` 💬${r === 'FRANCHISE' && n > 1 ? n : ''}` : ''}</span>`;
   }).join('');
-  const lines = list.filter(x => x.txt || x.meteo).map(x =>
-    `<div class="wk-com"><b>${x.jour}</b>${r === 'FRANCHISE' ? ` · ${restoShort(x.resto)}` : ''} ${METEO_ICO[x.meteo] || ''} ${x.txt ? '— ' + x.txt.replace(/</g, '&lt;') : ''}</div>`).join('');
+  // La météo ne figure que sur les pastilles des jours ; la liste ne reprend que les remarques écrites
+  const lines = list.filter(x => x.txt).map(x =>
+    `<div class="wk-com"><b>${x.jour}</b>${r === 'FRANCHISE' ? ` · ${restoShort(x.resto)}` : ''} — ${x.txt.replace(/</g, '&lt;')}</div>`).join('');
   return `<div class="wk-comments"><div class="wk-days">${chips}</div>${lines}</div>`;
 }
 let weekOpenKpi = null;
@@ -7611,7 +7612,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-211417';
+const BUILD_VERSION = '20261006-213705';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
