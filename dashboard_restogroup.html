@@ -2048,7 +2048,7 @@ const AVG_KPIS = ['pac','hello_mcdo','analyses_merieux','audit_merieux',
                   'tche_annual','tche_monthly','uvhe_annual','uvhe_monthly',
                   'vphg_annual','vphg_monthly',
                   'marge_fin','pac_fin','cout_mo','marge_annual','pac_annual',
-                  'remboursement_monthly','remboursement_annual','promotion_monthly','promotion_annual',
+                  'remboursement_monthly','remboursement_annual','promotion_monthly','promotion_annual','ecart_caisse_monthly','ecart_caisse_total',
                   'pertes_monthly','pertes_annual','ecart_rendement_monthly','ecart_rendement_annual',
                   'effectif_monthly','etp_monthly',
                   'dig_fid_actifs','dig_cc_ca','dig_uber_ca','dig_lad_ca',
@@ -2085,7 +2085,7 @@ const KPIs = [
   { id:'ecart_rendement_annual',  label:'Écart de Rendement',         cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'ecart_rendement_monthly' },
   { id:'remboursement_annual',    label:'Remboursement',              cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'remboursement_monthly' },
   { id:'promotion_annual',        label:'Promotion',                  cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'promotion_monthly', noCompare:true },
-  { id:'ecart_caisse_total',      label:'Écart de Caisse',            cat:'fin',  fmt:'euros2',   monthly:false, hasMonthly:'ecart_caisse_monthly', noCompare:true },
+  { id:'ecart_caisse_total',      label:'Écart de Caisse',            cat:'fin',  fmt:'pct2',   monthly:false, hasMonthly:'ecart_caisse_monthly', noCompare:true },
   { id:'pac_annual',              label:'PAC',                        cat:'fin',  fmt:'pct2',     monthly:false, hasMonthly:'pac_fin',      prevKey:'pac_fin_prev'      },
   { id:'cout_mo',                 label:"Coût Main d'Œuvre",          cat:'fin',  fmt:'pct2',     monthly:true,                             prevKey:'cout_mo_prev'      },
   { id:'cash_flow',               label:'Cash Flow',                  cat:'fin',  fmt:'euros',    monthly:true,                             prevKey:'cash_flow_prev'    },
@@ -2129,7 +2129,7 @@ let restoSelection = null; // { members:[...], label:'...' }
 const SUM_RESTO = new Set([
   'ca_total','ca_alim','tacs','cash_flow','resultat_net',
   'hcomp_total','hsup_total','hcomp_monthly','hsup_monthly',
-  'effectif_monthly','etp_monthly','ecart_caisse_total','ecart_caisse_monthly'
+  'effectif_monthly','etp_monthly'
 ]);
 
 // Marchés prédéfinis (modifiables). Par défaut = les 2 secteurs superviseurs.
@@ -4487,7 +4487,7 @@ const DAILY_METRIC = {
   ca_total: ['sum', 'ca'], ca_alim: ['sum', 'alim'], tacs: ['sum', 'tacs'], pm: ['ratio', 'ca', 'tacs'],
   vphe_annual: ['ratio', 'alim', 'heures'], vphg_annual: ['ratio', 'alim', 'heures_total'],
   pertes_annual: ['ratio', 'perte', 'alim'], remboursement_annual: ['ratio', 'remb', 'alim'], promotion_annual: ['ratio', 'promo', 'alim'],
-  ecart_caisse_total: ['sum', 'ecart']
+  ecart_caisse_total: ['ratio', 'ecart', 'alim']
 };
 const DAILY_KPI_IDS = Object.keys(DAILY_METRIC);
 // Indicateurs saisis chaque semaine → champ de l'onglet Hebdomadaire
@@ -5275,9 +5275,10 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       filter: 'any',
       transform: (v, s, m) => { const p = dsum(2026, s, MONTHS.indexOf(m) + 1, 'promo'), a = ((Y26.ca_alim[m] || {})[s]); return (p != null && a) ? p / a : null; },
     });
-    Y26.ecart_caisse_monthly = monthlyTable('2026', 'ecart_caisse_monthly', '__none__', AGG.sum, {
+    // Écart de caisse (% du CA alim) : Σ écarts quotidiens ÷ CA alim (positif = excédent, négatif = manquant)
+    Y26.ecart_caisse_monthly = monthlyTable('2026', 'ecart_caisse_monthly', '__none__', wAlim('2026'), {
       filter: 'any',
-      transform: (v, s, m) => dsum(2026, s, MONTHS.indexOf(m) + 1, 'ecart'),
+      transform: (v, s, m) => { const e = dsum(2026, s, MONTHS.indexOf(m) + 1, 'ecart'), a = ((Y26.ca_alim[m] || {})[s]); return (e != null && a) ? e / a : null; },
     });
     Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
     for (const [k, sk] of [['dig_fid_actifs', 'fid_actifs'], ['dig_cc_ca', 'cc_ca'], ['dig_uber_ca', 'uber_ca'], ['dig_lad_ca', 'lad_ca']]) {
@@ -5330,7 +5331,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         Y[k] = annual(y, k, [t], () => perStore(colWeighted(Y[t], Y.ca_alim), franchiseWeighted(Y[t], Y.ca_alim)));
     }
     Y26.promotion_annual = perStore(colWeighted(Y26.promotion_monthly, Y26.ca_alim), franchiseWeighted(Y26.promotion_monthly, Y26.ca_alim));
-    Y26.ecart_caisse_total = perStore(colSum(Y26.ecart_caisse_monthly), r => AGG.sum(r));
+    Y26.ecart_caisse_total = perStore(colWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim), franchiseWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim));
     Y26.uvhe_annual = annual('2026', 'uvhe_annual', ['uvhe_monthly'], () => perStore(colMean(Y26.uvhe_monthly)));
     for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca'])
       Y26[k] = annual('2026', k, [k + '_m'], () => perStore(colWeighted(Y26[k + '_m'], Y26.ca_total), franchiseWeighted(Y26[k + '_m'], Y26.ca_total)));
@@ -6884,6 +6885,7 @@ const EXK = [
   { id: 'promo_eur',  l: 'Promotion (€)',           g: 'd', fmt: 'euros2', d: { sum: 'promo' } },
   { id: 'promo_pct',  l: 'Promotion (% CA alim)',   g: 'd', fmt: 'pct2',   d: { ratio: ['promo', 'alim'] } },
   { id: 'ecart',      l: 'Écart de Caisse (€)',     g: 'd', fmt: 'euros2', d: { sum: 'ecart' } },
+  { id: 'ecart_pct',  l: 'Écart de Caisse (% CA alim)', g: 'd', fmt: 'pct2', d: { ratio: ['ecart', 'alim'] } },
 
   { id: 'oepe',       l: 'OEPE (s)',                g: 'w', fmt: 'sec',     t: 'oepe',       a: 'mean', wk: 'oepe' },
   { id: 'r2p',        l: 'R2P (s)',                 g: 'w', fmt: 'sec',     t: 'r2p',        a: 'mean', wk: 'r2p' },
@@ -7609,7 +7611,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-205158';
+const BUILD_VERSION = '20261006-211417';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
