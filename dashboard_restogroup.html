@@ -5168,7 +5168,15 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       Y.r2p = monthlyTable(y, 'r2p', 'r2p', AGG.mean, { filter: 'none', transform: hebdo('r2p') });
       Y.hello_mcdo = monthlyTable(y, 'hello_mcdo', 'hello_mcdo', AGG.mean, { filter: 'none', transform: hebdo('hello_mcdo') });
       Y.reseau = monthlyTable(y, 'reseau', 'reseaux', AGG.mean, { filter: 'none', transform: hebdo('reseaux') });
-      Y.oph = monthlyTable(y, 'oph', 'oph', AGG.mean, { filter: 'nonzero', transform: hebdo('oph') });
+      // OPH = avis négatifs × 100 000 ÷ transactions du mois (comme l'Excel). Avis : saisie mensuelle, sinon somme des semaines ;
+      // sans avis saisis, on garde l'OPH d'origine (historique Excel).
+      Y.oph = monthlyTable(y, 'oph', 'oph', (row, m) => { let n = 0, d = 0; for (const s of STORES) { const x = row[s], w = (Y.tacs[m] || {})[s]; if (isNum(x) && isNum(w) && w) { n += x * w; d += w; } } return d ? n / d : mean(STORES.map(s => row[s])); },
+        { filter: 'nonzero', transform: (v, s, m) => {
+            const key = `${m} ${y}`; let avis = val(MEN, key, s, 'avis');
+            if (avis == null) { const ws = ((HEB[key] || {})[s]) || []; const a = ws.map(r => numOrNull(r.avis)).filter(isNum); if (a.length) avis = a.reduce((x, z) => x + z, 0); }
+            const tx = dsum(+y, s, MONTHS.indexOf(m) + 1, 'tacs');
+            return (avis != null && tx) ? avis * 100000 / tx : v;
+          } });
       Y.tche_monthly = monthlyTable(y, 'tche_monthly', 'tche', AGG.mean, { filter: 'nonzero', transform: hebdo('tche') });
       Y.effectif_monthly = monthlyTable(y, 'effectif_monthly', 'effectif', AGG.sum, { filter: 'nonzero' });
       Y.etp_monthly = monthlyTable(y, 'etp_monthly', 'etp', AGG.sum, { filter: 'nonzero' });
@@ -5248,7 +5256,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
 
     for (const y of ['2026', '2025']) {
       const Y = OUT[y];
-      Y.oph_annual = annual(y, 'oph_annual', ['oph'], () => perStore(colMean(Y.oph)));
+      Y.oph_annual = annual(y, 'oph_annual', ['oph'], () => perStore(colWeighted(Y.oph, Y.tacs), franchiseWeighted(Y.oph, Y.tacs)));
       Y.oepe_annual = annual(y, 'oepe_annual', ['oepe'], () => perStore(colMean(Y.oepe)));
       Y.r2p_annual = annual(y, 'r2p_annual', ['r2p'], () => perStore(colMean(Y.r2p)));
       Y.hcomp_total = annual(y, 'hcomp_total', ['hcomp_monthly'], () => perStore(colSum(Y.hcomp_monthly), r => AGG.sum(r)));
@@ -7233,7 +7241,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-100521';
+const BUILD_VERSION = '20261006-103943';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

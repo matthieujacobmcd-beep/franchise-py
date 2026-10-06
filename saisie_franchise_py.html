@@ -150,7 +150,7 @@ const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT'
 const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel'],['documents','Documents']];
 // Indicateurs saisis chaque semaine : le mois correspondant (onglet Mensuel)
 // se pré-remplit avec la moyenne des semaines tant qu'il n'a pas été validé.
-const HEBDO_KEYS=['oepe','r2p','oph','hello_mcdo','reseaux','uvhe','tche'];
+const HEBDO_KEYS=['oepe','r2p','avis','hello_mcdo','reseaux','uvhe','tche'];   // « avis » = somme des avis négatifs (OPH calculé)
 // u = unité affichée dans le champ ; pct = saisi en % (94,4) mais stocké en fraction (0,944)
 const METEO=[['','—'],['soleil','☀️ Soleil'],['nuageux','⛅ Nuageux'],['pluie','🌧️ Pluie'],['orage','⛈️ Orage'],['neige','❄️ Neige'],['brouillard','🌫️ Brouillard'],['canicule','🥵 Canicule'],['vent','💨 Vent fort']];
 const FIELDS={
@@ -164,11 +164,11 @@ const FIELDS={
     {k:'commentaire',l:'Commentaire de la journée',type:'textarea',ph:'Événement, travaux, panne, affluence…'},
   ],
   hebdomadaire:[
-    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'oph',l:'OPH',u:''},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
+    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'avis',l:"Nombre d'avis négatifs",u:'avis'},{k:'oph',l:'OPH (calculé)',u:'',auto:'oph'},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
     {k:'uvhe',l:'UVHE',u:''},{k:'tche',l:'TCHE',u:''},
   ],
   mensuel:[
-    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'oph',l:'OPH',u:''},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
+    {k:'oepe',l:'OEPE',u:'s'},{k:'r2p',l:'R2P',u:'s'},{k:'avis',l:"Nombre d'avis négatifs",u:'avis'},{k:'oph',l:'OPH (calculé)',u:'',auto:'oph'},{k:'hello_mcdo',l:'Hello McDo',u:'%',pct:1},{k:'reseaux',l:'Réseaux Sociaux',u:'/5'},
     {k:'uvhe',l:'UVHE',u:''},{k:'tche',l:'TCHE',u:''},
     {k:'effectif',l:'Effectif',u:'pers.'},{k:'etp',l:'ETP',u:'ETP'},{k:'heures_comp',l:'Heures Complémentaires',u:'h'},{k:'heures_sup',l:'Heures Supplémentaires',u:'h'},
     {k:'to_12m',l:'Turn Over 12 mois',u:'%',pct:1},{k:'to_90j',l:'Turn Over 90 jours',u:'%',pct:1},{k:'abs_imprevu',l:'Absentéisme imprévu',u:'%',pct:1},{k:'abs_injust',l:'Absentéisme injustifié',u:'%',pct:1},
@@ -306,7 +306,8 @@ function fieldHtml(f){
   if(f.type==='select') return `<div class="field"><label>${f.l}</label><select id="f_${f.k}">${f.opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></div>`;
   const auto=f.auto?'auto':'', ro=f.auto?'readonly':'', oninput=f.auto?'':'oninput="recompute()"';
   const unit=f.u?`<span class="unit">${f.u}</span>`:'';
-  return `<div class="field"><label>${f.l}</label><div class="inwrap ${f.u?'has-unit':''}"><input type="${f.auto?'text':'number'}" step="any" inputmode="decimal" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé"':''}>${unit}</div></div>`;
+  const note=f.k==='oph'?'<div class="hint" id="ophNote"></div>':'';
+  return `<div class="field"><label>${f.l}</label><div class="inwrap ${f.u?'has-unit':''}"><input type="${f.auto?'text':'number'}" step="any" inputmode="decimal" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé"':''}>${unit}</div>${note}</div>`;
 }
 function renderPanel(keepPeriod){
   if(curTab==='documents') return renderDocuments();
@@ -338,7 +339,49 @@ function renderPanel(keepPeriod){
   loadExisting();
 }
 function num(id){ const v=document.getElementById(id); if(!v) return null; const t=String(v.value).replace(',','.').trim(); if(t==='') return null; const n=parseFloat(t); return isNaN(n)?null:n; }
+// ── OPH = nombre d'avis négatifs × 100 000 ÷ transactions de la période (comme l'Excel) ──
+let TX=null, TXLoading=null;
+function loadTx(){
+  if(TX||TXLoading||!configured()) return;
+  TXLoading=(async()=>{
+    try{
+      const c=new AbortController(), to=setTimeout(()=>c.abort(),90000);
+      const r=await fetch(APPS_SCRIPT_URL+'?action=all&_='+Date.now(),{signal:c.signal}); clearTimeout(to);
+      const j=await r.json(), m={};
+      (j.quotidien||[]).forEach(x=>{ if(typeof x.transactions==='number'){ (m[x.restaurant]=m[x.restaurant]||{})[x.periode]=x.transactions; } });
+      TX=m;
+    }catch(e){ TX=null; }
+    TXLoading=null; recompute();
+  })();
+}
+function periodDates(){
+  const out=[];
+  if(curTab==='hebdomadaire'){
+    const y=+document.getElementById('pYear').value, w=+document.getElementById('pWeek').value, mon=weekMonday(y,w);
+    for(let i=0;i<7;i++){ const d=new Date(mon); d.setUTCDate(mon.getUTCDate()+i); out.push(d.toISOString().slice(0,10)); }
+  } else {
+    const mi=MONTHS.indexOf(document.getElementById('pMonth').value), y=+document.getElementById('pYear').value, n=new Date(Date.UTC(y,mi+1,0)).getUTCDate();
+    for(let i=1;i<=n;i++) out.push(`${y}-${pad2(mi+1)}-${pad2(i)}`);
+  }
+  return out;
+}
+function recomputeOph(){
+  const el=document.getElementById('f_oph'); if(!el) return;
+  const note=document.getElementById('ophNote'), avis=num('f_avis'), legacy=el.dataset.legacy;
+  el.value=''; if(note) note.textContent='';
+  if(avis==null){
+    if(legacy){ el.value=String(Math.round(+legacy*10)/10).replace('.',','); if(note) note.textContent="OPH d'origine (importé d'Excel) — saisis le nombre d'avis pour le recalculer."; }
+    else if(note) note.textContent="Saisis le nombre d'avis négatifs : l'OPH se calcule seul.";
+    return;
+  }
+  if(!TX){ if(note) note.textContent='⏳ Chargement des transactions…'; loadTx(); return; }
+  const tx=periodDates().reduce((s,d)=>s+(((TX[curResto]||{})[d])||0),0);
+  if(!tx){ if(note) note.textContent='Transactions non saisies sur cette période : OPH non calculable.'; return; }
+  setAuto('f_oph', avis*100000/tx, 1);
+  if(note) note.textContent=`${avis} avis × 100 000 ÷ ${tx.toLocaleString('fr-FR')} transactions`;
+}
 function recompute(){
+  if(curTab==='hebdomadaire'||curTab==='mensuel') recomputeOph();
   if(curTab==='quotidien'){
     const tot=num('f_ca_net_total'), alim=num('f_ca_net_alim'), tacs=num('f_transactions'), he=num('f_heures_equipier'), ht=num('f_heures_totales');
     setAuto('f_panier_moyen', (tot!=null&&tacs)?tot/tacs:null, 2);      // PM = CA net TOTAL ÷ transactions
@@ -380,7 +423,7 @@ async function hebdoRows(resto){
 let loadSeq=0;
 async function loadExisting(){
   const seq=++loadSeq, tab=curTab, resto=curResto, flds=fieldsFor(tab);
-  flds.forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el && !f.auto) el.value=''; });
+  flds.forEach(f=>{ const el=document.getElementById('f_'+f.k); if(el){ delete el.dataset.legacy; if(!f.auto) el.value=''; } });
   recompute();
   const msg=document.getElementById('saveMsg'); if(msg){ msg.className='save-msg'; msg.textContent=''; }
   if(!configured()){ setBanner('',''); return; }
@@ -395,6 +438,7 @@ async function loadExisting(){
   if(data){
     Object.entries(data).forEach(([k,v])=>{
       const el=document.getElementById('f_'+k); if(!el||v==null||v==='') return;
+      if(k==='oph'){ el.dataset.legacy=v; return; }     // OPH d'origine : affiché tant qu'aucun nombre d'avis n'est saisi
       el.value=showVal(flds.find(x=>x.k===k),v);
     });
     recompute();
@@ -413,7 +457,7 @@ async function loadExisting(){
         const vals=rows.map(r=>r[k]).filter(v=>typeof v==='number');
         if(!vals.length) return;
         const f=FIELDS.mensuel.find(x=>x.k===k), el=document.getElementById('f_'+k);
-        el.value=showVal(f, Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*1e6)/1e6); el.classList.add('suggest'); filled.push(f.l);
+        const tot=vals.reduce((a,b)=>a+b,0); el.value=showVal(f, k==='avis'?tot:Math.round(tot/vals.length*1e6)/1e6); el.classList.add('suggest'); filled.push(f.l); recompute();
       });
       if(filled.length){
         const cur=new Date(), cm=MONTHS[cur.getMonth()]+' '+cur.getFullYear();
@@ -431,7 +475,7 @@ async function save(){
   const data={};
   fieldsFor(curTab).forEach(f=>{
     const el=document.getElementById('f_'+f.k); if(!el) return;
-    if(f.auto && !(curTab==='ponctuel'&&f.k==='score')) return;          // le score RGRV calculé est enregistré
+    if(f.auto && !(curTab==='ponctuel'&&f.k==='score')) return;          // champs calculés : jamais enregistrés (sauf score RGRV)          // le score RGRV calculé est enregistré
     let v=(f.type==='textarea'||f.type==='select')?el.value.trim():num('f_'+f.k);
     if(v!=null&&v!==''&&isPct(f)) v=v/100;
     if(f.auto&&v!=null&&v!=='') v=v/100;                                  // score RGRV affiché en %
