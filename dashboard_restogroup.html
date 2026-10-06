@@ -5774,6 +5774,7 @@ function weekComments(r) {
   return out;
 }
 function renderWeekComments(r) {
+  if (r === 'FRANCHISE') return '';          // remarques affichées uniquement sur la vue d'un restaurant
   const list = weekComments(r);
   if (!list.length) return '';
   const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -7608,7 +7609,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-202407';
+const BUILD_VERSION = '20261006-205158';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
