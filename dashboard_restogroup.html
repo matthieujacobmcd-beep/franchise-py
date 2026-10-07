@@ -4509,8 +4509,9 @@ function dailyKpiRange(kpiId, resto, year, start, end) {
   const fields = m.slice(1), s = {}; fields.forEach(f => { s[f] = 0; });
   let has = false;
   for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
-    const dt = new Date(t);
-    for (const f of fields) { const v = _dcell(resto, year, f, dt); if (v != null) { s[f] += v; has = true; } }
+    const dt = new Date(t), vals = fields.map(f => _dcell(resto, year, f, dt));
+    if (m[0] === 'ratio' && vals.some(v => v == null)) continue;            // ratio : seulement les jours où les deux champs sont saisis
+    fields.forEach((f, i) => { if (vals[i] != null) { s[f] += vals[i]; has = true; } });
   }
   if (!has) return null;
   if (m[0] === 'sum') return kpiId === 'ecart_caisse_total' ? s[fields[0]] : (s[fields[0]] || null);
@@ -4525,6 +4526,7 @@ function weeklyKpiValue(field, resto, wkey, y, w) {
   const rows = (DASHBOARD_DATA.hebdo || []).filter(x => x.periode === wkey && (resto === 'FRANCHISE' || x.restaurant === resto));
   if (!rows.length) return null;
   const num = v => (v === '' || v == null || !isFinite(Number(v))) ? null : Number(v);
+  const numNZ = v => { const x = num(v); return x === 0 ? null : x; };            // 0 = non renseigné
   if (field === 'oph') {                       // avis négatifs × 100 000 ÷ transactions (sinon OPH saisi à l'ancienne)
     const mon = _isoWeekMonday(y, w), sun = new Date(mon.getTime() + 6 * 86400000);
     let avis = 0, tx = 0, any = false; const old = [];
@@ -4536,7 +4538,7 @@ function weeklyKpiValue(field, resto, wkey, y, w) {
     if (any && tx) return avis * 100000 / tx;
     return old.length ? old.reduce((a, b) => a + b, 0) / old.length : null;
   }
-  const v = rows.map(x => num(x[field])).filter(n => n != null);
+  const v = rows.map(x => numNZ(x[field])).filter(n => n != null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 function weeklySeries(kpi) {
@@ -5045,11 +5047,19 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       daily[y] = {};
       for (const s of STORES) { daily[y][s] = {}; for (const [f] of DF) daily[y][s][f] = new Array(nDays(y === 2024 ? 2025 : y)).fill(null); }
     }
+    // 2024 : dates RÉELLES dans le Sheet (rapports d'exploitation). Deux représentations :
+    //  - real24 : calendrier 2024 réel (pour l'année 2024 elle-même) ;
+    //  - daily[2024] : aligné sur le calendrier 2025 à 364 jours (même jour de semaine), pour les comparatifs N-1 de 2025.
+    const real24 = {}; for (const s of STORES) real24[s] = { ca: new Array(366).fill(null), alim: new Array(366).fill(null), tacs: new Array(366).fill(null) };
     for (const row of (S.quotidien || [])) {
       const p = normPeriode(row.periode), s = String(row.restaurant || '').trim().toUpperCase();
       if (!STORES.includes(s) || !/^\d{4}-/.test(p)) continue;
       const y = +p.slice(0, 4); if (!daily[y]) continue;
-      const i = doy(y, p); const arrs = daily[y][s];
+      if (y === 2024) {
+        const ri = doy(2024, p);
+        if (ri >= 0 && ri < 366) for (const [f, k] of DF.slice(0, 3)) { const v = numOrNull(row[k]); real24[s][f][ri] = (v != null && v > 0) ? r2(v) : null; }
+      }
+      const i = y === 2024 ? doy(y, p) - 2 : doy(y, p); const arrs = daily[y][s];       // 2024 réel + 364 j = index 2025
       if (i < 0 || i >= arrs.ca.length) continue;
       for (const [f, k] of DF) {
         if (years[y] && !years[y].includes(f)) continue;
@@ -5084,6 +5094,15 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       return found ? t : null;
     };
 
+    // Somme de deux champs sur les SEULS jours où les deux sont saisis (ex. CA alim et heures) : évite de gonfler un ratio
+    // quand un jour a son CA mais pas encore ses heures.
+    const dsumBoth = (y, s, mi, fa, fb, d) => {
+      const A = daily[y][s][fa], B = daily[y][s][fb], [i0, i1] = monthRange(y, mi), end = d ? Math.min(i1, i0 + d - 1) : i1;
+      let a = 0, b = 0;
+      for (let i = i0; i <= end; i++) if (A[i] != null && B[i] != null) { a += A[i]; b += B[i]; }
+      return [a, b];
+    };
+
     OUT.meta = {
       partial_by_resto: Object.fromEntries(STORES.map(s => { const d = new Date(lastDays[s]); return [s, { month: MONTHS[d.getUTCMonth()], day: d.getUTCDate() }]; })),
       franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < maxMonth ? iso(utc(2026, i + 1, daysInMonth(2026, i + 1))) : iso(maxLast)])),
@@ -5098,16 +5117,16 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     function caFamily(y) {
       const ca = {}, alim = {}, tacs = {}, pm = {}, vphe = {};
       MONTHS.forEach((m, k) => {
-        const mi = k + 1, rc = {}, ra = {}, rt = {}, rp = {}, rv = {}; let sc = 0, sa = 0, st = 0, sh = 0;
+        const mi = k + 1, rc = {}, ra = {}, rt = {}, rp = {}, rv = {}; let sc = 0, sa = 0, st = 0, spa = 0, sh = 0;
         for (const s of STORES) {
-          const vc = dsum(y, s, mi, 'ca'), va = dsum(y, s, mi, 'alim'), vt = dsum(y, s, mi, 'tacs'), vh = dsum(y, s, mi, 'heures');
+          const vc = dsum(y, s, mi, 'ca'), va = dsum(y, s, mi, 'alim'), vt = dsum(y, s, mi, 'tacs'), [pa, ph] = dsumBoth(y, s, mi, 'alim', 'heures');
           rc[s] = vc; ra[s] = va; rt[s] = vt;
-          rp[s] = (vc && vt) ? vc / vt : null; rv[s] = (va && vh) ? va / vh : null;
-          sc += vc || 0; sa += va || 0; st += vt || 0; sh += vh || 0;
+          rp[s] = (vc && vt) ? vc / vt : null; rv[s] = (pa && ph) ? pa / ph : null;
+          sc += vc || 0; sa += va || 0; st += vt || 0; spa += pa; sh += ph;
         }
         if (!STORES.some(s => rc[s])) return;
         rc.FRANCHISE = sc; ra.FRANCHISE = sa; rt.FRANCHISE = st;
-        rp.FRANCHISE = st ? sc / st : null; rv.FRANCHISE = sh ? sa / sh : null;
+        rp.FRANCHISE = st ? sc / st : null; rv.FRANCHISE = sh ? spa / sh : null;
         ca[m] = rc; alim[m] = ra; tacs[m] = rt; pm[m] = rp; vphe[m] = rv;
       });
       return [ca, alim, tacs, pm, vphe];
@@ -5118,17 +5137,17 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // Comparables 2025 à date
     const comp = { t: {}, a: {}, tc: {}, pm: {}, v: {} };
     MONTHS26.forEach((m, k) => {
-      const mi = k + 1; const rt = {}, ra = {}, rtc = {}, rpm = {}, rv = {}; let st = 0, sa = 0, stc = 0, sh = 0;
+      const mi = k + 1; const rt = {}, ra = {}, rtc = {}, rpm = {}, rv = {}; let st = 0, sa = 0, stc = 0, spa = 0, sh = 0;
       for (const s of STORES) {
         const ld = new Date(lastDays[s]), sm = ld.getUTCMonth() + 1;
         if (mi > sm) { rt[s] = ra[s] = rtc[s] = rpm[s] = rv[s] = null; continue; }     // pas encore de données 2026 ce mois-là
         const day = mi === sm ? ld.getUTCDate() : null;                                 // mois du dernier jour = partiel, sinon mois entier
-        const vt = dsum(2025, s, mi, 'ca', day), va = dsum(2025, s, mi, 'alim', day), vtc = dsum(2025, s, mi, 'tacs', day), vh = dsum(2025, s, mi, 'heures', day);
-        rt[s] = vt; ra[s] = va; rtc[s] = vtc; rpm[s] = (vt && vtc) ? vt / vtc : null; rv[s] = (va && vh) ? va / vh : null;
-        st += vt || 0; sa += va || 0; stc += vtc || 0; sh += vh || 0;
+        const vt = dsum(2025, s, mi, 'ca', day), va = dsum(2025, s, mi, 'alim', day), vtc = dsum(2025, s, mi, 'tacs', day), [pa, ph] = dsumBoth(2025, s, mi, 'alim', 'heures', day);
+        rt[s] = vt; ra[s] = va; rtc[s] = vtc; rpm[s] = (vt && vtc) ? vt / vtc : null; rv[s] = (pa && ph) ? pa / ph : null;
+        st += vt || 0; sa += va || 0; stc += vtc || 0; spa += pa; sh += ph;
       }
       rt.FRANCHISE = st || null; ra.FRANCHISE = sa || null; rtc.FRANCHISE = stc || null;
-      rpm.FRANCHISE = stc ? st / stc : null; rv.FRANCHISE = sh ? sa / sh : null;
+      rpm.FRANCHISE = stc ? st / stc : null; rv.FRANCHISE = sh ? spa / sh : null;
       comp.t[m] = rt; comp.a[m] = ra; comp.tc[m] = rtc; comp.pm[m] = rpm; comp.v[m] = rv;
     });
     Y25.ca_total_comparable = comp.t; Y25.ca_alim_comparable = comp.a; Y25.tacs_comparable = comp.tc;
@@ -5138,7 +5157,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const annualRatio = (y, fa, fb) => {
       const row = {}; let A = 0, H = 0;
       for (const s of STORES) {
-        let a = 0, h = 0; for (let mi = 1; mi <= 12; mi++) { a += dsum(y, s, mi, fa) || 0; h += dsum(y, s, mi, fb) || 0; }
+        let a = 0, h = 0; for (let mi = 1; mi <= 12; mi++) { const [pa, ph] = dsumBoth(y, s, mi, fa, fb); a += pa; h += ph; }
         row[s] = h ? a / h : null; A += a; H += h;
       }
       row.FRANCHISE = H ? A / H : null; return row;
@@ -5147,7 +5166,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       const out = {};
       MONTHS.forEach((m, k) => {
         const row = {}; let A = 0, H = 0;
-        for (const s of STORES) { const a = dsum(y, s, k + 1, 'alim'), h = dsum(y, s, k + 1, 'heures_total'); row[s] = (a && h) ? a / h : null; A += a || 0; H += h || 0; }
+        for (const s of STORES) { const [a, h] = dsumBoth(y, s, k + 1, 'alim', 'heures_total'); row[s] = (a && h) ? a / h : null; A += a; H += h; }
         if (!STORES.some(s => row[s])) return;
         row.FRANCHISE = H ? A / H : null; out[m] = row;
       });
@@ -5183,7 +5202,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const hebdo = sk => (v, s, m, y) => {
       if (v != null) return v;
       const rows = ((HEB[`${m} ${y}`] || {})[s]) || [];
-      return mean(rows.map(r => numOrNull(r[sk])));
+      // 0 = case laissée vide : ignoré (OEPE, R2P, Hello McDo, réseaux, UVHE, TCHE ne valent jamais 0)
+      return mean(rows.map(r => { const x = numOrNull(r[sk]); return (x === 0 && sk !== 'oph') ? null : x; }));
     };
     const PREV = idx(S.previsionnel, monthKey);
     const val = (T, p, s, k) => numOrNull(((T[p] || {})[s] || {})[k]);
@@ -5281,9 +5301,22 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       transform: (v, s, m) => { const e = dsum(2026, s, MONTHS.indexOf(m) + 1, 'ecart'), a = ((Y26.ca_alim[m] || {})[s]); return (e != null && a) ? e / a : null; },
     });
     Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
-    for (const [k, sk] of [['dig_fid_actifs', 'fid_actifs'], ['dig_cc_ca', 'cc_ca'], ['dig_uber_ca', 'uber_ca'], ['dig_lad_ca', 'lad_ca']]) {
-      Y26[k + '_m'] = monthlyTable('2026', k + '_m', sk, wTot('2026'), { filter: 'any' });
-    }
+    // Digital : FID en % ; C&C, Uber Eats et LAD M+ saisis en MONTANTS (€). Pourcentages calculés comme dans l'Excel :
+    //   C&C / CA net total · Uber Eats / CA net total · LAD M+ / CA livraison (= Uber Eats + LAD M+).
+    // Sans montants saisis, on garde le pourcentage d'origine (historique Excel).
+    const eurDig = (m, s, k) => val(MEN, `${m} 2026`, s, k);
+    const DELIV = {};                                                   // CA livraison = Uber Eats + LAD M+
+    MONTHS.forEach(m => { for (const s of STORES) { const u = eurDig(m, s, 'uber_eur'), l = eurDig(m, s, 'lad_eur'); if (u != null && l != null) (DELIV[m] = DELIV[m] || {})[s] = u + l; } });
+    const caTot = (m, s) => (Y26.ca_total[m] || {})[s];
+    const aggCa = wTot('2026');
+    const aggLad = (row, m) => { let n = 0, d = 0; for (const s of STORES) { const x = row[s], w = (DELIV[m] || {})[s]; if (isNum(x) && isNum(w) && w) { n += x * w; d += w; } } return d ? n / d : aggCa(row, m); };
+    Y26.dig_fid_actifs_m = monthlyTable('2026', 'dig_fid_actifs_m', 'fid_actifs', aggCa, { filter: 'any' });
+    Y26.dig_cc_ca_m = monthlyTable('2026', 'dig_cc_ca_m', 'cc_ca', aggCa, { filter: 'any',
+      transform: (v, s, m) => { const x = eurDig(m, s, 'cc_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
+    Y26.dig_uber_ca_m = monthlyTable('2026', 'dig_uber_ca_m', 'uber_ca', aggCa, { filter: 'any',
+      transform: (v, s, m) => { const x = eurDig(m, s, 'uber_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
+    Y26.dig_lad_ca_m = monthlyTable('2026', 'dig_lad_ca_m', 'lad_ca', aggLad, { filter: 'any',
+      transform: (v, s, m) => { const x = eurDig(m, s, 'lad_eur'), d = (DELIV[m] || {})[s]; return (x != null && d) ? x / d : v; } });
 
     // ── 4. PRÉVISIONNEL ──
     Y26.ca_total_prev = monthlyTable('2026', 'ca_total_prev', 'ca_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
@@ -5333,8 +5366,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     Y26.promotion_annual = perStore(colWeighted(Y26.promotion_monthly, Y26.ca_alim), franchiseWeighted(Y26.promotion_monthly, Y26.ca_alim));
     Y26.ecart_caisse_total = perStore(colWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim), franchiseWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim));
     Y26.uvhe_annual = annual('2026', 'uvhe_annual', ['uvhe_monthly'], () => perStore(colMean(Y26.uvhe_monthly)));
-    for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca'])
-      Y26[k] = annual('2026', k, [k + '_m'], () => perStore(colWeighted(Y26[k + '_m'], Y26.ca_total), franchiseWeighted(Y26[k + '_m'], Y26.ca_total)));
+    const WLAD = {}; MONTHS.forEach(m => { WLAD[m] = {}; for (const s of STORES) WLAD[m][s] = ((DELIV[m] || {})[s]) ?? caTot(m, s); });   // poids = CA livraison (à défaut CA net)
+    for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca']) {
+      const W = k === 'dig_lad_ca' ? WLAD : Y26.ca_total;
+      Y26[k] = annual('2026', k, [k + '_m'], () => perStore(colWeighted(Y26[k + '_m'], W), franchiseWeighted(Y26[k + '_m'], W)));
+    }
 
     // ── 6. ANNUEL (Sheet) : Mérieux, CFV, PPFV ──
     const ANN = idx(S.annuel, p => p);
@@ -5454,12 +5490,14 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     };
     const F6 = ['ca', 'alim', 'tacs', 'heures', 'perte', 'heures_total', 'remb', 'promo', 'ecart'];
     OUT.daily = { '2026': pack(2026, F6), '2025': pack(2025, F6), '2024': pack(2024, ['ca', 'alim', 'tacs']) };
-    const d24 = OUT.daily['2024'], Y24 = OUT['2024'] = { ca_total: {}, ca_alim: {}, tacs: {}, pm: {} };
+    const Y24 = OUT['2024'] = { ca_total: {}, ca_alim: {}, tacs: {}, pm: {} };
     MONTHS.forEach((m, k) => {
-      const [i0, i1] = monthRange(2025, k + 1);
+      const [i0, i1] = monthRange(2024, k + 1);                       // mois civils réels de 2024
+      const sumStore = (s, f) => { const v = real24[s][f].slice(i0, i1 + 1).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
       for (const [key, f] of [['ca_total', 'ca'], ['ca_alim', 'alim'], ['tacs', 'tacs']]) {
-        Y24[key][m] = {};
-        for (const e of ALL9) { const v = d24[e][f].slice(i0, i1 + 1).filter(x => x != null); Y24[key][m][e] = v.length ? r2(v.reduce((a, b) => a + b, 0)) : null; }
+        Y24[key][m] = {}; let tot = 0, any = false;
+        for (const s of STORES) { const v = sumStore(s, f); Y24[key][m][s] = v == null ? null : r2(v); if (v != null) { tot += v; any = true; } }
+        Y24[key][m].FRANCHISE = any ? r2(tot) : null;
       }
       Y24.pm[m] = {};
       for (const e of ALL9) { const c = Y24.ca_total[m][e], t = Y24.tacs[m][e]; Y24.pm[m][e] = (c && t) ? r2(c / t) : null; }
@@ -5726,6 +5764,15 @@ function buildWeek(off) {
     kp[k].cur.FRANCHISE = days.map((_, i) => sumDay(kp[k].cur, i));
     kp[k].n1.FRANCHISE  = days.map((_, i) => sumDay(kp[k].n1, i));
   }
+  // Ratios (VPHE, pertes) : seulement les jours où numérateur ET dénominateur sont saisis (Franchise comprise)
+  const pairs = { alim_h: ['ca_alim', 'heures'], heures_a: ['heures', 'ca_alim'], perte_p: ['perte_eur', 'ca_alim'], alim_pp: ['ca_alim', 'perte_eur'] };
+  for (const [nk, [a, b]] of Object.entries(pairs)) {
+    kp[nk] = { cur: {}, n1: {} };
+    for (const side of ['cur', 'n1']) {
+      for (const r of RESTOS) kp[nk][side][r] = kp[a][side][r].map((v, i) => (v != null && kp[b][side][r][i] != null) ? v : null);
+      kp[nk][side].FRANCHISE = days.map((_, i) => sumDay(kp[nk][side], i));
+    }
+  }
   // CA prévisionnel : budget mensuel ramené au jour, sur les jours saisis
   const prev = {};
   let pF = 0, pFany = false;
@@ -5761,7 +5808,7 @@ function weekNav(dir, reset) {
 buildWeek(weekOffset);
 
 // Météo & commentaires saisis au quotidien
-const METEO_ICO = { soleil: '☀️', nuageux: '⛅', pluie: '🌧️', orage: '⛈️', neige: '❄️', brouillard: '🌫️', canicule: '🥵', vent: '💨' };
+const METEO_ICO = { soleil: '☀️', nuageux: '⛅', pluie: '🌧️', orage: '⛈️', neige: '❄️', brouillard: '🌫️', canicule: '🥵', vent: '💨', froid: '🥶', chaud: '🌡️' };
 function weekComments(r) {
   const C = DASHBOARD_DATA.comments || {}, out = [];
   const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -5833,11 +5880,11 @@ const WEEK_KPIS = [
 function weekAgg(id, side, resto) {
   if (!WEEK) return null;
   if (id === 'vphe') {
-    const a = weekAgg('ca_alim', side, resto), h = weekAgg('heures', side, resto);
+    const a = weekAgg('alim_h', side, resto), h = weekAgg('heures_a', side, resto);
     return (a && h) ? a / h : null;
   }
   if (id === 'perte') {
-    const pe = weekAgg('perte_eur', side, resto), a = weekAgg('ca_alim', side, resto);
+    const pe = weekAgg('perte_p', side, resto), a = weekAgg('alim_pp', side, resto);
     return (pe != null && a) ? pe / a : null;
   }
   const arr = WEEK.kpis[id]?.[side]?.[resto];
@@ -5847,14 +5894,14 @@ function weekAgg(id, side, resto) {
 }
 // Valeurs quotidiennes (7 jours) d'un KPI hebdo pour le détail
 function weekDayArr(id, side, r) {
-  const alim = WEEK.kpis.ca_alim?.[side]?.[r] || [];
+  const alim = WEEK.kpis.alim_h?.[side]?.[r] || [];
   if (id === 'vphe') {
-    const h = WEEK.kpis.heures?.[side]?.[r] || [];
+    const h = WEEK.kpis.heures_a?.[side]?.[r] || [];
     return alim.map((a, i) => (a != null && h[i]) ? a / h[i] : null);
   }
   if (id === 'perte') {
-    const pe = WEEK.kpis.perte_eur?.[side]?.[r] || [];
-    return alim.map((a, i) => (pe[i] != null && a) ? pe[i] / a : null);
+    const pe = WEEK.kpis.perte_p?.[side]?.[r] || [], al2 = WEEK.kpis.alim_pp?.[side]?.[r] || [];
+    return al2.map((a, i) => (pe[i] != null && a) ? pe[i] / a : null);
   }
   return WEEK.kpis[id]?.[side]?.[r] || [];
 }
@@ -7048,7 +7095,7 @@ function exValue(k, r, b, level) {
       for (const x of ents) { const a = Number(x.avis), t = exDaySum(x.restaurant, 'tacs', b); if (isFinite(a) && x.avis !== '' && x.avis != null && t) { avis += a; tx += t; any = true; } }
       return (any && tx) ? avis * 100000 / tx : null;
     }
-    const v = rows.map(x => Number(x[k.wk])).filter((n, i) => isFinite(n) && rows[i][k.wk] !== '' && rows[i][k.wk] != null);
+    const v = rows.map(x => Number(x[k.wk])).filter((n, i) => isFinite(n) && n !== 0 && rows[i][k.wk] !== '' && rows[i][k.wk] != null);   // 0 = non renseigné
     return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null;
   }
   // niveaux mois / semestre / année : tables mensuelles du dashboard
@@ -7612,7 +7659,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261006-213705';
+const BUILD_VERSION = '20261007-072302';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

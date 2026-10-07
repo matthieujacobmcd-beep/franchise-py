@@ -155,7 +155,7 @@ const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel'
 // se pré-remplit avec la moyenne des semaines tant qu'il n'a pas été validé.
 const HEBDO_KEYS=['oepe','r2p','avis','hello_mcdo','reseaux','uvhe','tche'];   // « avis » = somme des avis négatifs (OPH calculé)
 // u = unité affichée dans le champ ; pct = saisi en % (94,4) mais stocké en fraction (0,944)
-const METEO=[['','—'],['soleil','☀️ Soleil'],['nuageux','⛅ Nuageux'],['pluie','🌧️ Pluie'],['orage','⛈️ Orage'],['neige','❄️ Neige'],['brouillard','🌫️ Brouillard'],['canicule','🥵 Canicule'],['vent','💨 Vent fort']];
+const METEO=[['','—'],['soleil','☀️ Soleil'],['nuageux','⛅ Nuageux'],['pluie','🌧️ Pluie'],['orage','⛈️ Orage'],['neige','❄️ Neige'],['brouillard','🌫️ Brouillard'],['canicule','🥵 Canicule'],['vent','💨 Vent fort'],['froid','🥶 Froid'],['chaud','🌡️ Chaud']];
 const FIELDS={
   quotidien:[
     {k:'ca_net_total',l:'CA Net Total',u:'€'},{k:'ca_net_alim',l:'CA Net Alimentaire',u:'€'},{k:'transactions',l:"Transactions (TAC'S)",u:'nb'},
@@ -177,7 +177,7 @@ const FIELDS={
     {k:'to_12m',l:'Turn Over 12 mois',u:'%',pct:1},{k:'to_90j',l:'Turn Over 90 jours',u:'%',pct:1},{k:'abs_imprevu',l:'Absentéisme imprévu',u:'%',pct:1},{k:'abs_injust',l:'Absentéisme injustifié',u:'%',pct:1},
     {k:'marge',l:'Marge',u:'%',pct:1},{k:'pac',l:'PAC',u:'%',pct:1},{k:'cout_mo',l:"Coût Main d'Œuvre",u:'%',pct:1},{k:'cash_flow',l:'Cash Flow',u:'€'},{k:'resultat_net',l:'Résultat Net',u:'€'},
     {k:'ecart_rendement',l:'Écart de Rendement',u:'%',pct:1},
-    {k:'fid_actifs',l:'Comptes FID Actifs',u:'%',pct:1},{k:'cc_ca',l:'C&C / CA',u:'%',pct:1},{k:'uber_ca',l:'Uber Eats / CA',u:'%',pct:1},{k:'lad_ca',l:'LAD M+ / CA',u:'%',pct:1},
+    {k:'fid_actifs',l:'Comptes FID Actifs',u:'%',pct:1},{k:'cc_eur',l:'CA Click & Collect',u:'€'},{k:'uber_eur',l:'CA Uber Eats',u:'€'},{k:'lad_eur',l:'CA LAD M+',u:'€'},
   ],
   previsionnel:[
     {k:'ca_prev',l:'CA Net Total prév.',u:'€'},{k:'ca_alim_prev',l:'CA Alimentaire prév.',u:'€'},{k:'marge_prev',l:'Marge prév.',u:'%',pct:1},{k:'pac_prev',l:'PAC prév.',u:'%',pct:1},
@@ -327,7 +327,7 @@ function fieldHtml(f){
   if(f.type==='select') return `<div class="field"><label>${f.l}</label><select id="f_${f.k}">${f.opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('')}</select></div>`;
   const auto=f.auto?'auto':'', ro=f.auto?'readonly':'', oninput=f.auto?'':'oninput="recompute()"';
   const unit=f.u?`<span class="unit">${f.u}</span>`:'';
-  const note=f.k==='oph'?'<div class="hint" id="ophNote"></div>':'';
+  const note=f.k==='oph'?'<div class="hint" id="ophNote"></div>':(['cc_eur','uber_eur','lad_eur'].includes(f.k)?`<div class="hint" id="note_${f.k}"></div>`:'');
   return `<div class="field"><label>${f.l}</label><div class="inwrap ${f.u?'has-unit':''}"><input type="${f.auto?'text':'number'}" step="any" inputmode="decimal" id="f_${f.k}" class="${auto}" ${ro} ${oninput} ${f.auto?'placeholder="calculé"':''}>${unit}</div>${note}</div>`;
 }
 function renderPanel(keepPeriod){
@@ -361,16 +361,19 @@ function renderPanel(keepPeriod){
 }
 function num(id){ const v=document.getElementById(id); if(!v) return null; const t=String(v.value).replace(',','.').trim(); if(t==='') return null; const n=parseFloat(t); return isNaN(n)?null:n; }
 // ── OPH = nombre d'avis négatifs × 100 000 ÷ transactions de la période (comme l'Excel) ──
-let TX=null, TXLoading=null;
+let TX=null, CAM=null, TXLoading=null;
 function loadTx(){
   if(TX||TXLoading||!configured()) return;
   TXLoading=(async()=>{
     try{
       const c=new AbortController(), to=setTimeout(()=>c.abort(),90000);
       const r=await fetch(APPS_SCRIPT_URL+'?action=all&_='+Date.now(),{signal:c.signal}); clearTimeout(to);
-      const j=await r.json(), m={};
-      (j.quotidien||[]).forEach(x=>{ if(typeof x.transactions==='number'){ (m[x.restaurant]=m[x.restaurant]||{})[x.periode]=x.transactions; } });
-      TX=m;
+      const j=await r.json(), m={}, caMap={};
+      (j.quotidien||[]).forEach(x=>{
+        if(typeof x.transactions==='number'){ (m[x.restaurant]=m[x.restaurant]||{})[x.periode]=x.transactions; }
+        if(typeof x.ca_net_total==='number'){ (caMap[x.restaurant]=caMap[x.restaurant]||{})[x.periode]=x.ca_net_total; }
+      });
+      TX=m; CAM=caMap;
     }catch(e){ TX=null; }
     TXLoading=null; recompute();
   })();
@@ -401,7 +404,21 @@ function recomputeOph(){
   setAuto('f_oph', avis*100000/tx, 1);
   if(note) note.textContent=`${avis} avis × 100 000 ÷ ${tx.toLocaleString('fr-FR')} transactions`;
 }
+// ── Digital : C&C / CA net · Uber Eats / CA net · LAD M+ / (Uber Eats + LAD M+), comme l'Excel ──
+function recomputeDigital(){
+  if(curTab!=='mensuel') return;
+  const set=(k,t)=>{ const n=document.getElementById('note_'+k); if(n) n.textContent=t||''; };
+  const cc=num('f_cc_eur'), ue=num('f_uber_eur'), lad=num('f_lad_eur');
+  if(cc==null&&ue==null&&lad==null){ ['cc_eur','uber_eur','lad_eur'].forEach(k=>set(k,'')); return; }
+  if(!CAM){ ['cc_eur','uber_eur','lad_eur'].forEach(k=>set(k,'⏳ Chargement du CA…')); loadTx(); return; }
+  const ca=periodDates().reduce((s,d)=>s+(((CAM[curResto]||{})[d])||0),0), pct=x=>(x*100).toFixed(1).replace('.',',')+' %';
+  const caTxt=ca?ca.toLocaleString('fr-FR',{maximumFractionDigits:0})+' €':null;
+  set('cc_eur', cc==null?'':(ca?`${pct(cc/ca)} du CA net (${caTxt})`:'CA du mois non saisi : % non calculable'));
+  set('uber_eur', ue==null?'':(ca?`${pct(ue/ca)} du CA net (${caTxt})`:'CA du mois non saisi : % non calculable'));
+  set('lad_eur', lad==null?'':((ue!=null&&(ue+lad)>0)?`${pct(lad/(ue+lad))} du CA livraison (Uber Eats + LAD M+)`:"Saisis aussi Uber Eats pour calculer la part de LAD M+"));
+}
 function recompute(){
+  if(curTab==='mensuel') recomputeDigital();
   if(curTab==='hebdomadaire'||curTab==='mensuel') recomputeOph();
   if(curTab==='quotidien'){
     const tot=num('f_ca_net_total'), alim=num('f_ca_net_alim'), tacs=num('f_transactions'), he=num('f_heures_equipier'), ht=num('f_heures_totales');
@@ -520,6 +537,7 @@ async function save(){
     const el=document.getElementById('f_'+f.k); if(!el) return;
     if(f.auto && !(curTab==='ponctuel'&&f.k==='score')) return;          // champs calculés : jamais enregistrés (sauf score RGRV)          // le score RGRV calculé est enregistré
     let v=(f.type==='textarea'||f.type==='select')?el.value.trim():num('f_'+f.k);
+    if(v===0 && ['oepe','r2p','hello_mcdo','reseaux','uvhe','tche'].includes(f.k) && (curTab==='hebdomadaire'||curTab==='mensuel')) v=null;   // 0 = non renseigné
     if(v!=null&&v!==''&&isPct(f)) v=v/100;
     if(f.auto&&v!=null&&v!=='') v=v/100;                                  // score RGRV affiché en %
     if(v!=null&&v!=='') data[f.k]=v;
