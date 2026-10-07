@@ -643,7 +643,7 @@ async function deleteDocument(kind,id,name){
   if(!confirm('Supprimer « '+name+' » du dashboard ?')) return;
   docMsg('','Suppression…');
   const j=await postJson({action:'doc_delete',kind,id,pwd:pwdHash()});
-  docMsg(j.ok?'ok':'err', j.ok?'✓ Document supprimé.':'Erreur : '+j.error); if(j.ok) loadDocList();
+  docMsg(j.ok?'ok':'err', j.ok?'✓ Document supprimé.':'Erreur : '+j.error); if(j.ok){ loadDocList(); setTimeout(loadDocList,3500); }
 }
 async function uploadDocument(){
   const k=docKind(), file=document.getElementById('docFile').files[0], btn=document.getElementById('btnDoc');
@@ -667,7 +667,7 @@ async function uploadDocument(){
       if(!j.ok) throw new Error(j.error||'envoi refusé');
       docMsg('ok',j.replaced?`✓ « ${name} » remplacé.`:`✓ « ${name} » téléversé.`);
     }
-    document.getElementById('docFile').value=''; loadDocList();
+    document.getElementById('docFile').value=''; loadDocList(); setTimeout(loadDocList,3500);   // Drive met 2-3 s à lister un nouveau fichier
   }catch(e){ docMsg('err','Erreur : '+e.message); }
   btn.disabled=false;
 }
