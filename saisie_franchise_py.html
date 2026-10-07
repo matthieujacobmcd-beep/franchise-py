@@ -633,7 +633,7 @@ async function loadDocList(){
       fetch(APPS_SCRIPT_URL+'?action=docs&_='+Date.now()).then(r=>r.json()),
       fetch(APPS_SCRIPT_URL+'?action=perf_list&_='+Date.now()).then(r=>r.json()).catch(()=>({months:[]})) ]);
     if(!d||!d.ok) throw new Error('réponse inattendue');
-    const sec=(title,kind,items)=>`<div class="doc-sec">${title}</div>`+(items.length?items.map(x=>`<div class="doc-row"><span>📄 ${escH(x.mois)} <i>${escH(x.sous_titre||'')}</i></span><button onclick="deleteDocument('${kind}','${x.id}','${escH(x.mois).replace(/'/g,'’')}')" title="Supprimer">✕</button></div>`).join(''):'<div class="hint">Aucun document.</div>');
+    const sec=(title,kind,items)=>`<div class="doc-sec">${title}${d.folders&&d.folders[kind]?` · <a href="${escH(d.folders[kind].url)}" target="_blank" rel="noopener" style="text-transform:none;letter-spacing:0">ouvrir le dossier Drive ↗</a>`:''}</div>`+(items.length?items.map(x=>`<div class="doc-row"><span>📄 ${escH(x.mois)} <i>${escH(x.sous_titre||'')}</i></span><button onclick="deleteDocument('${kind}','${x.id}','${escH(x.mois).replace(/'/g,'’')}')" title="Supprimer">✕</button></div>`).join(''):'<div class="hint">Aucun document.</div>');
     box.innerHTML=sec('Marketing News','marketing',d.marketing||[])+sec('Actualité Restaurant','actualite',d.actualite||[])+
       `<div class="doc-sec">Performance Restaurants</div>`+((pf.months&&pf.months.length)?`<div class="hint">Mois téléversés depuis cette page : ${pf.months.map(escH).join(', ')}. Les mois plus anciens viennent de la version d'origine du dashboard.</div>`:'<div class="hint">Aucun mois téléversé depuis cette page.</div>');
   }catch(e){ box.innerHTML='<div class="hint">Impossible de lire la liste des documents (connexion ?).</div>'; }
