@@ -5934,10 +5934,6 @@ function renderWeekStrip() {
       <div class="wk-label">${k.label}</div>
       <div class="wk-value">${fmt(v, k.fmt)}</div>
       ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs ${WEEK.yearN1}</span></div>`}
-      ${(() => { if (k.id !== 'ca_total') return '';
-          const pv = WEEK.prev?.[r]; if (v == null || !pv) return '';
-          const dp = (v - pv) / pv * 100;
-          return `<div class="wk-delta ${dp >= 0 ? 'wk-up' : 'wk-down'}">🎯 ${dp >= 0 ? '▲ +' : '▼ '}${Math.abs(dp).toFixed(1)}% <span>vs prév. (${fmt(pv, 'euros')})</span></div>`; })()}
     </div>`;
   }
   h += `</div>${renderWeekComments(r)}<div id="weekDetail"></div></div>`;
@@ -7659,7 +7655,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261007-072302';
+const BUILD_VERSION = '20261007-154523';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
