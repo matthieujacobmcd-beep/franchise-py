@@ -5714,6 +5714,9 @@ const WEEK = DASHBOARD_DATA.week || {};
 // ── Navigation semaine : la semaine est recalculée à partir du quotidien ──
 // 0 = semaine en cours (celle du dernier jour saisi), -1 = semaine précédente…
 let weekOffset = 0;
+let weekMode = 'w';                       // 'w' = vue semaine, 'm' = vue mois
+const _MOIS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const _wkWd = d => ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][(new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7];
 const _WD = 86400000;
 const _wkIso = t => new Date(t).toISOString().slice(0, 10);
 const _wkFmt = d => d.slice(8, 10) + '/' + d.slice(5, 7);
@@ -5740,14 +5743,23 @@ function _wkMonday(off) {
 // Première semaine navigable : celle qui contient le 1er janvier de l'année en cours
 function _wkMinOffset() {
   const last = _wkLastDay(); if (!last) return 0;
+  if (weekMode === 'm') return -(+last.slice(5, 7) - 1);
   const jan1 = Date.UTC(+last.slice(0, 4), 0, 1), dow = (new Date(jan1).getUTCDay() + 6) % 7;
   return Math.round(((jan1 - dow * _WD) - _wkMonday(0)) / (7 * _WD));
 }
 function buildWeek(off) {
   const last = _wkLastDay(); if (!last || !DASHBOARD_DATA.daily) return false;
-  const mon = _wkMonday(off);
-  const days = [...Array(7)].map((_, i) => _wkIso(mon + i * _WD));
-  const daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
+  let mon, days, daysN1;
+  if (weekMode === 'm') {
+    const ld = new Date(Date.parse(last + 'T00:00:00Z')), t = Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth() + off, 1);
+    mon = t; const n = new Date(Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth() + 1, 0)).getUTCDate();
+    days = [...Array(n)].map((_, i) => _wkIso(t + i * _WD));
+    daysN1 = days.map(d => (+d.slice(0, 4) - 1) + d.slice(4));          // mêmes dates l'an passé
+  } else {
+    mon = _wkMonday(off);
+    days = [...Array(7)].map((_, i) => _wkIso(mon + i * _WD));
+    daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
+  }
   const elapsed = days.map(d => d <= last);            // on ne compare que les jours écoulés
   const nEl = elapsed.filter(Boolean).length;
   const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte', heures_total: 'heures_total', remb: 'remb', promo: 'promo', ecart: 'ecart' };
@@ -5793,11 +5805,11 @@ function buildWeek(off) {
     if (any) { pF += s; pFany = true; }
   }
   prev.FRANCHISE = pFany ? pF : null;
-  const partial = nEl < 7, n1Last = daysN1[Math.max(nEl, 1) - 1];
+  const partial = nEl < days.length, n1Last = daysN1[Math.max(nEl, 1) - 1];
   const nw = {
-    label: `Semaine ${_wkIsoWeek(mon)} · du ${_wkFmt(days[0])} au ${_wkFmt(days[6])}/${days[6].slice(0, 4)}` + (partial ? ` · en cours (au ${_wkFmt(last)})` : ''),
+    label: (weekMode === 'm' ? `${_MOIS_FR[new Date(mon).getUTCMonth()]} ${days[0].slice(0, 4)}` : `Semaine ${_wkIsoWeek(mon)} · du ${_wkFmt(days[0])} au ${_wkFmt(days[6])}/${days[6].slice(0, 4)}`) + (partial ? ` · en cours (au ${_wkFmt(last)})` : ''),
     label_n1: `du ${_wkFmt(daysN1[0])} au ${_wkFmt(n1Last)}/${n1Last.slice(0, 4)}`,
-    days, days_n1: daysN1, kpis: kp, prev, partial, offset: off,
+    days, days_n1: daysN1, kpis: kp, prev, partial, offset: off, mode: weekMode,
     yearCur: days[0].slice(0, 4), yearN1: daysN1[0].slice(0, 4),
   };
   for (const k of Object.keys(WEEK)) delete WEEK[k];
@@ -5810,18 +5822,23 @@ function weekNav(dir, reset) {
   renderWeekStrip();
   if (typeof renderAutoSummary === 'function') renderAutoSummary();
 }
+function setWeekMode(m) {
+  if (weekMode === m) return;
+  weekMode = m; weekOffset = 0; weekOpenKpi = null;
+  renderWeekStrip();
+  if (typeof renderAutoSummary === 'function') renderAutoSummary();
+}
 buildWeek(weekOffset);
 
 // Météo & commentaires saisis au quotidien
 const METEO_ICO = { soleil: '☀️', nuageux: '⛅', pluie: '🌧️', orage: '⛈️', neige: '❄️', brouillard: '🌫️', canicule: '🥵', vent: '💨', froid: '🥶', chaud: '🌡️' };
 function weekComments(r) {
   const C = DASHBOARD_DATA.comments || {}, out = [];
-  const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   (WEEK.days || []).forEach((d, i) => {
     const byR = C[d] || {};
     for (const [resto, c] of Object.entries(byR)) {
       if (r !== 'FRANCHISE' && resto !== r) continue;
-      out.push({ i, jour: `${JOURS[i]} ${_wkFmt(d)}`, resto, meteo: c.meteo, txt: c.commentaire });
+      out.push({ i, jour: `${_wkWd(d)} ${_wkFmt(d)}`, resto, meteo: c.meteo, txt: c.commentaire });
     }
   });
   return out;
@@ -5830,13 +5847,12 @@ function renderWeekComments(r) {
   if (r === 'FRANCHISE') return '';          // remarques affichées uniquement sur la vue d'un restaurant
   const list = weekComments(r);
   if (!list.length) return '';
-  const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   // une pastille par jour : météo du restaurant (ou nombre de commentaires en vue Franchise)
   const chips = (WEEK.days || []).map((d, i) => {
     const items = list.filter(x => x.i === i);
     const ico = r !== 'FRANCHISE' ? (items.map(x => METEO_ICO[x.meteo]).find(Boolean) || '') : '';
     const n = items.filter(x => x.txt).length;
-    return `<span class="wk-day ${items.length ? 'wk-day-on' : ''}" title="${items.map(x => (r === 'FRANCHISE' ? restoShort(x.resto) + ' : ' : '') + (x.txt || '')).join(' · ').replace(/"/g, '&quot;')}">${JOURS[i]} ${d.slice(8, 10)} ${ico}${n ? ` 💬${r === 'FRANCHISE' && n > 1 ? n : ''}` : ''}</span>`;
+    return `<span class="wk-day ${items.length ? 'wk-day-on' : ''}" title="${items.map(x => (r === 'FRANCHISE' ? restoShort(x.resto) + ' : ' : '') + (x.txt || '')).join(' · ').replace(/"/g, '&quot;')}">${weekMode === 'm' ? d.slice(8, 10) : _wkWd(d) + ' ' + d.slice(8, 10)} ${ico}${n ? ` 💬${r === 'FRANCHISE' && n > 1 ? n : ''}` : ''}</span>`;
   }).join('');
   // La météo ne figure que sur les pastilles des jours ; la liste ne reprend que les remarques écrites
   const lines = list.filter(x => x.txt).map(x =>
@@ -5928,13 +5944,14 @@ function renderWeekStrip() {
   const r = weekResto || 'FRANCHISE';
   const minOff = _wkMinOffset();
   const nav = `<span class="wk-nav">
-      <button onclick="weekNav(-1)" ${weekOffset > minOff ? '' : 'disabled'} title="Semaine précédente">◀</button>
-      <button onclick="weekNav(1)" ${weekOffset < 0 ? '' : 'disabled'} title="Semaine suivante">▶</button>
-      ${weekOffset < 0 ? '<button class="wk-now" onclick="weekNav(0,true)">Semaine en cours</button>' : ''}
+      <span style="display:inline-flex;gap:0;margin-right:8px"><button onclick="setWeekMode('w')" style="${weekMode === 'w' ? 'background:#7c3aed;color:#fff;border-color:#7c3aed;' : ''}border-radius:8px 0 0 8px">Semaine</button><button onclick="setWeekMode('m')" style="${weekMode === 'm' ? 'background:#7c3aed;color:#fff;border-color:#7c3aed;' : ''}border-radius:0 8px 8px 0">Mois</button></span>
+      <button onclick="weekNav(-1)" ${weekOffset > minOff ? '' : 'disabled'} title="${weekMode === 'm' ? 'Mois précédent' : 'Semaine précédente'}">◀</button>
+      <button onclick="weekNav(1)" ${weekOffset < 0 ? '' : 'disabled'} title="${weekMode === 'm' ? 'Mois suivant' : 'Semaine suivante'}">▶</button>
+      ${weekOffset < 0 ? `<button class="wk-now" onclick="weekNav(0,true)">${weekMode === 'm' ? 'Mois en cours' : 'Semaine en cours'}</button>` : ''}
     </span>`;
   let h = `<div class="week-strip"><div class="week-strip-head">
     <span class="week-strip-title" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${WEEK.label}</span>
-    <span class="week-strip-sub">vs semaine équivalente ${WEEK.yearN1} (${WEEK.label_n1})</span>
+    <span class="week-strip-sub">vs ${weekMode === 'm' ? 'même période' : 'semaine équivalente'} ${WEEK.yearN1} (${WEEK.label_n1})</span>
     ${nav}
   </div>
   ${restoCarousel(weekResto, 'weekNavResto', '#8b5cf6', 'wkCar')}
@@ -5973,11 +5990,11 @@ function renderWeekDetail() {
   const n1  = weekDayArr(k.id, 'n1', r);
   const goodCls = (d) => d == null ? 'var(--muted)' : ((k.invert ? d < 0 : d >= 0) ? 'var(--green)' : 'var(--red)');
   const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  const dd = WEEK.days.map((d, i) => `${JOURS[i]} ${d.slice(8, 10)}/${d.slice(5, 7)}`);
+  const dd = WEEK.days.map(d => `${_wkWd(d)} ${d.slice(8, 10)}/${d.slice(5, 7)}`);
   const dn = WEEK.days_n1.map(d => `${d.slice(8, 10)}/${d.slice(5, 7)}`);
 
   let rows = '';
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < WEEK.days.length; i++) {
     const v = cur[i], p = n1[i];
     const delta = (v != null && p) ? (v - p) / p * 100 : null;
     rows += `<tr><td>${dd[i]} <span style="color:var(--muted);font-size:.68rem">(vs ${dn[i]})</span></td>
@@ -5993,7 +6010,7 @@ function renderWeekDetail() {
     <div style="overflow-x:auto"><table class="data-table"><thead>
       <tr><th>Jour</th><th>${WEEK.yearCur}</th><th>${WEEK.yearN1} (jour équivalent)</th><th class="delta">Δ</th></tr></thead>
       <tbody>${rows}
-      <tr style="font-weight:800;border-top:2px solid var(--border)"><td>Total semaine</td>
+      <tr style="font-weight:800;border-top:2px solid var(--border)"><td>Total ${weekMode === 'm' ? 'mois' : 'semaine'}</td>
         <td>${fmt(tot, k.fmt)}</td><td>${fmt(totp, k.fmt)}</td>
         <td class="delta" style="color:${goodCls(dt)}">${dt == null ? '—' : (dt >= 0 ? '▲ +' : '▼ ') + dt.toFixed(1) + '%'}</td></tr>
       </tbody></table></div></div>`;
@@ -6594,7 +6611,7 @@ function renderAutoSummary() {
   const caM  = (p) => move(p, 'bondit de', 'progresse de', 'chute de', 'recule de', 'reste stable');
 
   const ca = dw('ca_total'), vphe = dw('vphe');
-  let body = `<b>${nom}</b> : le chiffre d'affaires ${caM(ca)} sur la même semaine 2025`;
+  let body = `<b>${nom}</b> : le chiffre d'affaires ${caM(ca)} sur ${weekMode === 'm' ? 'la même période' : 'la même semaine'} 2025`;
   const vM = move(vphe, 'bondit de', 'progresse de', 'chute de', 'recule de', 'reste stable');
   body += `, la productivité horaire (VPHE) ${vM}.`;
 
@@ -6613,7 +6630,7 @@ function renderAutoSummary() {
     const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
     const cur = WEEK.kpis.ca_total.cur[r] || [], n1 = WEEK.kpis.ca_total.n1[r] || [];
     const days = [];
-    for (let i = 0; i < 7; i++) if (cur[i] != null && n1[i]) days.push({ j: JOURS[i], d: (cur[i] - n1[i]) / n1[i] * 100 });
+    for (let i = 0; i < WEEK.days.length; i++) if (cur[i] != null && n1[i]) days.push({ j: weekMode === 'm' ? 'le ' + WEEK.days[i].slice(8, 10) + '/' + WEEK.days[i].slice(5, 7) : JOURS[i], d: (cur[i] - n1[i]) / n1[i] * 100 });
     if (days.length >= 2) {
       days.sort((a, b) => b.d - a.d);
       const hi = days[0], lo = days[days.length - 1];
@@ -7672,7 +7689,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-144856';
+const BUILD_VERSION = '20261008-150808';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
