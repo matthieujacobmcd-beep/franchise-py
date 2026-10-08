@@ -4504,6 +4504,25 @@ function _dcell(resto, year, field, dt) {
   const i = _doy(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
   return (i >= 0 && i < a.length) ? (a[i] ?? null) : null;
 }
+function dailyKpiN1(kpiId, resto, year, start, end, shiftMs) {
+  const m = DAILY_METRIC[kpiId]; if (!m) return null;
+  const fields = m.slice(1), s = {}; fields.forEach(f => { s[f] = 0; });
+  const stores = resto === 'FRANCHISE' ? RESTOS : [resto], OPEN = (DASHBOARD_DATA.meta || {}).open || {};
+  let has = false;
+  for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
+    const dt = new Date(t), dt1 = new Date(t - shiftMs), iso1 = dt1.toISOString().slice(0, 10);
+    for (const st of stores) {
+      if (_dcell(st, year, 'ca', dt) == null) continue;                       // jour non saisi cette année : exclu aussi de N-1
+      if (OPEN[st] && iso1 < OPEN[st]) continue;                              // restaurant pas encore ouvert l'an passé
+      const vals = fields.map(f => _dcell(st, year - 1, f, dt1));
+      if (m[0] === 'ratio' && vals.some(v => v == null)) continue;
+      fields.forEach((f, i) => { if (vals[i] != null) { s[f] += vals[i]; has = true; } });
+    }
+  }
+  if (!has) return null;
+  if (m[0] === 'sum') return kpiId === 'ecart_caisse_total' ? s[fields[0]] : (s[fields[0]] || null);
+  return s[fields[1]] ? s[fields[0]] / s[fields[1]] : null;
+}
 function dailyKpiRange(kpiId, resto, year, start, end) {
   const m = DAILY_METRIC[kpiId]; if (!m) return null;
   const fields = m.slice(1), s = {}; fields.forEach(f => { s[f] = 0; });
@@ -4585,14 +4604,14 @@ function dailySeries(kpi) {
       const dt = new Date(Date.UTC(y, mo, d));
       const dt25 = new Date(dt.getTime() - SHIFT);
       rows.push({ label: _fdshort(dt), sub: 'vs ' + _fdshort(dt25),
-        v: dailyKpiRange(kpi.id, r, y, dt, dt), v25: dailyKpiRange(kpi.id, r, y - 1, dt25, dt25),
+        v: dailyKpiRange(kpi.id, r, y, dt, dt), v25: dailyKpiN1(kpi.id, r, y, dt, dt, SHIFT),
         v24: null }); // 2024 réservé à la Recherche
     }
   } else {
     for (const b of _weekBuckets(currentYear)) {
       const s25 = new Date(b.start.getTime() - SHIFT), e25 = new Date(b.end.getTime() - SHIFT);
       rows.push({ label: _fdshort(b.start), sub: 'sem. du ' + _fdshort(b.start),
-        v: dailyKpiRange(kpi.id, r, currentYear, b.start, b.end), v25: dailyKpiRange(kpi.id, r, currentYear - 1, s25, e25),
+        v: dailyKpiRange(kpi.id, r, currentYear, b.start, b.end), v25: dailyKpiN1(kpi.id, r, currentYear, b.start, b.end, SHIFT),
         v24: null }); // 2024 réservé à la Recherche
     }
   }
@@ -5040,6 +5059,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const DF = [['ca', 'ca_net_total'], ['alim', 'ca_net_alim'], ['tacs', 'transactions'], ['heures', 'heures_equipier'],
                 ['perte', 'pertes'], ['heures_total', 'heures_totales'], ['remb', 'remboursement'],
                 ['promo', 'promotion'], ['ecart', 'ecart_caisse']];
+    const OPEN = { 'VIVIERS': '2025-01-03' };   // date d'ouverture : aucun jour antérieur n'est pris en compte (ex. 11 € de test le 02/01/2025)
     const comments = {};   // date ISO → restaurant → { meteo, commentaire }
     const daily = {}; // year -> store -> field -> []
     const years = { 2024: ['ca', 'alim', 'tacs'], 2025: null, 2026: null };
@@ -5054,6 +5074,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     for (const row of (S.quotidien || [])) {
       const p = normPeriode(row.periode), s = String(row.restaurant || '').trim().toUpperCase();
       if (!STORES.includes(s) || !/^\d{4}-/.test(p)) continue;
+      if (OPEN[s] && p < OPEN[s]) continue;
       const y = +p.slice(0, 4); if (!daily[y]) continue;
       if (y === 2024) {
         const ri = doy(2024, p);
@@ -5105,6 +5126,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     };
 
     OUT.meta = {
+      open: OPEN,
       partial_by_resto: Object.fromEntries(STORES.map(s => { const d = new Date(lastDays[s]); return [s, { month: MONTHS[d.getUTCMonth()], day: d.getUTCDate() }]; })),
       franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < maxMonth ? iso(utc(2026, i + 1, daysInMonth(2026, i + 1))) : iso(maxLast)])),
       lagging: STORES.filter(s => lastDays[s] < maxLast).map(s => ({ resto: s, day: iso(lastDays[s]) })),
@@ -5754,7 +5776,7 @@ function buildWeek(off) {
     const ld = new Date(Date.parse(last + 'T00:00:00Z')), t = Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth() + off, 1);
     mon = t; const n = new Date(Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth() + 1, 0)).getUTCDate();
     days = [...Array(n)].map((_, i) => _wkIso(t + i * _WD));
-    daysN1 = days.map(d => (+d.slice(0, 4) - 1) + d.slice(4));          // mêmes dates l'an passé
+    daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));   // même jour de semaine l'an passé (comme la vue semaine)
   } else {
     mon = _wkMonday(off);
     days = [...Array(7)].map((_, i) => _wkIso(mon + i * _WD));
@@ -5766,7 +5788,8 @@ function buildWeek(off) {
   // Comparaison équitable : pour chaque restaurant, un jour n'est comparé (N-1 et
   // prévisionnel) que s'il est saisi cette année. La Franchise = somme des restaurants.
   const kp = {}, has = {};
-  for (const r of RESTOS) has[r] = days.map((d, i) => elapsed[i] && _wkVal(d, r, 'ca') != null);
+  const OPEN = (DASHBOARD_DATA.meta || {}).open || {};
+  for (const r of RESTOS) has[r] = days.map((d, i) => elapsed[i] && _wkVal(d, r, 'ca') != null && !(OPEN[r] && daysN1[i] < OPEN[r]));   // restaurant ouvert l'an passé
   const sumDay = (obj, i) => { let s = 0, any = false; for (const r of RESTOS) { const v = obj[r][i]; if (v != null) { s += v; any = true; } } return any ? s : null; };
   for (const [k, f] of Object.entries(F)) {
     kp[k] = { cur: {}, n1: {} };
@@ -5951,7 +5974,7 @@ function renderWeekStrip() {
     </span>`;
   let h = `<div class="week-strip"><div class="week-strip-head">
     <span class="week-strip-title" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${WEEK.label}</span>
-    <span class="week-strip-sub">vs ${weekMode === 'm' ? 'même période' : 'semaine équivalente'} ${WEEK.yearN1} (${WEEK.label_n1})</span>
+    <span class="week-strip-sub">vs ${weekMode === 'm' ? 'jours équivalents' : 'semaine équivalente'} ${WEEK.yearN1} (${WEEK.label_n1})</span>
     ${nav}
   </div>
   ${restoCarousel(weekResto, 'weekNavResto', '#8b5cf6', 'wkCar')}
@@ -6390,20 +6413,27 @@ function _dv(store, time, f) {
   return arr[Math.round((time - Date.UTC(y, 0, 1)) / 86400000)] ?? null;
 }
 function aggPaired(store, start, end, n1start) {
-  // Comparaison À DATE : seuls les jours couverts par la période courante
-  // comptent, et on additionne les MÊMES jours côté N-1.
+  // Comparaison À DATE, restaurant par restaurant : on ne compte que les jours saisis cette année (chaque restaurant
+  // a ses propres jours) et, côté N-1, les MÊMES jours / restaurants (ouverts l'an passé).
   const shift = n1start.getTime() - start.getTime();
   const FLDS = ['ca', 'alim', 'tacs', 'heures', 'perte', 'heures_total'];
   const cur = { ca:null, alim:null, tacs:null, heures:null, perte:null, heures_total:null, n:0 };
   const n1  = { ca:null, alim:null, tacs:null, heures:null, perte:null, heures_total:null, n:0 };
   const add = (o, f, v) => { if (v != null) o[f] = (o[f] || 0) + v; };
+  const stores = store === 'FRANCHISE' ? RESTOS : [store], OPEN = (DASHBOARD_DATA.meta || {}).open || {};
   for (let t = start.getTime(); t <= end.getTime(); t += 86400000) {
-    if (_dv(store, t, 'ca') == null) continue;
-    cur.n++;
-    for (const f of FLDS) add(cur, f, _dv(store, t, f));
-    const t1 = t + shift;
-    if (_dv(store, t1, 'ca') != null) n1.n++;
-    for (const f of FLDS) add(n1, f, _dv(store, t1, f));
+    let anyC = false, anyP = false;
+    const t1 = t + shift, iso1 = new Date(t1).toISOString().slice(0, 10);
+    for (const st of stores) {
+      if (_dv(st, t, 'ca') == null) continue;
+      anyC = true;
+      for (const f of FLDS) add(cur, f, _dv(st, t, f));
+      if (OPEN[st] && iso1 < OPEN[st]) continue;
+      if (_dv(st, t1, 'ca') != null) anyP = true;
+      for (const f of FLDS) add(n1, f, _dv(st, t1, f));
+    }
+    if (anyC) cur.n++;
+    if (anyP) n1.n++;
   }
   for (const o of [cur, n1]) {
     const perteEur = o.perte;
@@ -7689,7 +7719,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-152559';
+const BUILD_VERSION = '20261008-212607';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
