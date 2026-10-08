@@ -5834,11 +5834,12 @@ function buildWeek(off) {
     if (any) { pF += s; pFany = true; }
   }
   prev.FRANCHISE = pFany ? pF : null;
+  const missing = days.map(d => d <= last ? RESTOS.filter(r => _wkVal(d, r, 'ca') == null && !(OPEN[r] && d < OPEN[r])) : []);   // restaurants non saisis ce jour-là
   const partial = nEl < days.length, n1Last = daysN1[Math.max(nEl, 1) - 1];
   const nw = {
     label: (weekMode === 'm' ? `${_MOIS_FR[new Date(mon).getUTCMonth()]} ${days[0].slice(0, 4)}` : `Semaine ${_wkIsoWeek(mon)} · du ${_wkFmt(days[0])} au ${_wkFmt(days[6])}/${days[6].slice(0, 4)}`) + (partial ? ` · en cours (au ${_wkFmt(last)})` : ''),
     label_n1: `du ${_wkFmt(daysN1[0])} au ${_wkFmt(n1Last)}/${n1Last.slice(0, 4)}`,
-    days, days_n1: daysN1, days_eq: daysEq, kpis: kp, prev, partial, offset: off, mode: weekMode,
+    days, days_n1: daysN1, days_eq: daysEq, missing, kpis: kp, prev, partial, offset: off, mode: weekMode,
     yearCur: days[0].slice(0, 4), yearN1: daysN1[0].slice(0, 4),
   };
   for (const k of Object.keys(WEEK)) delete WEEK[k];
@@ -5887,6 +5888,15 @@ function renderWeekComments(r) {
   const lines = list.filter(x => x.txt).map(x =>
     `<div class="wk-com"><b>${x.jour}</b>${r === 'FRANCHISE' ? ` · ${restoShort(x.resto)}` : ''} — ${x.txt.replace(/</g, '&lt;')}</div>`).join('');
   return `<div class="wk-comments"><div class="wk-days">${chips}</div>${lines}</div>`;
+}
+
+// Restaurants non saisis, jour par jour (vue Franchise uniquement)
+function renderWeekMissing(r) {
+  if (r !== 'FRANCHISE' || !WEEK.missing) return '';
+  const rows = WEEK.days.map((d, i) => ({ d, m: WEEK.missing[i] })).filter(x => x.m.length);
+  if (!rows.length) return `<div class="wk-comments" style="margin-top:10px"><div class="wk-com">✅ Tous les restaurants sont saisis sur la période.</div></div>`;
+  const line = x => `<div class="wk-com"><b>${_wkWd(x.d)} ${_wkFmt(x.d)}</b> — ${x.m.length === RESTOS.length ? 'aucun restaurant' : x.m.map(restoShort).join(', ')}</div>`;
+  return `<details class="wk-comments" style="margin-top:10px" ${rows.length <= 4 ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.82rem">⚠ Restaurants non saisis · ${rows.length} jour${rows.length > 1 ? 's' : ''} concerné${rows.length > 1 ? 's' : ''}</summary>${rows.map(line).join('')}</details>`;
 }
 let weekOpenKpi = null;
 let weekResto = 'FRANCHISE';
@@ -5998,7 +6008,7 @@ function renderWeekStrip() {
       ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs ${WEEK.yearN1}</span></div>`}
     </div>`;
   }
-  h += `</div>${renderWeekComments(r)}<div id="weekDetail"></div></div>`;
+  h += `</div>${renderWeekMissing(r)}${renderWeekComments(r)}<div id="weekDetail"></div></div>`;
   el.innerHTML = h;
   bindCarSwipe('wkCar', weekNavResto);
   if (weekOpenKpi) renderWeekDetail();
@@ -6028,7 +6038,7 @@ function renderWeekDetail() {
     const delta = (v != null && p) ? (v - p) / p * 100 : null;
     rows += `<tr><td>${dd[i]} <span style="color:var(--muted);font-size:.68rem">(vs ${dn[i]})</span></td>
       <td>${fmt(v, k.fmt)}</td><td>${fmt(p, k.fmt)}</td>
-      <td class="delta" style="color:${goodCls(delta)}">${delta == null ? '—' : (delta >= 0 ? '▲ +' : '▼ ') + delta.toFixed(1) + '%'}</td></tr>`;
+      <td class="delta" style="color:${goodCls(delta)}">${delta == null ? '—' : (delta >= 0 ? '▲ +' : '▼ ') + delta.toFixed(1) + '%'}</td>${r === 'FRANCHISE' ? `<td style="font-size:.7rem;color:var(--muted)">${(WEEK.missing?.[i] || []).map(restoShort).join(', ')}</td>` : ''}</tr>`;
   }
   const tot = weekAgg(k.id, 'cur', r), totp = weekAgg(k.id, 'n1', r);
   const dt = (tot != null && totp) ? (tot - totp) / totp * 100 : null;
@@ -6037,7 +6047,7 @@ function renderWeekDetail() {
     <div class="week-detail-title">${k.label} — détail quotidien · ${r === 'FRANCHISE' ? 'Vue Franchise' : r}</div>
     <div style="height:230px;margin-bottom:12px"><canvas id="weekChartCanvas"></canvas></div>
     <div style="overflow-x:auto"><table class="data-table"><thead>
-      <tr><th>Jour</th><th>${WEEK.yearCur}</th><th>${WEEK.yearN1} (jour équivalent)</th><th class="delta">Δ</th></tr></thead>
+      <tr><th>Jour</th><th>${WEEK.yearCur}</th><th>${WEEK.yearN1} (jour équivalent)</th><th class="delta">Δ</th>${r === 'FRANCHISE' ? '<th>Non saisis</th>' : ''}</tr></thead>
       <tbody>${rows}
       <tr style="font-weight:800;border-top:2px solid var(--border)"><td>Total ${weekMode === 'm' ? 'mois' : 'semaine'}</td>
         <td>${fmt(tot, k.fmt)}</td><td>${fmt(totp, k.fmt)}</td>
@@ -7725,7 +7735,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-213227';
+const BUILD_VERSION = '20261008-225356';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
