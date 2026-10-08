@@ -5064,8 +5064,9 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const [f, k] of DF) {
         if (years[y] && !years[y].includes(f)) continue;
         const v = numOrNull(row[k]);
-        // l'écart de caisse peut être négatif ou nul ; les autres champs : > 0 seulement
-        arrs[f][i] = f === 'ecart' ? (v != null ? r2(v) : null) : ((v != null && v > 0) ? r2(v) : null);
+        // pertes, remboursements, promotions, écart de caisse : un 0 saisi = 0 € (saisie faite) ; cellule vide = non saisi.
+        // L'écart peut être négatif. Les autres champs : > 0 seulement (0 = non renseigné).
+        arrs[f][i] = (f === 'ecart' || ((f === 'perte' || f === 'remb' || f === 'promo') && v != null && v >= 0)) ? (v != null ? r2(v) : null) : ((v != null && v > 0) ? r2(v) : null);
       }
       const met = String(row.meteo || '').trim(), com = String(row.commentaire || '').trim();
       if (met || com) (comments[p] = comments[p] || {})[s] = { meteo: met || null, commentaire: com || null };
@@ -7671,7 +7672,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-144350';
+const BUILD_VERSION = '20261008-144856';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
