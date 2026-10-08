@@ -5964,8 +5964,9 @@ function toggleWeekKpi(id) {
 
 function renderWeekDetail() {
   const box = document.getElementById('weekDetail');
-  const k = WEEK_KPIS.find(x => x.id === weekOpenKpi);
-  if (!box || !k) return;
+  const k0 = WEEK_KPIS.find(x => x.id === weekOpenKpi);
+  if (!box || !k0) return;
+  const k = k0.amt ? Object.assign({}, k0, { id: k0.amt, fmt: 'euros' }) : k0;   // détail en euros pour pertes, remb., promo, écart
   const r = weekResto || 'FRANCHISE';
   const cur = weekDayArr(k.id, 'cur', r);
   const n1  = weekDayArr(k.id, 'n1', r);
@@ -7670,7 +7671,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-142533';
+const BUILD_VERSION = '20261008-144350';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
