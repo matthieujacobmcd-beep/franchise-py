@@ -5749,7 +5749,7 @@ function buildWeek(off) {
   const daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
   const elapsed = days.map(d => d <= last);            // on ne compare que les jours écoulés
   const nEl = elapsed.filter(Boolean).length;
-  const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte' };
+  const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte', heures_total: 'heures_total', remb: 'remb', promo: 'promo' };
   // Comparaison équitable : pour chaque restaurant, un jour n'est comparé (N-1 et
   // prévisionnel) que s'il est saisi cette année. La Franchise = somme des restaurants.
   const kp = {}, has = {};
@@ -5765,7 +5765,10 @@ function buildWeek(off) {
     kp[k].n1.FRANCHISE  = days.map((_, i) => sumDay(kp[k].n1, i));
   }
   // Ratios (VPHE, pertes) : seulement les jours où numérateur ET dénominateur sont saisis (Franchise comprise)
-  const pairs = { alim_h: ['ca_alim', 'heures'], heures_a: ['heures', 'ca_alim'], perte_p: ['perte_eur', 'ca_alim'], alim_pp: ['ca_alim', 'perte_eur'] };
+  const pairs = { alim_h: ['ca_alim', 'heures'], heures_a: ['heures', 'ca_alim'], perte_p: ['perte_eur', 'ca_alim'], alim_pp: ['ca_alim', 'perte_eur'],
+    alim_hg: ['ca_alim', 'heures_total'], heures_g: ['heures_total', 'ca_alim'],
+    remb_p: ['remb', 'ca_alim'], alim_rp: ['ca_alim', 'remb'], promo_p: ['promo', 'ca_alim'], alim_pr: ['ca_alim', 'promo'],
+    ca_t: ['ca_total', 'tacs'], tacs_c: ['tacs', 'ca_total'] };
   for (const [nk, [a, b]] of Object.entries(pairs)) {
     kp[nk] = { cur: {}, n1: {} };
     for (const side of ['cur', 'n1']) {
@@ -5872,13 +5875,20 @@ function bindWeekSwipe() {
 const WEEK_KPIS = [
   { id:'ca_total', label:'CA Net Total',        fmt:'euros'  },
   { id:'ca_alim',  label:'CA Net Alimentaire',  fmt:'euros'  },
-  { id:'tacs',     label:'Transactions',        fmt:'nb'     },
-  { id:'vphe',     label:'VPHE',                fmt:'euros2' },
+  { id:'tacs',     label:"TAC'S",               fmt:'nb'     },
   { id:'perte',    label:'Pertes',              fmt:'pct2', invert:true },
+  { id:'remb',     label:'Remboursement',       fmt:'pct2', invert:true },
+  { id:'promo',    label:'Promotions',          fmt:'pct2', invert:true },
+  { id:'pm',       label:'Panier Moyen',        fmt:'euros2' },
+  { id:'vphe',     label:'VPHE',                fmt:'euros2' },
+  { id:'vphg',     label:'VPHG',                fmt:'euros2' },
 ];
+const WEEK_RATIO = { vphe:['alim_h','heures_a'], vphg:['alim_hg','heures_g'], perte:['perte_p','alim_pp'], remb:['remb_p','alim_rp'], promo:['promo_p','alim_pr'], pm:['ca_t','tacs_c'] };
 
 function weekAgg(id, side, resto) {
   if (!WEEK) return null;
+  const R = WEEK_RATIO[id];
+  if (R) { const n = weekAgg(R[0], side, resto), d = weekAgg(R[1], side, resto); return (n != null && d) ? n / d : null; }
   if (id === 'vphe') {
     const a = weekAgg('alim_h', side, resto), h = weekAgg('heures_a', side, resto);
     return (a && h) ? a / h : null;
@@ -5894,6 +5904,8 @@ function weekAgg(id, side, resto) {
 }
 // Valeurs quotidiennes (7 jours) d'un KPI hebdo pour le détail
 function weekDayArr(id, side, r) {
+  const R = WEEK_RATIO[id];
+  if (R) { const n = WEEK.kpis[R[0]]?.[side]?.[r] || [], d = WEEK.kpis[R[1]]?.[side]?.[r] || []; return n.map((v, i) => (v != null && d[i]) ? v / d[i] : null); }
   const alim = WEEK.kpis.alim_h?.[side]?.[r] || [];
   if (id === 'vphe') {
     const h = WEEK.kpis.heures_a?.[side]?.[r] || [];
@@ -7655,7 +7667,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261007-154523';
+const BUILD_VERSION = '20261008-141434';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
