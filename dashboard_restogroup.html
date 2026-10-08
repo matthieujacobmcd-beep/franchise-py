@@ -5771,16 +5771,18 @@ function _wkMinOffset() {
 }
 function buildWeek(off) {
   const last = _wkLastDay(); if (!last || !DASHBOARD_DATA.daily) return false;
-  let mon, days, daysN1;
+  let mon, days, daysN1, daysEq;
   if (weekMode === 'm') {
     const ld = new Date(Date.parse(last + 'T00:00:00Z')), t = Date.UTC(ld.getUTCFullYear(), ld.getUTCMonth() + off, 1);
     mon = t; const n = new Date(Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth() + 1, 0)).getUTCDate();
     days = [...Array(n)].map((_, i) => _wkIso(t + i * _WD));
-    daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));   // même jour de semaine l'an passé (comme la vue semaine)
+    daysN1 = days.map(d => (+d.slice(0, 4) - 1) + d.slice(4));                  // mois : mêmes dates l'an passé (CA mois comparé au CA mois)
+    daysEq = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));   // jour : jour équivalent (même jour de semaine)
   } else {
     mon = _wkMonday(off);
     days = [...Array(7)].map((_, i) => _wkIso(mon + i * _WD));
     daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
+    daysEq = daysN1;
   }
   const elapsed = days.map(d => d <= last);            // on ne compare que les jours écoulés
   const nEl = elapsed.filter(Boolean).length;
@@ -5789,16 +5791,20 @@ function buildWeek(off) {
   // prévisionnel) que s'il est saisi cette année. La Franchise = somme des restaurants.
   const kp = {}, has = {};
   const OPEN = (DASHBOARD_DATA.meta || {}).open || {};
+  const hasD = {};
   for (const r of RESTOS) has[r] = days.map((d, i) => elapsed[i] && _wkVal(d, r, 'ca') != null && !(OPEN[r] && daysN1[i] < OPEN[r]));   // restaurant ouvert l'an passé
   const sumDay = (obj, i) => { let s = 0, any = false; for (const r of RESTOS) { const v = obj[r][i]; if (v != null) { s += v; any = true; } } return any ? s : null; };
   for (const [k, f] of Object.entries(F)) {
-    kp[k] = { cur: {}, n1: {} };
+    kp[k] = { cur: {}, n1: {}, n1d: {} };
     for (const r of RESTOS) {
+      hasD[r] = days.map((d, i) => has[r][i] && !(OPEN[r] && daysEq[i] < OPEN[r]));
       kp[k].cur[r] = days.map((d, i) => has[r][i] ? _wkVal(d, r, f) : null);
       kp[k].n1[r]  = daysN1.map((d, i) => has[r][i] ? _wkVal(d, r, f) : null);
+      kp[k].n1d[r] = daysEq.map((d, i) => hasD[r][i] ? _wkVal(d, r, f) : null);
     }
     kp[k].cur.FRANCHISE = days.map((_, i) => sumDay(kp[k].cur, i));
     kp[k].n1.FRANCHISE  = days.map((_, i) => sumDay(kp[k].n1, i));
+    kp[k].n1d.FRANCHISE = days.map((_, i) => sumDay(kp[k].n1d, i));
   }
   // Ratios (VPHE, pertes) : seulement les jours où numérateur ET dénominateur sont saisis (Franchise comprise)
   const pairs = { alim_h: ['ca_alim', 'heures'], heures_a: ['heures', 'ca_alim'], perte_p: ['perte_eur', 'ca_alim'], alim_pp: ['ca_alim', 'perte_eur'],
@@ -5807,8 +5813,8 @@ function buildWeek(off) {
     ecart_p: ['ecart', 'ca_alim'], alim_ep: ['ca_alim', 'ecart'],
     ca_t: ['ca_total', 'tacs'], tacs_c: ['tacs', 'ca_total'] };
   for (const [nk, [a, b]] of Object.entries(pairs)) {
-    kp[nk] = { cur: {}, n1: {} };
-    for (const side of ['cur', 'n1']) {
+    kp[nk] = { cur: {}, n1: {}, n1d: {} };
+    for (const side of ['cur', 'n1', 'n1d']) {
       for (const r of RESTOS) kp[nk][side][r] = kp[a][side][r].map((v, i) => (v != null && kp[b][side][r][i] != null) ? v : null);
       kp[nk][side].FRANCHISE = days.map((_, i) => sumDay(kp[nk][side], i));
     }
@@ -5832,7 +5838,7 @@ function buildWeek(off) {
   const nw = {
     label: (weekMode === 'm' ? `${_MOIS_FR[new Date(mon).getUTCMonth()]} ${days[0].slice(0, 4)}` : `Semaine ${_wkIsoWeek(mon)} · du ${_wkFmt(days[0])} au ${_wkFmt(days[6])}/${days[6].slice(0, 4)}`) + (partial ? ` · en cours (au ${_wkFmt(last)})` : ''),
     label_n1: `du ${_wkFmt(daysN1[0])} au ${_wkFmt(n1Last)}/${n1Last.slice(0, 4)}`,
-    days, days_n1: daysN1, kpis: kp, prev, partial, offset: off, mode: weekMode,
+    days, days_n1: daysN1, days_eq: daysEq, kpis: kp, prev, partial, offset: off, mode: weekMode,
     yearCur: days[0].slice(0, 4), yearN1: daysN1[0].slice(0, 4),
   };
   for (const k of Object.keys(WEEK)) delete WEEK[k];
@@ -5974,7 +5980,7 @@ function renderWeekStrip() {
     </span>`;
   let h = `<div class="week-strip"><div class="week-strip-head">
     <span class="week-strip-title" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> ${WEEK.label}</span>
-    <span class="week-strip-sub">vs ${weekMode === 'm' ? 'jours équivalents' : 'semaine équivalente'} ${WEEK.yearN1} (${WEEK.label_n1})</span>
+    <span class="week-strip-sub">vs ${weekMode === 'm' ? 'même mois' : 'semaine équivalente'} ${WEEK.yearN1} (${WEEK.label_n1})</span>
     ${nav}
   </div>
   ${restoCarousel(weekResto, 'weekNavResto', '#8b5cf6', 'wkCar')}
@@ -6010,11 +6016,11 @@ function renderWeekDetail() {
   const k = k0.amt ? Object.assign({}, k0, { id: k0.amt, fmt: 'euros' }) : k0;   // détail en euros pour pertes, remb., promo, écart
   const r = weekResto || 'FRANCHISE';
   const cur = weekDayArr(k.id, 'cur', r);
-  const n1  = weekDayArr(k.id, 'n1', r);
+  const n1  = weekDayArr(k.id, 'n1d', r);
   const goodCls = (d) => d == null ? 'var(--muted)' : ((k.invert ? d < 0 : d >= 0) ? 'var(--green)' : 'var(--red)');
   const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   const dd = WEEK.days.map(d => `${_wkWd(d)} ${d.slice(8, 10)}/${d.slice(5, 7)}`);
-  const dn = WEEK.days_n1.map(d => `${d.slice(8, 10)}/${d.slice(5, 7)}`);
+  const dn = (WEEK.days_eq || WEEK.days_n1).map(d => `${d.slice(8, 10)}/${d.slice(5, 7)}`);
 
   let rows = '';
   for (let i = 0; i < WEEK.days.length; i++) {
@@ -7719,7 +7725,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-212607';
+const BUILD_VERSION = '20261008-213227';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
