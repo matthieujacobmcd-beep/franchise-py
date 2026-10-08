@@ -5877,10 +5877,10 @@ const WEEK_KPIS = [
   { id:'ca_total', label:'CA Net Total',        fmt:'euros'  },
   { id:'ca_alim',  label:'CA Net Alimentaire',  fmt:'euros'  },
   { id:'tacs',     label:"TAC'S",               fmt:'nb'     },
-  { id:'perte',    label:'Pertes',              fmt:'pct2', invert:true },
-  { id:'remb',     label:'Remboursement',       fmt:'pct2', invert:true },
-  { id:'promo',    label:'Promotions',          fmt:'pct2', invert:true },
-  { id:'ecart',    label:'Écart de caisse',     fmt:'pct2' },
+  { id:'perte',    label:'Pertes',              fmt:'pct2', invert:true, amt:'perte_p' },
+  { id:'remb',     label:'Remboursement',       fmt:'pct2', invert:true, amt:'remb_p' },
+  { id:'promo',    label:'Promotions',          fmt:'pct2', invert:true, amt:'promo_p' },
+  { id:'ecart',    label:'Écart de caisse',     fmt:'pct2', amt:'ecart_p' },
   { id:'pm',       label:'Panier Moyen',        fmt:'euros2' },
   { id:'vphe',     label:'VPHE',                fmt:'euros2' },
   { id:'vphg',     label:'VPHG',                fmt:'euros2' },
@@ -5947,6 +5947,7 @@ function renderWeekStrip() {
     h += `<div class="week-card ${weekOpenKpi === k.id ? 'wk-active' : ''}" onclick="toggleWeekKpi('${k.id}')">
       <div class="wk-label">${k.label}</div>
       <div class="wk-value">${fmt(v, k.fmt)}</div>
+      ${k.amt ? `<div style="font-size:.78rem;font-weight:700;color:var(--muted);margin-top:-2px">${fmt(weekAgg(k.amt, 'cur', r), 'euros')}</div>` : ''}
       ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs ${WEEK.yearN1}</span></div>`}
     </div>`;
   }
@@ -7669,7 +7670,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-142048';
+const BUILD_VERSION = '20261008-142533';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
