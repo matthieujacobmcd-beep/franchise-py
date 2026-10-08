@@ -5749,7 +5749,7 @@ function buildWeek(off) {
   const daysN1 = days.map(d => _wkIso(Date.parse(d + 'T00:00:00Z') - 364 * _WD));
   const elapsed = days.map(d => d <= last);            // on ne compare que les jours écoulés
   const nEl = elapsed.filter(Boolean).length;
-  const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte', heures_total: 'heures_total', remb: 'remb', promo: 'promo' };
+  const F = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte', heures_total: 'heures_total', remb: 'remb', promo: 'promo', ecart: 'ecart' };
   // Comparaison équitable : pour chaque restaurant, un jour n'est comparé (N-1 et
   // prévisionnel) que s'il est saisi cette année. La Franchise = somme des restaurants.
   const kp = {}, has = {};
@@ -5768,6 +5768,7 @@ function buildWeek(off) {
   const pairs = { alim_h: ['ca_alim', 'heures'], heures_a: ['heures', 'ca_alim'], perte_p: ['perte_eur', 'ca_alim'], alim_pp: ['ca_alim', 'perte_eur'],
     alim_hg: ['ca_alim', 'heures_total'], heures_g: ['heures_total', 'ca_alim'],
     remb_p: ['remb', 'ca_alim'], alim_rp: ['ca_alim', 'remb'], promo_p: ['promo', 'ca_alim'], alim_pr: ['ca_alim', 'promo'],
+    ecart_p: ['ecart', 'ca_alim'], alim_ep: ['ca_alim', 'ecart'],
     ca_t: ['ca_total', 'tacs'], tacs_c: ['tacs', 'ca_total'] };
   for (const [nk, [a, b]] of Object.entries(pairs)) {
     kp[nk] = { cur: {}, n1: {} };
@@ -5879,11 +5880,12 @@ const WEEK_KPIS = [
   { id:'perte',    label:'Pertes',              fmt:'pct2', invert:true },
   { id:'remb',     label:'Remboursement',       fmt:'pct2', invert:true },
   { id:'promo',    label:'Promotions',          fmt:'pct2', invert:true },
+  { id:'ecart',    label:'Écart de caisse',     fmt:'pct2' },
   { id:'pm',       label:'Panier Moyen',        fmt:'euros2' },
   { id:'vphe',     label:'VPHE',                fmt:'euros2' },
   { id:'vphg',     label:'VPHG',                fmt:'euros2' },
 ];
-const WEEK_RATIO = { vphe:['alim_h','heures_a'], vphg:['alim_hg','heures_g'], perte:['perte_p','alim_pp'], remb:['remb_p','alim_rp'], promo:['promo_p','alim_pr'], pm:['ca_t','tacs_c'] };
+const WEEK_RATIO = { vphe:['alim_h','heures_a'], vphg:['alim_hg','heures_g'], perte:['perte_p','alim_pp'], remb:['remb_p','alim_rp'], promo:['promo_p','alim_pr'], ecart:['ecart_p','alim_ep'], pm:['ca_t','tacs_c'] };
 
 function weekAgg(id, side, resto) {
   if (!WEEK) return null;
@@ -7667,7 +7669,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-141434';
+const BUILD_VERSION = '20261008-142048';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
