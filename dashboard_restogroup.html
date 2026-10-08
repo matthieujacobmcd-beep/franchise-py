@@ -5045,11 +5045,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const years = { 2024: ['ca', 'alim', 'tacs'], 2025: null, 2026: null };
     for (const y of [2024, 2025, 2026]) {
       daily[y] = {};
-      for (const s of STORES) { daily[y][s] = {}; for (const [f] of DF) daily[y][s][f] = new Array(nDays(y === 2024 ? 2025 : y)).fill(null); }
+      for (const s of STORES) { daily[y][s] = {}; for (const [f] of DF) daily[y][s][f] = new Array(nDays(y)).fill(null); }
     }
     // 2024 : dates RÉELLES dans le Sheet (rapports d'exploitation). Deux représentations :
     //  - real24 : calendrier 2024 réel (pour l'année 2024 elle-même) ;
-    //  - daily[2024] : aligné sur le calendrier 2025 à 364 jours (même jour de semaine), pour les comparatifs N-1 de 2025.
+    //  - daily[2024] : lui aussi au calendrier réel (index = jour de l'année) ; le comparatif N-1 d'un jour 2025 se lit à −364 jours.
     const real24 = {}; for (const s of STORES) real24[s] = { ca: new Array(366).fill(null), alim: new Array(366).fill(null), tacs: new Array(366).fill(null) };
     for (const row of (S.quotidien || [])) {
       const p = normPeriode(row.periode), s = String(row.restaurant || '').trim().toUpperCase();
@@ -5059,7 +5059,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         const ri = doy(2024, p);
         if (ri >= 0 && ri < 366) for (const [f, k] of DF.slice(0, 3)) { const v = numOrNull(row[k]); real24[s][f][ri] = (v != null && v > 0) ? r2(v) : null; }
       }
-      const i = y === 2024 ? doy(y, p) - 2 : doy(y, p); const arrs = daily[y][s];       // 2024 réel + 364 j = index 2025
+      const i = doy(y, p); const arrs = daily[y][s];       // calendrier réel pour toutes les années (2024 compris)
       if (i < 0 || i >= arrs.ca.length) continue;
       for (const [f, k] of DF) {
         if (years[y] && !years[y].includes(f)) continue;
@@ -7689,7 +7689,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-150808';
+const BUILD_VERSION = '20261008-152559';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
