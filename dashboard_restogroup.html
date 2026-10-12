@@ -5345,6 +5345,28 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // ── 4. PRÉVISIONNEL ──
     Y26.ca_total_prev = monthlyTable('2026', 'ca_total_prev', 'ca_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
     Y26.ca_alim_prev = monthlyTable('2026', 'ca_alim_prev', 'ca_alim_prev', AGG.sum, { table: PREV, filter: 'none' });
+    // Prévision CA jour par jour (page de saisie « Prévision CA ») : un mois entièrement prévu remplace le prévisionnel mensuel
+    const PJ = {};
+    for (const r of (S.prevjour || [])) {
+      const s = String(r.restaurant || '').trim().toUpperCase(), p = normPeriode(r.periode);
+      if (!STORES.includes(s) || !/^\d{4}-\d{2}-\d{2}$/.test(p)) continue;
+      const al = numOrNull(r.ca_alim_prev), tt = numOrNull(r.ca_total_prev); if (al == null) continue;
+      (PJ[s] = PJ[s] || {})[p] = { alim: al, total: tt != null ? tt : al * 1.01 };
+    }
+    OUT.prevjour = PJ;
+    MONTHS.forEach((m, mi) => {
+      const dim = daysInMonth(2026, mi + 1);
+      for (const s of STORES) {
+        let ta = 0, tt = 0, n = 0;
+        for (let d = 1; d <= dim; d++) { const x = (PJ[s] || {})[`2026-${String(mi + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`]; if (x) { ta += x.alim; tt += x.total; n++; } }
+        if (n !== dim) continue;
+        for (const [tbl, v] of [[Y26.ca_alim_prev, ta], [Y26.ca_total_prev, tt]]) {
+          const row = tbl[m] = tbl[m] || Object.fromEntries(ALL9.map(k => [k, null])); row[s] = r2(v);
+        }
+      }
+      for (const tbl of [Y26.ca_alim_prev, Y26.ca_total_prev]) if (tbl[m]) tbl[m].FRANCHISE = AGG.sum(tbl[m]);
+    });
+    for (const k of ['ca_alim_prev', 'ca_total_prev']) Y26[k] = Object.fromEntries(MONTHS.filter(m => m in Y26[k]).map(m => [m, Y26[k][m]]));
     Y26.cout_mo_prev = monthlyTable('2026', 'cout_mo_prev', 'cout_mo_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
     Y26.cash_flow_prev = monthlyTable('2026', 'cash_flow_prev', 'cash_flow_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
     Y26.resultat_net_prev = monthlyTable('2026', 'resultat_net_prev', 'resultat_net_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
@@ -7753,7 +7775,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261009-081517';
+const BUILD_VERSION = '20261012-131250';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
