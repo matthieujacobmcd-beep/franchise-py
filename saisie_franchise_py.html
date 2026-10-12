@@ -850,7 +850,8 @@ function renderPrevCa() {
       <div class="field" style="align-self:end"><button class="btn-save" style="padding:10px 18px" onclick="pvVentiler()">Ventiler sur les jours</button></div></div>
     <div class="pv-cal">${cells}</div>
     <div class="foot"><button class="btn-save" id="pvSave" onclick="pvSave()">Enregistrer la prévision</button>
-      <select id="pvScope" style="padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit"><option value="month">Export : ce restaurant · ce mois</option><option value="year">Export : ce restaurant · toute l'année</option><option value="all">Export : tous les restaurants · toute l'année</option></select>
+      <select id="pvBase" style="padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit"><option value="alim">Export : CA alimentaire</option><option value="total">Export : CA net total</option></select>
+      <select id="pvScope" style="padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit"><option value="year">ce restaurant · toute l'année</option><option value="month">ce restaurant · ce mois</option><option value="all">tous les restaurants · l'année</option></select>
       <button class="step" onclick="pvExport()">⬇ Excel</button><span class="save-msg" id="pvMsg"></span></div>
     <div class="hint">N-1 / N-2 = CA net alimentaire du jour équivalent (−364 j / −728 j) ; pour une année lointaine, la prévision enregistrée sert de référence (« prév. »). Les prévisions ne sont enregistrées qu'au clic sur « Enregistrer ».</div>`;
   for (const iso of days) pvRefresh(iso);
@@ -947,70 +948,123 @@ async function pvSave() {
   pvMsg('ok', `✓ Prévision enregistrée (${rows.length} jour${rows.length > 1 ? 's' : ''} mis à jour).`);
 }
 
-// ── Export Excel (xlsx minimal généré dans le navigateur) ──
+// ── Export Excel : modèle « PREV ET BUDGET » (mois côte à côte, jours alignés par jour de la semaine) ──
 const _col = n => { let s = ''; n++; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
 const _xe = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
-function xlsxSheet(rows, widths) {
-  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-    + '<cols>' + widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('') + '</cols><sheetData>';
-  rows.forEach((r, ri) => {
-    x += `<row r="${ri + 1}">`;
-    r.forEach((c, ci) => {
-      if (c == null || c === '') return;
-      const ref = _col(ci) + (ri + 1), o = (typeof c === 'object') ? c : { v: c }, st = ri === 0 ? 1 : (o.s === 'eur' ? 2 : o.s === 'pct' ? 3 : 0);
-      x += typeof o.v === 'number' ? `<c r="${ref}" s="${st}"><v>${o.v}</v></c>` : `<c r="${ref}" s="${st}" t="inlineStr"><is><t>${_xe(o.v)}</t></is></c>`;
+const XS = {                                                // styles nommés ; un objet { b, color, fill, nf, al } est aussi accepté
+  head: { b: 1, color: 'FFFFFFFF', fill: 'FF1F2937' }, gris: { b: 1, fill: 'FFD9D9D9', al: 'center' }, jaune: { fill: 'FFFFF2CC' }, jauneb: { fill: 'FFFFF2CC', b: 1 },
+  eur: { nf: '"€ "#,##0' }, eurb: { nf: '"€ "#,##0', b: 1 }, pct: { nf: '0.00%' }, pctb: { nf: '0.00%', b: 1 },
+  pos: { nf: '0.00%', fill: 'FFC6EFCE', color: 'FF006100' }, neg: { nf: '0.00%', fill: 'FFFFC7CE', color: 'FF9C0006' }, total: { b: 1, fill: 'FFD9D9D9' }, we: { fill: 'FFEFF6FF' },
+};
+function xlsxBuild(sheets) {
+  const fonts = ['<font><sz val="10"/><name val="Avenir Next"/></font>'], fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'], nfs = [], xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'], seen = {};
+  const sid = st => {
+    if (!st) return 0; const o = typeof st === 'string' ? XS[st] : st, k = JSON.stringify(o); if (seen[k] != null) return seen[k];
+    let fi = 0, fl = 0, nf = 0;
+    if (o.b || o.color) { fonts.push(`<font>${o.b ? '<b/>' : ''}<sz val="10"/>${o.color ? `<color rgb="${o.color}"/>` : ''}<name val="Avenir Next"/></font>`); fi = fonts.length - 1; }
+    if (o.fill) { fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${o.fill}"/><bgColor indexed="64"/></patternFill></fill>`); fl = fills.length - 1; }
+    if (o.nf) { let i = nfs.indexOf(o.nf); if (i < 0) { nfs.push(o.nf); i = nfs.length - 1; } nf = 164 + i; }
+    xfs.push(`<xf numFmtId="${nf}" fontId="${fi}" fillId="${fl}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1"${o.al ? ` applyAlignment="1"><alignment horizontal="${o.al}"/></xf>` : '/>'}`);
+    return seen[k] = xfs.length - 1;
+  };
+  const sheetXml = sh => {
+    let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" showGridLines="0">'
+      + (sh.freeze ? `<pane xSplit="${sh.freeze[0]}" ySplit="${sh.freeze[1]}" topLeftCell="${_col(sh.freeze[0])}${sh.freeze[1] + 1}" activePane="bottomRight" state="frozen"/>` : '') + '</sheetView></sheetViews>'
+      + '<cols>' + sh.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('') + '</cols><sheetData>';
+    sh.rows.forEach((r, ri) => {
+      if (!r) return; x += `<row r="${ri + 1}">`;
+      r.forEach((c, ci) => {
+        if (c == null) return;
+        const o = (typeof c === 'object') ? c : { v: c }, ref = _col(ci) + (ri + 1), st = sid(o.s || (sh.header && ri === 0 ? 'head' : null));
+        if (o.v == null || o.v === '') x += `<c r="${ref}" s="${st}"/>`;
+        else x += typeof o.v === 'number' ? `<c r="${ref}" s="${st}"><v>${o.v}</v></c>` : `<c r="${ref}" s="${st}" t="inlineStr"><is><t>${_xe(o.v)}</t></is></c>`;
+      });
+      x += '</row>';
     });
-    x += '</row>';
+    return x + '</sheetData></worksheet>';
+  };
+  const sx = sheets.map(sheetXml);                          // les styles se remplissent en construisant les feuilles
+  return (async () => {
+    await loadJSZip();
+    const z = new JSZip();
+    z.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>');
+    z.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    z.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+      + sheets.map((s, i) => `<sheet name="${_xe(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets></workbook>');
+    z.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+      + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+    z.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + (nfs.length ? `<numFmts count="${nfs.length}">${nfs.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${_xe(f)}"/>`).join('')}</numFmts>` : '')
+      + `<fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>`
+      + `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs></styleSheet>`);
+    sx.forEach((x, i) => z.file(`xl/worksheets/sheet${i + 1}.xml`, x));
+    return z.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  })();
+}
+const PV_MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const PV_JOURS_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+// Une feuille au modèle PREV ET BUDGET : une colonne « date / CA / % vs N-1 » par mois, jours alignés sur le jour de la semaine
+function pvModelSheet(r, Y, months, base, prevOf, prevT) {
+  const nm = RESTOS.find(x => x[0] === r)[1], ROW0 = 3, NR = 37, rows = [], put = (ri, ci, c) => { (rows[ri] = rows[ri] || [])[ci] = c; };
+  const ref = (iso) => base === 'alim' ? pvN1(r, iso) : pvTotRef(r, iso);
+  put(0, 0, { v: `PREV ET BUDGET ${Y} - ${nm.toUpperCase()} - ${base === 'alim' ? 'CA NET ALIMENTAIRE' : 'CA NET TOTAL'} (jours équivalents : même jour de la semaine ${Y - 1})`, s: { b: 1 } });
+  for (let i = 0; i < NR; i++) put(ROW0 - 1 + i, 0, { v: PV_JOURS_LONG[i % 7], s: 'jauneb' });
+  const tot = { n1: 0, pv: 0 };
+  months.forEach((m, k) => {
+    const c0 = 1 + 3 * k, days = pvDays(`${Y}-${pad2(m)}`), first = (new Date(Date.UTC(Y, m - 1, 1)).getUTCDay() + 6) % 7;
+    put(1, c0, { v: PV_MOIS_FR[m - 1].toUpperCase(), s: 'gris' }); put(1, c0 + 1, { v: 'CA', s: 'gris' }); put(1, c0 + 2, { v: '% vs N-1', s: 'gris' });
+    for (let i = 0; i < NR; i++) put(ROW0 - 1 + i, c0, { v: '', s: 'jaune' });
+    let sN1 = 0, sPv = 0;
+    days.forEach((iso, i) => {
+      const ri = ROW0 - 1 + first + i, v = prevOf(r, iso), dow = (first + i) % 7;
+      put(ri, c0, { v: `${i + 1} ${PV_MOIS_FR[m - 1]}`, s: pvFerie(iso) ? { fill: 'FFFFF2CC', b: 1, color: 'FFB91C1C' } : 'jaune' });
+      if (v == null) return;
+      const val = base === 'alim' ? v : prevT(r, iso, v), a = ref(iso);
+      put(ri, c0 + 1, { v: Math.round(val), s: 'eur' });
+      if (a) { const p = val / a - 1; put(ri, c0 + 2, { v: p, s: p >= 0 ? 'pos' : 'neg' }); sN1 += a; sPv += val; }
+    });
+    const g1 = ROW0 - 1 + NR + 2;                           // lignes GLOBAL
+    put(g1, c0, { v: String(Y - 1), s: 'total' }); put(g1, c0 + 1, { v: sN1 ? Math.round(sN1) : '', s: { b: 1, fill: 'FFD9D9D9', nf: '"€ "#,##0' } }); put(g1, c0 + 2, { v: '', s: 'total' });
+    put(g1 + 1, c0, { v: String(Y), s: 'total' }); put(g1 + 1, c0 + 1, { v: sPv ? Math.round(sPv) : '', s: { b: 1, fill: 'FFD9D9D9', nf: '"€ "#,##0' } });
+    put(g1 + 1, c0 + 2, sN1 ? { v: sPv / sN1 - 1, s: { b: 1, nf: '0.00%', fill: sPv >= sN1 ? 'FFC6EFCE' : 'FFFFC7CE', color: sPv >= sN1 ? 'FF006100' : 'FF9C0006' } } : { v: '', s: 'total' });
+    tot.n1 += sN1; tot.pv += sPv;
   });
-  return x + '</sheetData></worksheet>';
-}
-async function xlsxBuild(sheets) {
-  await loadJSZip();
-  const z = new JSZip();
-  z.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
-    + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>');
-  z.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-  z.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
-    + sheets.map((s, i) => `<sheet name="${_xe(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets></workbook>');
-  z.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-    + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
-    + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-  z.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0&quot; €&quot;"/><numFmt numFmtId="165" formatCode="+0.0%;-0.0%;0.0%"/></numFmts>'
-    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2937"/></patternFill></fill></fills>'
-    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    + '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>');
-  sheets.forEach((s, i) => z.file(`xl/worksheets/sheet${i + 1}.xml`, xlsxSheet(s.rows, s.widths)));
-  return z.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-}
-async function pvExport() {
-  const scope = document.getElementById('pvScope').value, [y, m] = PV.ym.split('-').map(Number);
-  const restos = scope === 'all' ? RESTOS.map(r => r[0]) : [curResto];
-  const dates = scope === 'month' ? pvDays(PV.ym) : [...Array(12)].flatMap((_, i) => pvDays(`${y}-${pad2(i + 1)}`));
-  const prevOf = (r, iso) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym) ? PV.vals[iso] : ((PREVJ || {})[r] || {})[iso]);   // inclut la saisie en cours à l'écran
-  const det = [['Restaurant', 'Date', 'Jour', 'Jour équivalent N-1', 'CA alim N-1', 'Jour équivalent N-2', 'CA alim N-2', 'Prévision CA alim', 'Prévision CA net total', 'Écart vs N-1', 'Écart vs N-2', 'CA alim réel', 'Réel vs prévision', 'Week-end / férié']];
-  const syn = {}, prevT = (r, iso, v) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym)) ? v * PV.coef : (((PREVT || {})[r] || {})[iso] ?? v * 1.01);
-
-  for (const r of restos) for (const iso of dates) {
-    const v = prevOf(r, iso); if (v == null && scope !== 'month') continue;
-    const a = pvN1(r, iso), b = pvN2(r, iso), real = pvCa(r, iso), dow = PV_JOURS[(new Date(_pvT(iso)).getUTCDay() + 6) % 7];
-    det.push([RESTOS.find(x => x[0] === r)[1], iso.slice(8) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4), dow, pvShift(iso, -364), { v: a, s: 'eur' }, pvShift(iso, -728), { v: b, s: 'eur' },
-      { v: v, s: 'eur' }, v != null ? { v: Math.round((prevT(r, iso, v)) * 100) / 100, s: 'eur' } : '', (v != null && a) ? { v: v / a - 1, s: 'pct' } : '', (v != null && b) ? { v: v / b - 1, s: 'pct' } : '', { v: real, s: 'eur' }, (v != null && real) ? { v: real / v - 1, s: 'pct' } : '', pvFerie(iso) || (dow === 'Sam' || dow === 'Dim' ? 'Week-end' : '')]);
-    if (v != null) {
-      const k = r + '|' + iso.slice(0, 7), o = syn[k] = syn[k] || { r, ym: iso.slice(0, 7), prev: 0, tot: 0, n1: 0, pn1: 0, n2: 0, pn2: 0, real: 0, preal: 0, n: 0 };
-      o.prev += v; o.tot += prevT(r, iso, v); o.n++; if (a != null) { o.n1 += a; o.pn1 += v; } if (b != null) { o.n2 += b; o.pn2 += v; } if (real != null) { o.real += real; o.preal += v; }
-    }
+  const g1 = ROW0 - 1 + NR + 2; put(g1, 0, { v: 'GLOBAL', s: 'total' }); put(g1 + 1, 0, { v: '', s: 'total' });
+  if (months.length > 1) {                                  // total de l'année
+    const c0 = 1 + 3 * months.length;
+    put(1, c0, { v: 'ANNÉE', s: 'gris' }); put(1, c0 + 1, { v: 'CA', s: 'gris' }); put(1, c0 + 2, { v: '% vs N-1', s: 'gris' });
+    put(g1, c0, { v: String(Y - 1), s: 'total' }); put(g1, c0 + 1, { v: tot.n1 ? Math.round(tot.n1) : '', s: { b: 1, fill: 'FFD9D9D9', nf: '"€ "#,##0' } }); put(g1, c0 + 2, { v: '', s: 'total' });
+    put(g1 + 1, c0, { v: String(Y), s: 'total' }); put(g1 + 1, c0 + 1, { v: tot.pv ? Math.round(tot.pv) : '', s: { b: 1, fill: 'FFD9D9D9', nf: '"€ "#,##0' } });
+    put(g1 + 1, c0 + 2, tot.n1 ? { v: tot.pv / tot.n1 - 1, s: { b: 1, nf: '0.00%', fill: tot.pv >= tot.n1 ? 'FFC6EFCE' : 'FFFFC7CE', color: tot.pv >= tot.n1 ? 'FF006100' : 'FF9C0006' } } : { v: '', s: 'total' });
   }
-  const sm = [['Restaurant', 'Mois', 'Jours prévus', 'Prévision CA alim', 'Prévision CA net total', 'CA alim N-1 (mêmes jours)', 'Écart vs N-1', 'CA alim N-2 (mêmes jours)', 'Écart vs N-2', 'CA alim réel (jours écoulés)', 'Prévision (mêmes jours)', 'Réel vs prévision']];
-  Object.values(syn).sort((p, q) => (p.r + p.ym).localeCompare(q.r + q.ym)).forEach(o => sm.push([RESTOS.find(x => x[0] === o.r)[1], MONTHS[+o.ym.slice(5) - 1].charAt(0) + MONTHS[+o.ym.slice(5) - 1].slice(1).toLowerCase() + ' ' + o.ym.slice(0, 4), o.n,
-    { v: o.prev, s: 'eur' }, { v: Math.round(o.tot), s: 'eur' }, { v: o.n1 || null, s: 'eur' }, o.n1 ? { v: o.pn1 / o.n1 - 1, s: 'pct' } : '', { v: o.n2 || null, s: 'eur' }, o.n2 ? { v: o.pn2 / o.n2 - 1, s: 'pct' } : '', { v: o.real || null, s: 'eur' }, { v: o.real ? o.preal : null, s: 'eur' }, o.real ? { v: o.real / o.preal - 1, s: 'pct' } : '']));
-  if (det.length < 2) { pvMsg('err', 'Aucune prévision à exporter.'); return; }
+  const nb = months.length + (months.length > 1 ? 1 : 0);
+  return { name: `PREV ${Y} ${base === 'alim' ? 'ALIM' : 'TOTAL'} - ${nm}`.slice(0, 31), rows, widths: [11, ...Array.from({ length: nb }, () => [15, 11, 10]).flat()], freeze: [1, 2], hasData: tot.pv > 0 };
+}
+const pvTotRef = (r, iso) => { const ri = pvShift(iso, -364), v = ((CAM || {})[r] || {})[ri]; if (r === 'VIVIERS' && ri < '2025-01-03') return null; return (typeof v === 'number' && v > 0) ? v : (((PREVT || {})[r] || {})[ri] ?? null); };
+async function pvExport() {
+  const scope = document.getElementById('pvScope').value, base = document.getElementById('pvBase').value, [Y, M] = PV.ym.split('-').map(Number);
+  const restos = scope === 'all' ? RESTOS.map(r => r[0]) : [curResto], months = scope === 'month' ? [M] : [...Array(12)].map((_, i) => i + 1);
+  const prevOf = (r, iso) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym) ? PV.vals[iso] : ((PREVJ || {})[r] || {})[iso]);   // inclut la saisie en cours à l'écran
+  const prevT = (r, iso, v) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym)) ? v * PV.coef : (((PREVT || {})[r] || {})[iso] ?? v * 1.01);
+  const sheets = restos.map(r => pvModelSheet(r, Y, months, base, prevOf, prevT)).filter(sh => sh.hasData || restos.length === 1);
+  if (!sheets.length || !sheets.some(sh => sh.hasData)) { pvMsg('err', 'Aucune prévision à exporter.'); return; }
+  // feuille de détail jour (données brutes)
+  const det = [['Restaurant', 'Date', 'Jour', 'Jour équivalent N-1', 'CA alim N-1', 'Jour équivalent N-2', 'CA alim N-2', 'Prévision CA alim', 'Prévision CA net total', 'Écart vs N-1', 'Écart vs N-2', 'CA alim réel', 'Réel vs prévision', 'Week-end / férié']];
+  for (const r of restos) for (const mm of months) for (const iso of pvDays(`${Y}-${pad2(mm)}`)) {
+    const v = prevOf(r, iso); if (v == null) continue;
+    const a = pvN1(r, iso), b = pvN2(r, iso), real = pvCa(r, iso), dow = PV_JOURS[(new Date(_pvT(iso)).getUTCDay() + 6) % 7];
+    det.push([RESTOS.find(x => x[0] === r)[1], iso.slice(8) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4), dow, pvShift(iso, -364), { v: a, s: 'eur' }, pvShift(iso, -728), { v: b, s: 'eur' }, { v, s: 'eur' }, { v: Math.round(prevT(r, iso, v) * 100) / 100, s: 'eur' },
+      a ? { v: v / a - 1, s: 'pct' } : '', b ? { v: v / b - 1, s: 'pct' } : '', { v: real, s: 'eur' }, real ? { v: real / v - 1, s: 'pct' } : '', pvFerie(iso) || (dow === 'Sam' || dow === 'Dim' ? 'Week-end' : '')]);
+  }
   pvMsg('', 'Génération du fichier Excel…');
   try {
-    const blob = await xlsxBuild([{ name: 'Synthèse mois', rows: sm, widths: [20, 16, 12, 18, 20, 22, 14, 22, 14, 24, 22, 16] }, { name: 'Détail jour', rows: det, widths: [20, 12, 7, 20, 14, 20, 14, 18, 20, 13, 13, 14, 16, 18] }]);
+    const blob = await xlsxBuild([...sheets, { name: 'Détail jour', rows: det, widths: [20, 12, 7, 20, 14, 20, 14, 18, 20, 13, 13, 14, 16, 18], header: true, freeze: [0, 1] }]);
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `Prevision_CA_alim_${scope === 'all' ? 'tous_restaurants_' + y : curResto.replace(/\s+/g, '_') + '_' + (scope === 'month' ? PV.ym : y)}.xlsx`;
+    a.download = `PREV_${Y}_${base === 'alim' ? 'CA_alim' : 'CA_total'}_${scope === 'all' ? 'tous_restaurants' : curResto.replace(/\s+/g, '_')}${scope === 'month' ? '_' + PV.ym : ''}.xlsx`;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-    pvMsg('ok', '✓ Fichier Excel généré.');
+    pvMsg('ok', '✓ Fichier Excel généré (modèle PREV ET BUDGET).');
   } catch (e) { pvMsg('err', 'Export impossible : ' + e.message); }
 }
 
