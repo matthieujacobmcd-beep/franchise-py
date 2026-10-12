@@ -98,6 +98,8 @@
   .pv-dn{ font-weight:800; font-size:.85rem; color:var(--text); } .pv-ref b,.pv-real b{ color:var(--text); } .pv-real{ color:#166534; }
   .pv-in{ display:flex; gap:3px; margin:4px 0 2px; } .pv-in input{ width:100%; min-width:0; font-family:inherit; font-size:.8rem; padding:5px 6px; border:1.5px solid var(--border); border-radius:8px; } .pv-in select{ font-family:inherit; font-size:.72rem; border:1.5px solid var(--border); border-radius:8px; padding:0 2px; }
   .pv-delta{ min-height:14px; font-size:.64rem; }
+  .pv-h.we{ color:#2563eb; } .pv-day.we{ background:#eff6ff; border-color:#bfdbfe; } .pv-day.we .pv-dn{ color:#1d4ed8; } .pv-dn span{ font-size:.62rem; font-weight:700; margin-left:5px; text-transform:uppercase; }
+  .pv-day.fer{ background:#fef2f2; border-color:#fca5a5; border-width:2px; } .pv-day.fer .pv-dn{ color:#b91c1c; } .pv-fer{ font-size:.62rem; font-weight:800; color:#b91c1c; margin:1px 0 2px; }
   .pv-tot{ font-size:.64rem; color:var(--text); font-weight:700; } .pv-ref em{ font-style:normal; font-size:.58rem; background:#fde9c8; color:#7a4a00; border-radius:4px; padding:0 4px; margin-left:3px; }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
@@ -777,6 +779,26 @@ function pvCa(r, iso) {                                     // CA alimentaire r�
 const pvRef = (r, iso) => pvCa(r, iso) ?? (((PREVJ || {})[r] || {})[iso] ?? null);   // réel, sinon la prévision enregistrée (années lointaines)
 const pvN1 = (r, iso) => pvRef(r, pvShift(iso, -364));      // jour équivalent N-1 (même jour de la semaine)
 const pvN2 = (r, iso) => pvRef(r, pvShift(iso, -728));      // jour équivalent N-2
+// Jours fériés français (fixes + Pâques, Ascension, Pentecôte)
+const _feriesCache = {};
+function pvFeries(y) {
+  if (_feriesCache[y]) return _feriesCache[y];
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
+    h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451),
+    mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1, easter = Date.UTC(y, mo - 1, da);
+  const at = (t, n) => [new Date(t).toISOString().slice(0, 10), n], fx = (mm, dd, n) => [`${y}-${pad2(mm)}-${pad2(dd)}`, n];
+  return _feriesCache[y] = Object.fromEntries([fx(1, 1, "Jour de l'an"), at(easter + 86400000, 'Lundi de Pâques'), fx(5, 1, 'Fête du travail'), fx(5, 8, 'Victoire 1945'), at(easter + 39 * 86400000, 'Ascension'),
+    at(easter + 50 * 86400000, 'Lundi de Pentecôte'), fx(7, 14, 'Fête nationale'), fx(8, 15, 'Assomption'), fx(11, 1, 'Toussaint'), fx(11, 11, 'Armistice'), fx(12, 25, 'Noël')]);
+}
+const pvFerie = iso => pvFeries(+iso.slice(0, 4))[iso] || null;
+// Arrondit à un pas (1, 10, 50, 100 €) en gardant le total visé : l'écart est reparti par pas sur les plus gros jours
+function pvRoundTo(vals, target, step) {
+  const r = vals.map(v => Math.round(v / step) * step);
+  let diff = Math.round((target - r.reduce((a, b) => a + b, 0)) / step) * step;
+  const order = vals.map((v, i) => i).sort((i, j) => vals[j] - vals[i]);
+  for (let n = 0; diff !== 0 && n < 5000; n++) { const i = order[n % order.length], d = diff > 0 ? step : -step; r[i] += d; diff -= d; }
+  return r;
+}
 function pvInit() {
   const now = new Date();
   if (!PV.ym) PV.ym = [`${now.getFullYear()}-${pad2(now.getMonth() + 1)}`, PV_MIN].sort().pop();
@@ -798,10 +820,11 @@ function renderPrevCa() {
   const [y, m] = PV.ym.split('-').map(Number), days = pvDays(PV.ym), name = RESTOS.find(r => r[0] === curResto)[1];
   const mois = MONTHS.map(x => x.charAt(0) + x.slice(1).toLowerCase()), minM = y === 2026 ? 11 : 1, maxM = y === 2032 ? 12 : 12;
   const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7, today = new Date().toISOString().slice(0, 10);
-  let cells = PV_JOURS.map(j => `<div class="pv-h">${j}</div>`).join('') + '<div></div>'.repeat(lead);
+  let cells = PV_JOURS.map((j, i) => `<div class="pv-h ${i > 4 ? 'we' : ''}">${j}</div>`).join('') + '<div></div>'.repeat(lead);
   for (const iso of days) {
     const n1 = pvN1(curResto, iso), n2 = pvN2(curResto, iso), real = pvCa(curResto, iso), v = PV.vals[iso];
-    cells += `<div class="pv-day ${iso < today ? 'past' : ''}"><div class="pv-dn">${+iso.slice(8)}</div>
+    const dow = (new Date(_pvT(iso)).getUTCDay() + 6) % 7, fer = pvFerie(iso);
+    cells += `<div class="pv-day ${iso < today ? 'past' : ''} ${dow > 4 ? 'we' : ''} ${fer ? 'fer' : ''}"><div class="pv-dn">${+iso.slice(8)}${dow > 4 ? `<span>${PV_JOURS[dow]}</span>` : ''}</div>${fer ? `<div class="pv-fer">🎉 ${fer}</div>` : ''}
       <div class="pv-ref" title="${pvShift(iso, -364)}">N-1 <b>${pvEur(n1)}</b>${pvCa(curResto, pvShift(iso, -364)) == null && n1 != null ? '<em>prév.</em>' : ''}</div><div class="pv-ref" title="${pvShift(iso, -728)}">N-2 <b>${pvEur(n2)}</b>${pvCa(curResto, pvShift(iso, -728)) == null && n2 != null ? '<em>prév.</em>' : ''}</div>
       ${real != null ? `<div class="pv-real">Réel <b>${pvEur(real)}</b></div>` : ''}
       <div class="pv-in"><input type="number" step="any" id="pvi_${iso}" value="${v != null ? Math.round(v * 100) / 100 : ''}" oninput="pvDayInput('${iso}')" placeholder="prévision"><select id="pvu_${iso}" onchange="pvUnit('${iso}')"><option value="e">€</option><option value="p">%</option></select></div>
@@ -817,6 +840,7 @@ function renderPrevCa() {
     <div class="pv-recap" id="pvRecap"></div>
     <div class="pv-obj"><div class="field"><label>Objectif du mois (CA alimentaire)</label><div style="display:flex;gap:6px"><input type="number" step="any" id="pvObj" placeholder="ex. 450000 ou 3"><select id="pvObjU" style="max-width:90px"><option value="e">€</option><option value="p">% vs N-1</option></select></div></div>
       <div class="field"><label>Ventilation sur les jours selon</label><select id="pvW"><option value="1000">N-1 seul</option><option value="7030" selected>N-1 (70 %) + N-2 (30 %)</option><option value="5050">N-1 et N-2 à parts égales</option></select></div>
+      <div class="field"><label>Arrondi</label><div style="display:flex;gap:6px"><select id="pvRnd"><option value="1">1 €</option><option value="10" selected>10 €</option><option value="50">50 €</option><option value="100">100 €</option></select><button class="step" style="white-space:nowrap" onclick="pvArrondir()">Arrondir les jours saisis</button></div><div class="hint">Appliqué à la ventilation ; le total reste calé</div></div>
       <div class="field"><label>CA net total = CA alimentaire ×</label><input type="number" step="0.001" id="pvCoef" value="${PV.coef}" oninput="pvCoefChg()"><div class="hint">1,01 = +1 % (habituel)</div></div>
       <div class="field" style="align-self:end"><button class="btn-save" style="padding:10px 18px" onclick="pvVentiler()">Ventiler sur les jours</button></div></div>
     <div class="pv-cal">${cells}</div>
@@ -887,10 +911,17 @@ function pvVentiler() {
   wt = wt.map(x => x == null ? avg : x);
   const tot = wt.reduce((a, b) => a + b, 0);
   if (Object.keys(PV.vals).length && !confirm('Remplacer les prévisions déjà saisies sur ce mois par la ventilation ?')) return;
-  const out = wt.map(x => Math.round(obj * x / tot));
-  const diff = Math.round(obj) - out.reduce((a, b) => a + b, 0); if (diff) out[wt.indexOf(Math.max(...wt))] += diff;   // arrondi : le total tombe juste
+  const step = +document.getElementById('pvRnd').value || 1, target = Math.round(obj / step) * step;
+  const out = pvRoundTo(wt.map(x => obj * x / tot), target, step);                                                       // arrondi au pas choisi, total calé
   days.forEach((iso, i) => { PV.vals[iso] = out[i]; const el = document.getElementById('pvi_' + iso), un = document.getElementById('pvu_' + iso); if (el) { un.value = 'e'; el.value = out[i]; } pvRefresh(iso); });
-  pvRecap(); pvMsg('ok', `✓ ${pvEur(obj)} ventilés sur ${days.length} jours — pense à enregistrer.`);
+  pvRecap(); pvMsg('ok', `✓ ${pvEur(target)} ventilés sur ${days.length} jours (arrondi à ${step} €${Math.abs(target - obj) > 0.5 ? ' ; objectif ' + pvEur(obj) + ' arrondi à ' + pvEur(target) : ''}) — pense à enregistrer.`);
+}
+function pvArrondir() {
+  const step = +document.getElementById('pvRnd').value || 1, days = pvDays(PV.ym).filter(i => PV.vals[i] != null);
+  if (!days.length) { pvMsg('err', 'Aucune prévision à arrondir.'); return; }
+  const raw = days.map(i => PV.vals[i]), target = Math.round(raw.reduce((a, b) => a + b, 0) / step) * step, out = pvRoundTo(raw, target, step);
+  days.forEach((iso, i) => { PV.vals[iso] = out[i]; const el = document.getElementById('pvi_' + iso), un = document.getElementById('pvu_' + iso); if (el) { un.value = 'e'; el.value = out[i]; } pvRefresh(iso); });
+  pvRecap(); pvMsg('ok', `✓ Prévisions arrondies à ${step} € (total ${pvEur(target)}).`);
 }
 function pvMsg(c, t) { const m = document.getElementById('pvMsg'); if (m) { m.className = 'save-msg ' + c; m.textContent = t; } }
 async function pvSave() {
@@ -951,14 +982,14 @@ async function pvExport() {
   const restos = scope === 'all' ? RESTOS.map(r => r[0]) : [curResto];
   const dates = scope === 'month' ? pvDays(PV.ym) : [...Array(12)].flatMap((_, i) => pvDays(`${y}-${pad2(i + 1)}`));
   const prevOf = (r, iso) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym) ? PV.vals[iso] : ((PREVJ || {})[r] || {})[iso]);   // inclut la saisie en cours à l'écran
-  const det = [['Restaurant', 'Date', 'Jour', 'Jour équivalent N-1', 'CA alim N-1', 'Jour équivalent N-2', 'CA alim N-2', 'Prévision CA alim', 'Prévision CA net total', 'Écart vs N-1', 'Écart vs N-2', 'CA alim réel', 'Réel vs prévision']];
+  const det = [['Restaurant', 'Date', 'Jour', 'Jour équivalent N-1', 'CA alim N-1', 'Jour équivalent N-2', 'CA alim N-2', 'Prévision CA alim', 'Prévision CA net total', 'Écart vs N-1', 'Écart vs N-2', 'CA alim réel', 'Réel vs prévision', 'Week-end / férié']];
   const syn = {}, prevT = (r, iso, v) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym)) ? v * PV.coef : (((PREVT || {})[r] || {})[iso] ?? v * 1.01);
 
   for (const r of restos) for (const iso of dates) {
     const v = prevOf(r, iso); if (v == null && scope !== 'month') continue;
     const a = pvN1(r, iso), b = pvN2(r, iso), real = pvCa(r, iso), dow = PV_JOURS[(new Date(_pvT(iso)).getUTCDay() + 6) % 7];
     det.push([RESTOS.find(x => x[0] === r)[1], iso.slice(8) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4), dow, pvShift(iso, -364), { v: a, s: 'eur' }, pvShift(iso, -728), { v: b, s: 'eur' },
-      { v: v, s: 'eur' }, v != null ? { v: Math.round((prevT(r, iso, v)) * 100) / 100, s: 'eur' } : '', (v != null && a) ? { v: v / a - 1, s: 'pct' } : '', (v != null && b) ? { v: v / b - 1, s: 'pct' } : '', { v: real, s: 'eur' }, (v != null && real) ? { v: real / v - 1, s: 'pct' } : '']);
+      { v: v, s: 'eur' }, v != null ? { v: Math.round((prevT(r, iso, v)) * 100) / 100, s: 'eur' } : '', (v != null && a) ? { v: v / a - 1, s: 'pct' } : '', (v != null && b) ? { v: v / b - 1, s: 'pct' } : '', { v: real, s: 'eur' }, (v != null && real) ? { v: real / v - 1, s: 'pct' } : '', pvFerie(iso) || (dow === 'Sam' || dow === 'Dim' ? 'Week-end' : '')]);
     if (v != null) {
       const k = r + '|' + iso.slice(0, 7), o = syn[k] = syn[k] || { r, ym: iso.slice(0, 7), prev: 0, tot: 0, n1: 0, pn1: 0, n2: 0, pn2: 0, real: 0, preal: 0, n: 0 };
       o.prev += v; o.tot += prevT(r, iso, v); o.n++; if (a != null) { o.n1 += a; o.pn1 += v; } if (b != null) { o.n2 += b; o.pn2 += v; } if (real != null) { o.real += real; o.preal += v; }
@@ -970,7 +1001,7 @@ async function pvExport() {
   if (det.length < 2) { pvMsg('err', 'Aucune prévision à exporter.'); return; }
   pvMsg('', 'Génération du fichier Excel…');
   try {
-    const blob = await xlsxBuild([{ name: 'Synthèse mois', rows: sm, widths: [20, 16, 12, 18, 20, 22, 14, 22, 14, 24, 22, 16] }, { name: 'Détail jour', rows: det, widths: [20, 12, 7, 20, 14, 20, 14, 18, 20, 13, 13, 14, 16] }]);
+    const blob = await xlsxBuild([{ name: 'Synthèse mois', rows: sm, widths: [20, 16, 12, 18, 20, 22, 14, 22, 14, 24, 22, 16] }, { name: 'Détail jour', rows: det, widths: [20, 12, 7, 20, 14, 20, 14, 18, 20, 13, 13, 14, 16, 18] }]);
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `Prevision_CA_alim_${scope === 'all' ? 'tous_restaurants_' + y : curResto.replace(/\s+/g, '_') + '_' + (scope === 'month' ? PV.ym : y)}.xlsx`;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
