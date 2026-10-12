@@ -89,6 +89,15 @@
   .period .step{ border:1.5px solid var(--border); background:var(--card); color:var(--text); font-family:inherit; font-size:.8rem; font-weight:700; border-radius:10px; padding:8px 12px; cursor:pointer; white-space:nowrap; }
   .period .step.next{ background:var(--gold); border-color:var(--gold); color:#fff; }
   .period .step:hover{ filter:brightness(1.06); }
+  .pv-recap{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:6px 0 14px; }
+  .pv-kpi{ background:var(--card2); border-radius:12px; padding:10px 12px; font-size:.72rem; color:var(--muted); } .pv-kpi b{ display:block; font-size:1.05rem; color:var(--text); margin:2px 0; } .pv-kpi i{ font-style:normal; font-size:.66rem; }
+  .pv-obj{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-bottom:16px; padding:14px; background:#fffaf0; border:1.5px solid #f0d58a; border-radius:12px; }
+  .pv-cal{ display:grid; grid-template-columns:repeat(7,minmax(128px,1fr)); gap:6px; overflow-x:auto; }
+  .pv-h{ font-size:.7rem; font-weight:800; color:var(--muted); text-align:center; text-transform:uppercase; letter-spacing:.5px; }
+  .pv-day{ border:1.5px solid var(--border); border-radius:10px; padding:6px 7px; font-size:.68rem; color:var(--muted); background:#fff; } .pv-day.past{ background:var(--card2); }
+  .pv-dn{ font-weight:800; font-size:.85rem; color:var(--text); } .pv-ref b,.pv-real b{ color:var(--text); } .pv-real{ color:#166534; }
+  .pv-in{ display:flex; gap:3px; margin:4px 0 2px; } .pv-in input{ width:100%; min-width:0; font-family:inherit; font-size:.8rem; padding:5px 6px; border:1.5px solid var(--border); border-radius:8px; } .pv-in select{ font-family:inherit; font-size:.72rem; border:1.5px solid var(--border); border-radius:8px; padding:0 2px; }
+  .pv-delta{ min-height:14px; font-size:.64rem; }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
 </style>
@@ -150,7 +159,7 @@ function showApp(){ document.getElementById('login').style.display='none'; docum
 // ── Modèle ──
 const RESTOS=[['CHAMBERY','Chambéry'],['AIX LES BAINS','Aix les Bains'],['BELLEY','Belley'],['ST ALBAN','St Alban'],['LES ABRETS','Les Abrets'],['PDB','Pont-de-Beauvoisin'],['FRANCIN','Francin'],['VIVIERS','Viviers']];
 const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT','SEPTEMBRE','OCTOBRE','NOVEMBRE','DÉCEMBRE'];
-const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel'],['documents','Documents']];
+const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel'],['prevca','Prévision CA (calendrier)'],['documents','Documents']];
 // Indicateurs saisis chaque semaine : le mois correspondant (onglet Mensuel)
 // se pré-remplit avec la moyenne des semaines tant qu'il n'a pas été validé.
 const HEBDO_KEYS=['oepe','r2p','avis','hello_mcdo','reseaux','uvhe','tche'];   // « avis » = somme des avis négatifs (OPH calculé)
@@ -273,7 +282,7 @@ function init(){
   // la page s'affiche tout de suite ; la dernière saisie (pour proposer la période suivante) arrive ensuite
   if(saved && RESTOS.some(r=>r[0]===saved)) setResto(saved); else showPicker();
   loadLast().then(()=>{
-    if(!curResto||curTab==='documents'||curTab==='ponctuel') return;
+    if(!curResto||curTab==='documents'||curTab==='ponctuel'||curTab==='prevca') return;
     const typed=[...document.querySelectorAll('#fieldsGrid input, #fieldsGrid textarea')].some(e=>!e.readOnly&&e.value!=='');
     if(!typed) renderPanel();                       // rien de saisi : on se cale sur la période suivante
   });
@@ -336,6 +345,7 @@ function fieldHtml(f){
 }
 function renderPanel(keepPeriod){
   if(curTab==='documents') return renderDocuments();
+  if(curTab==='prevca') return renderPrevCa();
   const p=document.getElementById('panel');
   const label=TABS.find(t=>t[0]===curTab)[1];
   const restoName=RESTOS.find(r=>r[0]===curResto)[1];
@@ -377,9 +387,10 @@ function loadTx(){
         if(typeof x.transactions==='number'){ (m[x.restaurant]=m[x.restaurant]||{})[x.periode]=x.transactions; }
         if(typeof x.ca_net_total==='number'){ (caMap[x.restaurant]=caMap[x.restaurant]||{})[x.periode]=x.ca_net_total; }
       });
-      TX=m; CAM=caMap;
+      const pv={}; (j.prevjour||[]).forEach(x=>{ const v=Number(x.ca_prev); if(x.ca_prev!==''&&x.ca_prev!=null&&isFinite(v)) (pv[x.restaurant]=pv[x.restaurant]||{})[x.periode]=v; });
+      TX=m; CAM=caMap; PREVJ=pv;
     }catch(e){ TX=null; }
-    TXLoading=null; recompute();
+    TXLoading=null; if(curTab==='prevca') renderPrevCa(); else recompute();
   })();
 }
 function periodDates(){
@@ -744,6 +755,215 @@ async function parsePerfFile(file){
   if(!monthKey) throw new Error('mois introuvable dans le fichier (colonne B des onglets) — est-ce bien un fichier Performance Restaurants ?');
   if(!order.length) throw new Error('aucun onglet restaurant lu');
   return { key:monthKey, label:monthKey.charAt(0)+monthKey.slice(1).toLowerCase()+(year?' '+year:''), idx:PERF_MONTHS.indexOf(monthKey), restos, order, lexique:lexique.length?lexique:null };
+}
+
+// ── Prévision CA (calendrier) : CA N-1 / N-2 visibles, saisie en € ou en %, ventilation d'un objectif mensuel, export Excel ──
+const PV_TAB = 'prevca';
+let PREVJ = null;                                         // prévisions enregistrées : { restaurant: { 'AAAA-MM-JJ': euros } }
+const PV = { ym: null, resto: null, vals: {}, objU: 'e', w: '7030' };
+const PV_JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const _pvT = s => Date.parse(s + 'T00:00:00Z');
+const pvShift = (iso, days) => new Date(_pvT(iso) + days * 86400000).toISOString().slice(0, 10);
+const pvEur = n => n == null ? '—' : Math.round(n).toLocaleString('fr-FR') + ' €';
+const pvPct = n => n == null ? '—' : (n >= 0 ? '+' : '−') + Math.abs(n * 100).toFixed(1).replace('.', ',') + ' %';
+function pvDays(ym) { const [y, m] = ym.split('-').map(Number), n = new Date(Date.UTC(y, m, 0)).getUTCDate(); return [...Array(n)].map((_, i) => `${y}-${pad2(m)}-${pad2(i + 1)}`); }
+function pvCa(r, iso) {                                     // CA réel saisi ; Viviers : rien avant son ouverture (03/01/2025)
+  if (r === 'VIVIERS' && iso < '2025-01-03') return null;
+  const v = ((CAM || {})[r] || {})[iso]; return (typeof v === 'number' && v > 0) ? v : null;
+}
+const pvN1 = (r, iso) => pvCa(r, pvShift(iso, -364));      // jour équivalent N-1 (même jour de la semaine)
+const pvN2 = (r, iso) => pvCa(r, pvShift(iso, -728));      // jour équivalent N-2
+function pvInit() {
+  const now = new Date();
+  if (!PV.ym) PV.ym = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+  if (PV.resto !== curResto || PV.loadedYm !== PV.ym) {     // nouveau restaurant / nouveau mois : on repart des valeurs enregistrées
+    PV.resto = curResto; PV.loadedYm = PV.ym; PV.vals = {};
+    for (const iso of pvDays(PV.ym)) { const v = ((PREVJ || {})[curResto] || {})[iso]; if (v != null) PV.vals[iso] = v; }
+  }
+}
+function renderPrevCa() {
+  const p = document.getElementById('panel');
+  if (!pwdHash()) {
+    p.innerHTML = `<div class="panel-head"><div class="panel-title">Prévision CA</div></div>
+      <div class="entry-banner err" style="display:block">🔒 Pour saisir une prévision, reconnecte-toi avec le mot de passe de la saisie.</div>
+      <div class="foot"><button class="btn-save" onclick="try{sessionStorage.clear()}catch(e){};location.reload()">Se reconnecter</button></div>`; return;
+  }
+  if (!CAM || !PREVJ) { p.innerHTML = `<div class="panel-head"><div class="panel-title">Prévision CA</div></div><div class="hint">⏳ Chargement du CA des années précédentes…</div>`; loadTx(); return; }
+  pvInit();
+  const [y, m] = PV.ym.split('-').map(Number), days = pvDays(PV.ym), name = RESTOS.find(r => r[0] === curResto)[1];
+  const mois = MONTHS.map(x => x.charAt(0) + x.slice(1).toLowerCase());
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7, today = new Date().toISOString().slice(0, 10);
+  let cells = PV_JOURS.map(j => `<div class="pv-h">${j}</div>`).join('') + '<div></div>'.repeat(lead);
+  for (const iso of days) {
+    const n1 = pvN1(curResto, iso), n2 = pvN2(curResto, iso), real = pvCa(curResto, iso), v = PV.vals[iso];
+    cells += `<div class="pv-day ${iso < today ? 'past' : ''}"><div class="pv-dn">${+iso.slice(8)}</div>
+      <div class="pv-ref" title="${pvShift(iso, -364)}">N-1 <b>${pvEur(n1)}</b></div><div class="pv-ref" title="${pvShift(iso, -728)}">N-2 <b>${pvEur(n2)}</b></div>
+      ${real != null ? `<div class="pv-real">Réel <b>${pvEur(real)}</b></div>` : ''}
+      <div class="pv-in"><input type="number" step="any" id="pvi_${iso}" value="${v != null ? Math.round(v * 100) / 100 : ''}" oninput="pvDayInput('${iso}')" placeholder="prévision"><select id="pvu_${iso}" onchange="pvUnit('${iso}')"><option value="e">€</option><option value="p">%</option></select></div>
+      <div class="pv-delta" id="pvd_${iso}"></div></div>`;
+  }
+  p.innerHTML = `
+    <div class="panel-head"><div><div class="panel-title">Prévision CA · ${escH(name)}</div>
+      <div class="last-saisie">Chaque jour affiche le CA du jour équivalent N-1 et N-2 (même jour de la semaine). Saisis la prévision en € ou en % par rapport à N-1, ou ventile un objectif mensuel.</div></div>
+      <div class="period"><button class="step" onclick="pvMonth(-1)">◀</button>
+        <select id="pvM" onchange="pvPick()">${mois.map((n, i) => `<option value="${i + 1}" ${i + 1 === m ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <select id="pvY" onchange="pvPick()">${[y + 1, y, y - 1, y - 2].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => b - a).map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <button class="step next" onclick="pvMonth(1)">Mois suivant ▶</button></div></div>
+    <div class="pv-recap" id="pvRecap"></div>
+    <div class="pv-obj"><div class="field"><label>Objectif du mois</label><div style="display:flex;gap:6px"><input type="number" step="any" id="pvObj" placeholder="ex. 450000 ou 3"><select id="pvObjU" style="max-width:90px"><option value="e">€</option><option value="p">% vs N-1</option></select></div></div>
+      <div class="field"><label>Ventilation sur les jours selon</label><select id="pvW"><option value="1000">N-1 seul</option><option value="7030" selected>N-1 (70 %) + N-2 (30 %)</option><option value="5050">N-1 et N-2 à parts égales</option></select></div>
+      <div class="field" style="align-self:end"><button class="btn-save" style="padding:10px 18px" onclick="pvVentiler()">Ventiler sur les jours</button></div></div>
+    <div class="pv-cal">${cells}</div>
+    <div class="foot"><button class="btn-save" id="pvSave" onclick="pvSave()">Enregistrer la prévision</button>
+      <select id="pvScope" style="padding:10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit"><option value="month">Export : ce restaurant · ce mois</option><option value="year">Export : ce restaurant · toute l'année</option><option value="all">Export : tous les restaurants · toute l'année</option></select>
+      <button class="step" onclick="pvExport()">⬇ Excel</button><span class="save-msg" id="pvMsg"></span></div>
+    <div class="hint">N-1 / N-2 = CA net total du jour équivalent (−364 j / −728 j). Les prévisions ne sont enregistrées qu'au clic sur « Enregistrer ».</div>`;
+  for (const iso of days) pvRefresh(iso);
+  pvRecap();
+}
+function pvPick() { PV.ym = document.getElementById('pvY').value + '-' + pad2(document.getElementById('pvM').value); renderPrevCa(); }
+function pvMonth(d) { const [y, m] = PV.ym.split('-').map(Number), t = new Date(Date.UTC(y, m - 1 + d, 1)); PV.ym = `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}`; renderPrevCa(); }
+function pvBase(iso) { return pvN1(curResto, iso) ?? pvN2(curResto, iso); }
+function pvDayInput(iso) {
+  const el = document.getElementById('pvi_' + iso), u = document.getElementById('pvu_' + iso).value, t = String(el.value).replace(',', '.').trim();
+  if (t === '' || isNaN(+t)) { delete PV.vals[iso]; }
+  else if (u === 'e') PV.vals[iso] = +t;
+  else { const b = pvBase(iso); if (b == null) delete PV.vals[iso]; else PV.vals[iso] = Math.round(b * (1 + (+t) / 100) * 100) / 100; }
+  pvRefresh(iso); pvRecap();
+}
+function pvUnit(iso) {                                      // changer d'unité convertit la valeur affichée
+  const el = document.getElementById('pvi_' + iso), u = document.getElementById('pvu_' + iso).value, v = PV.vals[iso], b = pvBase(iso);
+  if (v != null) el.value = u === 'e' ? Math.round(v * 100) / 100 : (b ? Math.round((v / b - 1) * 1000) / 10 : '');
+  pvRefresh(iso);
+}
+function pvRefresh(iso) {
+  const d = document.getElementById('pvd_' + iso); if (!d) return;
+  const v = PV.vals[iso], n1 = pvN1(curResto, iso), n2 = pvN2(curResto, iso), u = document.getElementById('pvu_' + iso).value, el = document.getElementById('pvi_' + iso);
+  if (u === 'p' && el.value !== '' && pvBase(iso) == null) { d.textContent = 'pas de N-1 / N-2'; return; }
+  d.innerHTML = v == null ? '' : (n1 ? `<b>${pvPct(v / n1 - 1)}</b> vs N-1` : '') + (n1 && n2 ? ' · ' : '') + (n2 ? `${pvPct(v / n2 - 1)} vs N-2` : '');
+  if (v != null && u === 'e' && !n1 && !n2) d.textContent = '';
+}
+function pvSums() {
+  const days = pvDays(PV.ym); let prev = 0, prevOnN1 = 0, n1 = 0, n2 = 0, prevOnN2 = 0, real = 0, nPrev = 0;
+  for (const iso of days) {
+    const v = PV.vals[iso], a = pvN1(curResto, iso), b = pvN2(curResto, iso), r = pvCa(curResto, iso);
+    if (v != null) { prev += v; nPrev++; if (a != null) { prevOnN1 += v; n1 += a; } if (b != null) { prevOnN2 += v; n2 += b; } }
+    if (r != null && v != null) real += r;
+  }
+  return { prev, nPrev, n1, prevOnN1, n2, prevOnN2, real, nDays: days.length,
+           n1All: days.reduce((s, i) => s + (pvN1(curResto, i) || 0), 0), n2All: days.reduce((s, i) => s + (pvN2(curResto, i) || 0), 0) };
+}
+function pvRecap() {
+  const s = pvSums(), box = document.getElementById('pvRecap'); if (!box) return;
+  const k = (l, v, sub) => `<div class="pv-kpi"><span>${l}</span><b>${v}</b><i>${sub || ''}</i></div>`;
+  box.innerHTML = k('N-1 (jours équivalents)', pvEur(s.n1All), 'mois complet') + k('N-2 (jours équivalents)', pvEur(s.n2All), 'mois complet')
+    + k('Prévision saisie', pvEur(s.prev), `${s.nPrev} jour${s.nPrev > 1 ? 's' : ''} sur ${s.nDays}`)
+    + k('vs N-1', s.n1 ? pvPct(s.prevOnN1 / s.n1 - 1) : '—', 'sur les jours saisis') + k('vs N-2', s.n2 ? pvPct(s.prevOnN2 / s.n2 - 1) : '—', 'sur les jours saisis');
+}
+function pvVentiler() {
+  const days = pvDays(PV.ym), t = String(document.getElementById('pvObj').value).replace(',', '.').trim(), u = document.getElementById('pvObjU').value, w = document.getElementById('pvW').value;
+  if (t === '' || isNaN(+t)) { pvMsg('err', 'Saisis un objectif (en € ou en %).'); return; }
+  const n1 = days.map(i => pvN1(curResto, i)), n2 = days.map(i => pvN2(curResto, i)), S1 = n1.reduce((s, v) => s + (v || 0), 0), S2 = n2.reduce((s, v) => s + (v || 0), 0);
+  if (!S1 && !S2) { pvMsg('err', 'Aucun CA N-1 / N-2 pour ce mois : ventilation impossible.'); return; }
+  let obj = +t;
+  if (u === 'p') { const base = S1 || S2; obj = base * (1 + (+t) / 100); }
+  const a1 = { '1000': 1, '7030': 0.7, '5050': 0.5 }[w], a2 = 1 - a1;
+  let wt = days.map((_, i) => {
+    const s1 = n1[i] != null && S1 ? n1[i] / S1 : null, s2 = n2[i] != null && S2 ? n2[i] / S2 : null;
+    if (s1 != null && s2 != null) return a1 * s1 + a2 * s2;
+    return s1 != null ? s1 : s2;                            // une seule année disponible ce jour-là
+  });
+  const known = wt.filter(x => x != null), avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 1 / days.length;
+  wt = wt.map(x => x == null ? avg : x);
+  const tot = wt.reduce((a, b) => a + b, 0);
+  if (Object.keys(PV.vals).length && !confirm('Remplacer les prévisions déjà saisies sur ce mois par la ventilation ?')) return;
+  const out = wt.map(x => Math.round(obj * x / tot));
+  const diff = Math.round(obj) - out.reduce((a, b) => a + b, 0); if (diff) out[wt.indexOf(Math.max(...wt))] += diff;   // arrondi : le total tombe juste
+  days.forEach((iso, i) => { PV.vals[iso] = out[i]; const el = document.getElementById('pvi_' + iso), un = document.getElementById('pvu_' + iso); if (el) { un.value = 'e'; el.value = out[i]; } pvRefresh(iso); });
+  pvRecap(); pvMsg('ok', `✓ ${pvEur(obj)} ventilés sur ${days.length} jours — pense à enregistrer.`);
+}
+function pvMsg(c, t) { const m = document.getElementById('pvMsg'); if (m) { m.className = 'save-msg ' + c; m.textContent = t; } }
+async function pvSave() {
+  const btn = document.getElementById('pvSave'), days = pvDays(PV.ym), rows = [];
+  for (const iso of days) {
+    const v = PV.vals[iso], old = ((PREVJ || {})[curResto] || {})[iso];
+    if (v != null) { if (old !== v) rows.push({ restaurant: curResto, periode: iso, data: { ca_prev: Math.round(v * 100) / 100 } }); }
+    else if (old != null) rows.push({ restaurant: curResto, periode: iso, data: { ca_prev: '' } });
+  }
+  if (!rows.length) { pvMsg('err', 'Rien à enregistrer (aucune modification).'); return; }
+  btn.disabled = true; pvMsg('', 'Enregistrement…');
+  const j = await postJson({ action: 'bulk_save', frequence: 'prevjour', pwd: pwdHash(), rows });
+  btn.disabled = false;
+  if (!j.ok) { pvMsg('err', 'Erreur : ' + (j.error || 'enregistrement refusé')); return; }
+  PREVJ[curResto] = PREVJ[curResto] || {};
+  for (const iso of days) { if (PV.vals[iso] != null) PREVJ[curResto][iso] = PV.vals[iso]; else delete PREVJ[curResto][iso]; }
+  pvMsg('ok', `✓ Prévision enregistrée (${rows.length} jour${rows.length > 1 ? 's' : ''} mis à jour).`);
+}
+
+// ── Export Excel (xlsx minimal généré dans le navigateur) ──
+const _col = n => { let s = ''; n++; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+const _xe = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+function xlsxSheet(rows, widths) {
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    + '<cols>' + widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('') + '</cols><sheetData>';
+  rows.forEach((r, ri) => {
+    x += `<row r="${ri + 1}">`;
+    r.forEach((c, ci) => {
+      if (c == null || c === '') return;
+      const ref = _col(ci) + (ri + 1), o = (typeof c === 'object') ? c : { v: c }, st = ri === 0 ? 1 : (o.s === 'eur' ? 2 : o.s === 'pct' ? 3 : 0);
+      x += typeof o.v === 'number' ? `<c r="${ref}" s="${st}"><v>${o.v}</v></c>` : `<c r="${ref}" s="${st}" t="inlineStr"><is><t>${_xe(o.v)}</t></is></c>`;
+    });
+    x += '</row>';
+  });
+  return x + '</sheetData></worksheet>';
+}
+async function xlsxBuild(sheets) {
+  await loadJSZip();
+  const z = new JSZip();
+  z.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>');
+  z.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  z.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    + sheets.map((s, i) => `<sheet name="${_xe(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets></workbook>');
+  z.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+    + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  z.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0&quot; €&quot;"/><numFmt numFmtId="165" formatCode="+0.0%;-0.0%;0.0%"/></numFmts>'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2937"/></patternFill></fill></fills>'
+    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>');
+  sheets.forEach((s, i) => z.file(`xl/worksheets/sheet${i + 1}.xml`, xlsxSheet(s.rows, s.widths)));
+  return z.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+async function pvExport() {
+  const scope = document.getElementById('pvScope').value, [y, m] = PV.ym.split('-').map(Number);
+  const restos = scope === 'all' ? RESTOS.map(r => r[0]) : [curResto];
+  const dates = scope === 'month' ? pvDays(PV.ym) : [...Array(12)].flatMap((_, i) => pvDays(`${y}-${pad2(i + 1)}`));
+  const prevOf = (r, iso) => (r === curResto && PV.resto === curResto && iso.startsWith(PV.ym) ? PV.vals[iso] : ((PREVJ || {})[r] || {})[iso]);   // inclut la saisie en cours à l'écran
+  const det = [['Restaurant', 'Date', 'Jour', 'Jour équivalent N-1', 'CA N-1', 'Jour équivalent N-2', 'CA N-2', 'Prévision CA', 'Écart vs N-1', 'Écart vs N-2', 'CA réel', 'Réel vs prévision']];
+  const syn = {};
+  for (const r of restos) for (const iso of dates) {
+    const v = prevOf(r, iso); if (v == null && scope !== 'month') continue;
+    const a = pvN1(r, iso), b = pvN2(r, iso), real = pvCa(r, iso), dow = PV_JOURS[(new Date(_pvT(iso)).getUTCDay() + 6) % 7];
+    det.push([RESTOS.find(x => x[0] === r)[1], iso.slice(8) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4), dow, pvShift(iso, -364), { v: a, s: 'eur' }, pvShift(iso, -728), { v: b, s: 'eur' },
+      { v: v, s: 'eur' }, (v != null && a) ? { v: v / a - 1, s: 'pct' } : '', (v != null && b) ? { v: v / b - 1, s: 'pct' } : '', { v: real, s: 'eur' }, (v != null && real) ? { v: real / v - 1, s: 'pct' } : '']);
+    if (v != null) {
+      const k = r + '|' + iso.slice(0, 7), o = syn[k] = syn[k] || { r, ym: iso.slice(0, 7), prev: 0, n1: 0, pn1: 0, n2: 0, pn2: 0, real: 0, preal: 0, n: 0 };
+      o.prev += v; o.n++; if (a != null) { o.n1 += a; o.pn1 += v; } if (b != null) { o.n2 += b; o.pn2 += v; } if (real != null) { o.real += real; o.preal += v; }
+    }
+  }
+  const sm = [['Restaurant', 'Mois', 'Jours prévus', 'Prévision CA', 'CA N-1 (mêmes jours)', 'Écart vs N-1', 'CA N-2 (mêmes jours)', 'Écart vs N-2', 'CA réel (jours écoulés)', 'Prévision (mêmes jours)', 'Réel vs prévision']];
+  Object.values(syn).sort((p, q) => (p.r + p.ym).localeCompare(q.r + q.ym)).forEach(o => sm.push([RESTOS.find(x => x[0] === o.r)[1], MONTHS[+o.ym.slice(5) - 1].charAt(0) + MONTHS[+o.ym.slice(5) - 1].slice(1).toLowerCase() + ' ' + o.ym.slice(0, 4), o.n,
+    { v: o.prev, s: 'eur' }, { v: o.n1 || null, s: 'eur' }, o.n1 ? { v: o.pn1 / o.n1 - 1, s: 'pct' } : '', { v: o.n2 || null, s: 'eur' }, o.n2 ? { v: o.pn2 / o.n2 - 1, s: 'pct' } : '', { v: o.real || null, s: 'eur' }, { v: o.real ? o.preal : null, s: 'eur' }, o.real ? { v: o.real / o.preal - 1, s: 'pct' } : '']));
+  if (det.length < 2) { pvMsg('err', 'Aucune prévision à exporter.'); return; }
+  pvMsg('', 'Génération du fichier Excel…');
+  try {
+    const blob = await xlsxBuild([{ name: 'Synthèse mois', rows: sm, widths: [20, 16, 12, 16, 20, 14, 20, 14, 22, 22, 16] }, { name: 'Détail jour', rows: det, widths: [20, 12, 7, 20, 14, 20, 14, 16, 13, 13, 14, 16] }]);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `Prevision_CA_${scope === 'all' ? 'tous_restaurants_' + y : curResto.replace(/\s+/g, '_') + '_' + (scope === 'month' ? PV.ym : y)}.xlsx`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    pvMsg('ok', '✓ Fichier Excel généré.');
+  } catch (e) { pvMsg('err', 'Export impossible : ' + e.message); }
 }
 
 // ── Démarrage ──
