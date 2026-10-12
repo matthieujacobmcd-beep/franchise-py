@@ -100,6 +100,7 @@
   .pv-delta{ min-height:14px; font-size:.64rem; }
   .pv-h.we{ color:#2563eb; } .pv-day.we{ background:#eff6ff; border-color:#bfdbfe; } .pv-day.we .pv-dn{ color:#1d4ed8; } .pv-dn span{ font-size:.62rem; font-weight:700; margin-left:5px; text-transform:uppercase; }
   .pv-day.fer{ background:#fef2f2; border-color:#fca5a5; border-width:2px; } .pv-day.fer .pv-dn{ color:#b91c1c; } .pv-fer{ font-size:.62rem; font-weight:800; color:#b91c1c; margin:1px 0 2px; }
+  .pv-ref small{ display:block; font-size:.58rem; color:#94a3b8; line-height:1.1; margin-bottom:2px; }
   .pv-tot{ font-size:.64rem; color:var(--text); font-weight:700; } .pv-ref em{ font-style:normal; font-size:.58rem; background:#fde9c8; color:#7a4a00; border-radius:4px; padding:0 4px; margin-left:3px; }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
@@ -799,6 +800,10 @@ function pvRoundTo(vals, target, step) {
   for (let n = 0; diff !== 0 && n < 5000; n++) { const i = order[n % order.length], d = diff > 0 ? step : -step; r[i] += d; diff -= d; }
   return r;
 }
+function pvRefLine(lbl, r, iso, k, v) {                     // valeur du jour équivalent + sa date (même jour de la semaine) et son statut férié
+  const ri = pvShift(iso, k), dow = PV_JOURS[(new Date(_pvT(ri)).getUTCDay() + 6) % 7], f = pvFerie(ri), isPrev = pvCa(r, ri) == null && v != null;
+  return `<div class="pv-ref">${lbl} <b>${pvEur(v)}</b>${isPrev ? '<em>prév.</em>' : ''}<small>${dow.toLowerCase()} ${ri.slice(8)}/${ri.slice(5, 7)}/${ri.slice(2, 4)}${f ? ` · 🎉 ${f}` : ''}</small></div>`;
+}
 function pvInit() {
   const now = new Date();
   if (!PV.ym) PV.ym = [`${now.getFullYear()}-${pad2(now.getMonth() + 1)}`, PV_MIN].sort().pop();
@@ -825,7 +830,7 @@ function renderPrevCa() {
     const n1 = pvN1(curResto, iso), n2 = pvN2(curResto, iso), real = pvCa(curResto, iso), v = PV.vals[iso];
     const dow = (new Date(_pvT(iso)).getUTCDay() + 6) % 7, fer = pvFerie(iso);
     cells += `<div class="pv-day ${iso < today ? 'past' : ''} ${dow > 4 ? 'we' : ''} ${fer ? 'fer' : ''}"><div class="pv-dn">${+iso.slice(8)}${dow > 4 ? `<span>${PV_JOURS[dow]}</span>` : ''}</div>${fer ? `<div class="pv-fer">🎉 ${fer}</div>` : ''}
-      <div class="pv-ref" title="${pvShift(iso, -364)}">N-1 <b>${pvEur(n1)}</b>${pvCa(curResto, pvShift(iso, -364)) == null && n1 != null ? '<em>prév.</em>' : ''}</div><div class="pv-ref" title="${pvShift(iso, -728)}">N-2 <b>${pvEur(n2)}</b>${pvCa(curResto, pvShift(iso, -728)) == null && n2 != null ? '<em>prév.</em>' : ''}</div>
+      ${pvRefLine('N-1', curResto, iso, -364, n1)}${pvRefLine('N-2', curResto, iso, -728, n2)}
       ${real != null ? `<div class="pv-real">Réel <b>${pvEur(real)}</b></div>` : ''}
       <div class="pv-in"><input type="number" step="any" id="pvi_${iso}" value="${v != null ? Math.round(v * 100) / 100 : ''}" oninput="pvDayInput('${iso}')" placeholder="prévision"><select id="pvu_${iso}" onchange="pvUnit('${iso}')"><option value="e">€</option><option value="p">%</option></select></div>
       <div class="pv-delta" id="pvd_${iso}"></div><div class="pv-tot" id="pvt_${iso}"></div></div>`;
