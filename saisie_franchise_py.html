@@ -193,6 +193,10 @@ const PONCT_FIELDS={
     {k:'securite_prevention',l:'Sécurité / Prévention',u:'%',pct:1},{k:'securite_alimentaire',l:'Sécurité Alimentaire',u:'%',pct:1},
     {k:'score',l:'Score global',u:'%',pct:1,auto:'rgrv'},
   ],
+  ANALYSE_SILLIKER:[
+    {k:'analyses_ok',l:'Analyses conformes (OK)',u:'analyses'},{k:'analyses_nok',l:'Analyses non conformes (NOK)',u:'analyses'},
+    {k:'score',l:'Taux de conformité (calculé)',u:'%',pct:1,auto:'analyses'},
+  ],
   _default:[ {k:'score',l:'Score',u:'%',pct:1} ],
 };
 const COMMENT_FIELD={k:'commentaire',l:'Commentaire',type:'textarea',ph:'Points forts, axes de progrès…'};
@@ -426,6 +430,11 @@ function recompute(){
     setAuto('f_vphe', (alim!=null&&he)?alim/he:null, 2);
     setAuto('f_vphg', (alim!=null&&ht)?alim/ht:null, 2);
   }
+  if(curTab==='ponctuel' && currentType()==='ANALYSE_SILLIKER'){
+    const ok=num('f_analyses_ok'), nok=num('f_analyses_nok'), el=document.getElementById('f_score');
+    if(ok!=null||nok!=null){ const tot=(ok||0)+(nok||0); setAuto('f_score', tot?(ok||0)*100/tot:null, 1); }   // taux = OK ÷ (OK + NOK)
+    else if(el&&!el.dataset.legacy) el.value='';                                                          // ancien score saisi en % : conservé tant qu'aucun nombre n'est saisi
+  }
   if(curTab==='ponctuel' && currentType()==='RGRV'){
     const subs=RGRV_SUBS.map(k=>num('f_'+k)).filter(v=>v!=null);
     setAuto('f_score', subs.length?subs.reduce((a,b)=>a+b,0)/subs.length:null, 1);   // sous-notes déjà en %
@@ -477,6 +486,7 @@ async function loadExisting(){
   if(data){
     Object.entries(data).forEach(([k,v])=>{
       const el=document.getElementById('f_'+k); if(!el||v==null||v==='') return;
+      if(k==='score' && curTab==='ponctuel' && currentType()==='ANALYSE_SILLIKER'){ el.dataset.legacy=v; el.value=(typeof v==='number')?String(Math.round(v*1e5)/1e3).replace('.',','):v; return; }     // score saisi à l'ancienne (en %)
       if(k==='oph'){ el.dataset.legacy=v; return; }     // OPH d'origine : affiché tant qu'aucun nombre d'avis n'est saisi
       el.value=showVal(flds.find(x=>x.k===k),v);
     });

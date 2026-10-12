@@ -3727,6 +3727,7 @@ function renderMain() {
             return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:2px">jusqu'à ${lastM} vs ${currentYear-1}</div>`;
           })()}
           <div class="kpi-value">${fmt(vShown, kpi.fmt)}</div>
+          ${kpi.id === 'analyses_merieux_annual' ? (() => { const c = ((DASHBOARD_DATA.meta || {}).analyses || {})[currentYear]?.[r]; return c ? `<div style="font-size:.72rem;font-weight:700;color:var(--muted);margin-top:-2px">${c.ok + c.nok} analyse${c.ok + c.nok > 1 ? 's' : ''} · ${c.ok} OK · ${c.nok} NOK</div>` : ''; })() : ''}
           <div style="margin-top:6px">${fmtDelta(deltaShown, kpi.fmt, kpi.id, vPrevShown)}</div>
           ${currentSemester > 0 ? '' : getSparkline(kpi.id, r, currentYear)}
           ${getBadge(kpi.id, vShown)}
@@ -5432,6 +5433,23 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     for (const y of ['2026', '2025']) {
       ponctOverlay(y, 'audit_merieux_annual', 'AUDIT_MERIEUX', 'mean');
       ponctOverlay(y, 'analyses_merieux_annual', 'ANALYSE_SILLIKER', 'mean');
+    }
+    // Analyses : le taux est calculé sur les nombres saisis (Σ OK ÷ Σ analyses de l'année) ; nombres exposés pour l'affichage
+    OUT.meta.analyses = {};
+    for (const y of ['2026', '2025']) {
+      const A = {}, tot = { ok: 0, nok: 0 }; let allCounts = true;
+      for (const s of STORES) {
+        const rows = PONC.filter(x => x.t === 'ANALYSE_SILLIKER' && x.s === s && x.p.startsWith(y));
+        const cr = rows.filter(x => numOrNull(x.r.analyses_ok) != null || numOrNull(x.r.analyses_nok) != null);
+        if (!rows.length) continue;
+        if (cr.length !== rows.length) { allCounts = false; continue; }
+        const ok = cr.reduce((a, x) => a + (numOrNull(x.r.analyses_ok) || 0), 0), nok = cr.reduce((a, x) => a + (numOrNull(x.r.analyses_nok) || 0), 0);
+        if (ok + nok > 0) { A[s] = { ok, nok }; tot.ok += ok; tot.nok += nok; if (OUT[y].analyses_merieux_annual) OUT[y].analyses_merieux_annual[s] = ok / (ok + nok); }
+      }
+      if (Object.keys(A).length) {
+        if (allCounts && tot.ok + tot.nok > 0 && OUT[y].analyses_merieux_annual) OUT[y].analyses_merieux_annual.FRANCHISE = tot.ok / (tot.ok + tot.nok);
+        A.FRANCHISE = tot; OUT.meta.analyses[y] = A;
+      }
     }
     ponctOverlay('2026', 'cfv', 'CFV', 'last');
     ponctOverlay('2026', 'ppfv', 'PPFV', 'last');
@@ -7735,7 +7753,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261008-225356';
+const BUILD_VERSION = '20261009-081517';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
