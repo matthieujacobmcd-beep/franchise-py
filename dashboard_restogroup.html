@@ -2470,7 +2470,8 @@ function calcSemesterComparable(kpiId, resto, year, months, refYear) {
 }
 
 // KPIs qui ont un comparable à date (clé _comparable dans les données 2025)
-const COMPARABLE_KPIS = new Set(['ca_total','ca_alim','tacs','pm','vphe']);
+const ANNUAL_COMP_KPIS = new Set(['vphe_annual','vphg_annual','pertes_annual']);   // indicateurs annuels dont le N-1 est comparé « à date »
+const COMPARABLE_KPIS = new Set(['ca_total','ca_alim','tacs','pm','vphe','vphe_annual','vphe_rh','vphg_annual','vphg_monthly','pertes_annual','pertes_monthly']);
 (function () {
   const ratio = fn => function (kpiId, ...args) {
     if (kpiId === 'pm') { const c = fn('ca_total', ...args), t = fn('tacs', ...args); return (c != null && t) ? c / t : null; }
@@ -2519,6 +2520,10 @@ function getCutoffLabel(resto) {
 // Version modifiée de calcAnnual utilisant les données déjà agrégées au bon cutoff par resto
 function calcAnnualComparable(kpiId, resto, year) {
   if (!COMPARABLE_KPIS.has(kpiId)) return calcAnnual(kpiId, resto, year);
+  if (ANNUAL_COMP_KPIS.has(kpiId)) {          // N-1 = cumul des mêmes dates (de janvier au dernier jour saisi de chaque restaurant)
+    if (year === YEAR_PREV) { const cv = DASHBOARD_DATA[YEAR_PREV]?.[kpiId + '_comparable_annual']?.[resto]; if (cv != null) return cv; }
+    return calcAnnual(kpiId, resto, year);
+  }
 
   const meta = DASHBOARD_DATA.meta || {};
   const partial = meta.partial_by_resto || {};
@@ -3265,7 +3270,7 @@ function kvValue(kpi, r, year) {
     }
     return getData(year)[mid]?.[m]?.[r] ?? null;
   }
-  return (COMPARABLE_KPIS.has(kpi.id) && year === YEAR_CUR && (kpi.monthly || kpi.hasMonthly))
+  return (COMPARABLE_KPIS.has(kpi.id) && (year === YEAR_CUR || (year === YEAR_PREV && kpiViewYear === YEAR_CUR && ANNUAL_COMP_KPIS.has(kpi.id))) && (kpi.monthly || kpi.hasMonthly))
     ? calcAnnualComparable(kpi.id, r, year)
     : calcAnnual(kpi.id, r, year);
 }
@@ -3637,7 +3642,7 @@ function renderMain() {
         const cutoffM = (DASHBOARD_DATA.meta||{}).current_month_2026;
         // Pour les KPIs CA : utiliser comparable à date pour le mois partiel
         let v25;
-        if (COMPARABLE_KPIS.has(kpi.id) && months) {
+        if (COMPARABLE_KPIS.has(kpi.id) && (months || ANNUAL_COMP_KPIS.has(kpi.id))) {
           v25 = calcAnnualComparable(kpi.id, r25, YEAR_PREV);
         } else {
           v25 = months ? calcAnnualUpTo(kpi.id, r25, YEAR_PREV, months) : calcAnnual(kpi.id, r25, YEAR_PREV);
@@ -3655,7 +3660,7 @@ function renderMain() {
           ${(() => {
             if (kpi.noCompare) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${YEAR_PREV} vs ${YEAR_CUR}</div>`;
             if (!kpi.monthly && !kpi.hasMonthly) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">annuel ${YEAR_PREV} vs ${YEAR_CUR}</div>`;
-            return lastM ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${cutoffLblCard ? cutoffLblCard+' vs '+YEAR_PREV : 'jusqu\'à '+lastM}</div>` : '';
+            return (lastM || cutoffLblCard) ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${cutoffLblCard ? cutoffLblCard+' vs '+YEAR_PREV : 'jusqu\'à '+lastM}</div>` : '';
           })()}
           <div class="kpi-compare-row">
             <div class="kpi-compare-col">
@@ -3683,7 +3688,7 @@ function renderMain() {
         let vPrev;
         if (noPrevYear) {
           vPrev = null;
-        } else if (currentYear === YEAR_CUR && kpi.monthly) {
+        } else if (currentYear === YEAR_CUR && (kpi.monthly || ANNUAL_COMP_KPIS.has(kpi.id))) {
           // Année courante partielle → comparable « à date »
           vPrev = COMPARABLE_KPIS.has(kpi.id)
             ? calcAnnualComparable(kpi.id, r, currentYear - 1)
@@ -5212,6 +5217,32 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     });
     Y25.ca_total_comparable = comp.t; Y25.ca_alim_comparable = comp.a; Y25.tacs_comparable = comp.tc;
     Y25.pm_comparable = comp.pm; Y25.vphe_comparable = comp.v;
+
+    // Comparables « à date » des ratios issus du quotidien (VPHE, VPHG, pertes) : mêmes dates N-1, chaque restaurant coupé à son dernier jour saisi.
+    //   <carte>_comparable / <mensuel>_comparable : tables mensuelles ; <carte>_comparable_annual : cumul depuis janvier.
+    for (const spec of [{ card: 'vphe_annual', mon: 'vphe_rh', num: 'alim', den: 'heures', paired: true },
+                        { card: 'vphg_annual', mon: 'vphg_monthly', num: 'alim', den: 'heures_total', paired: true },
+                        { card: 'pertes_annual', mon: 'pertes_monthly', num: 'perte', den: 'alim', paired: false }]) {
+      const tbl = {}, tot = {}; STORES.forEach(s0 => { tot[s0] = [0, 0]; });
+      MONTHS26.forEach((m, k) => {
+        const mi = k + 1, row = {}; let fn = 0, fd = 0;
+        for (const s0 of STORES) {
+          const ld = new Date(lastDays[s0]), sm = ld.getUTCMonth() + 1;
+          if (mi > sm) { row[s0] = null; continue; }
+          const day = mi === sm ? ld.getUTCDate() : null;
+          let n, d;
+          if (spec.paired) [n, d] = dsumBoth(PY, s0, mi, spec.num, spec.den, day);
+          else { n = dsum(PY, s0, mi, spec.num, day); d = dsum(PY, s0, mi, spec.den, day); }
+          row[s0] = (n != null && d) ? n / d : null;
+          if (n != null && d) { tot[s0][0] += n; tot[s0][1] += d; fn += n; fd += d; }
+        }
+        row.FRANCHISE = fd ? fn / fd : null; tbl[m] = row;
+      });
+      const ann = {}; let An = 0, Ad = 0;
+      for (const s0 of STORES) { const [n, d] = tot[s0]; ann[s0] = d ? n / d : null; An += n; Ad += d; }
+      ann.FRANCHISE = Ad ? An / Ad : null;
+      Y25[spec.card + '_comparable'] = tbl; Y25[spec.mon + '_comparable'] = clone(tbl); Y25[spec.card + '_comparable_annual'] = ann;
+    }
 
     // VPHE / VPHG annuels et mensuels (quotidien)
     const annualRatio = (y, fa, fb) => {
@@ -7864,7 +7895,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261013-151743';
+const BUILD_VERSION = '20261013-153825';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
