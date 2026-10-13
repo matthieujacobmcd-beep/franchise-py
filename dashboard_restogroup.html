@@ -5334,7 +5334,9 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const caTot = (m, s) => (Y26.ca_total[m] || {})[s];
     const aggCa = wTot('2026');
     const aggLad = (row, m) => { let n = 0, d = 0; for (const s of STORES) { const x = row[s], w = (DELIV[m] || {})[s]; if (isNum(x) && isNum(w) && w) { n += x * w; d += w; } } return d ? n / d : aggCa(row, m); };
-    Y26.dig_fid_actifs_m = monthlyTable('2026', 'dig_fid_actifs_m', 'fid_actifs', aggCa, { filter: 'any' });
+    // FID : saisi en NOMBRE de comptes actifs → taux = comptes ÷ transactions du mois ; sans nombre, on garde le taux d'origine
+    Y26.dig_fid_actifs_m = monthlyTable('2026', 'dig_fid_actifs_m', 'fid_actifs', aggCa, { filter: 'any',
+      transform: (v, s, m) => { const nb = eurDig(m, s, 'fid_nb'), tx = dsum(2026, s, MONTHS.indexOf(m) + 1, 'tacs'); return (nb != null && tx) ? nb / tx : v; } });
     Y26.dig_cc_ca_m = monthlyTable('2026', 'dig_cc_ca_m', 'cc_ca', aggCa, { filter: 'any',
       transform: (v, s, m) => { const x = eurDig(m, s, 'cc_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
     Y26.dig_uber_ca_m = monthlyTable('2026', 'dig_uber_ca_m', 'uber_ca', aggCa, { filter: 'any',
@@ -7775,7 +7777,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261012-131250';
+const BUILD_VERSION = '20261013-102221';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
