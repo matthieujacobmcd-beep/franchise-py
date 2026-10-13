@@ -5699,7 +5699,7 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
     try { apply(JSON.parse(cached)); } catch (e) { cached = null; console.warn('[Sheet] cache ignoré', e); }
   }
   setDateLabel(' · synchronisation…');
-  ui.show('loading', cached ? 'Synchronisation… (dernières données affichées)' : 'Synchronisation…');
+  ui.show('loading', 'Synchronisation…');
 
   // 2) Lecture fraîche du Sheet. L'Apps Script de Google répond parfois très lentement :
   //    on patiente jusqu'à 60 s et on retente (3 essais) avant d'abandonner.
@@ -5726,12 +5726,12 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
       } catch (err) {
         lastErr = err;
         console.warn('[Sheet] essai ' + essai + '/3 échoué :', err);
-        setDateLabel(' · synchronisation (nouvel essai)…');
+        setDateLabel(' · synchronisation…');
         ui.show('retry', 'Synchronisation lente… nouvel essai ' + (essai + 1 <= 3 ? (essai + 1) + '/3' : ''));
         await new Promise(r => setTimeout(r, 1500 * essai));
       }
     }
-    setDateLabel(cached ? ' · hors ligne (dernière synchro)' : ' · hors ligne');
+    setDateLabel(' · hors ligne');
     ui.show('err', cached ? 'Hors ligne : dernières données synchronisées affichées' : 'Hors ligne : données intégrées au dashboard affichées');
     console.warn('[Sheet] lecture impossible, données précédentes conservées :', lastErr);
   }
@@ -7823,7 +7823,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261013-125213';
+const BUILD_VERSION = '20261013-125608';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
