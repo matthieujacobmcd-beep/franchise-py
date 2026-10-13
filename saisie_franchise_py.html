@@ -102,6 +102,20 @@
   .pv-day.fer{ background:#fef2f2; border-color:#fca5a5; border-width:2px; } .pv-day.fer .pv-dn{ color:#b91c1c; } .pv-fer{ font-size:.62rem; font-weight:800; color:#b91c1c; margin:1px 0 2px; }
   .pv-ref small{ display:block; font-size:.58rem; color:#94a3b8; line-height:1.1; margin-bottom:2px; }
   .pv-tot{ font-size:.64rem; color:var(--text); font-weight:700; } .pv-ref em{ font-style:normal; font-size:.58rem; background:#fde9c8; color:#7a4a00; border-radius:4px; padding:0 4px; margin-left:3px; }
+  .pv-wd{ display:none; }
+  @media (max-width:1000px){                       /* calendrier en liste (un jour par ligne) tant que 7 colonnes ne tiennent pas */
+    .pv-cal{ grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); overflow:visible; gap:8px; } .pv-h, .pv-empty{ display:none; }
+    .pv-day{ padding:10px 12px; font-size:.78rem; } .pv-dn{ font-size:1rem; } .pv-wd{ display:inline; }
+    .pv-in input{ font-size:1rem; padding:9px 10px; } .pv-in select{ font-size:.9rem; padding:0 6px; }
+  }
+  @media (max-width:700px){ .pv-obj{ grid-template-columns:1fr; } .pv-recap{ grid-template-columns:1fr 1fr; } .pv-cal{ grid-template-columns:1fr; } }
+  .foot{ flex-wrap:wrap; }
+  @media (max-width:700px){
+    .topbar{ position:static; padding:10px 16px; gap:10px; }
+    .topbar-right{ flex-wrap:wrap; margin-left:0; width:100%; }
+    .foot select, .foot .step, .foot .btn-save{ flex:1 1 100%; width:100%; }
+    .panel-head .period{ flex-wrap:wrap; } .panel-head .period select{ flex:1; }
+  }
   .cfg-warn{ background:#fff4e5; border:1.5px solid #f0b429; color:#7a4a00; border-radius:12px; padding:12px 16px; font-size:.82rem; margin:14px auto 0; max-width:1100px; }
   @media (max-width:640px){ .grid{ grid-template-columns:1fr 1fr; } .period{ margin-left:0; width:100%; } .panel{ padding:16px; } }
 </style>
@@ -843,11 +857,11 @@ function renderPrevCa() {
   const [y, m] = PV.ym.split('-').map(Number), days = pvDays(PV.ym), name = RESTOS.find(r => r[0] === curResto)[1];
   const mois = MONTHS.map(x => x.charAt(0) + x.slice(1).toLowerCase()), minM = y === 2026 ? 11 : 1, maxM = y === 2032 ? 12 : 12;
   const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7, today = new Date().toISOString().slice(0, 10);
-  let cells = PV_JOURS.map((j, i) => `<div class="pv-h ${i > 4 ? 'we' : ''}">${j}</div>`).join('') + '<div></div>'.repeat(lead);
+  let cells = PV_JOURS.map((j, i) => `<div class="pv-h ${i > 4 ? 'we' : ''}">${j}</div>`).join('') + '<div class="pv-empty"></div>'.repeat(lead);
   for (const iso of days) {
     const n1 = pvN1(curResto, iso), n2 = pvN2(curResto, iso), real = pvCa(curResto, iso), v = PV.vals[iso];
     const dow = (new Date(_pvT(iso)).getUTCDay() + 6) % 7, fer = pvFerie(iso);
-    cells += `<div class="pv-day ${iso < today ? 'past' : ''} ${dow > 4 ? 'we' : ''} ${fer ? 'fer' : ''}"><div class="pv-dn">${+iso.slice(8)}${dow > 4 ? `<span>${PV_JOURS[dow]}</span>` : ''}</div>${fer ? `<div class="pv-fer">🎉 ${fer}</div>` : ''}
+    cells += `<div class="pv-day ${iso < today ? 'past' : ''} ${dow > 4 ? 'we' : ''} ${fer ? 'fer' : ''}"><div class="pv-dn">${+iso.slice(8)}${dow > 4 ? `<span>${PV_JOURS[dow]}</span>` : `<span class="pv-wd">${PV_JOURS[dow]}</span>`}</div>${fer ? `<div class="pv-fer">🎉 ${fer}</div>` : ''}
       ${pvRefLine('N-1', curResto, iso, -364, n1)}${pvRefLine('N-2', curResto, iso, -728, n2)}
       ${real != null ? `<div class="pv-real">Réel <b>${pvEur(real)}</b></div>` : ''}
       <div class="pv-in"><input type="number" step="any" id="pvi_${iso}" value="${v != null ? Math.round(v * 100) / 100 : ''}" oninput="pvDayInput('${iso}')" placeholder="prévision"><select id="pvu_${iso}" onchange="pvUnit('${iso}')"><option value="e">€</option><option value="p">%</option></select></div>

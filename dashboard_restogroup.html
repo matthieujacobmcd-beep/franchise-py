@@ -294,6 +294,11 @@ window.addEventListener('DOMContentLoaded', () => {
   .topbar-brand-sep { opacity: .4; }
   .topbar-date { opacity: .6; }
   .topbar-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  @media (min-width: 701px) {
+    .topbar { height: auto; min-height: 68px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+    .topbar-controls { flex-wrap: wrap; justify-content: flex-end; max-width: 100%; min-width: 0; }
+    .topbar-controls .mode-seg { max-width: 100%; overflow-x: auto; }
+  }
 
   /* Segment control premium */
   .mode-seg {
@@ -7777,7 +7782,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261013-102221';
+const BUILD_VERSION = '20261013-122601';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
