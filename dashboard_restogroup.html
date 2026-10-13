@@ -1111,12 +1111,12 @@ window.addEventListener('DOMContentLoaded', () => {
   </div>
   <div class="topbar-controls">
     <div class="mode-seg">
-      <button class="mode-pill m-year active" id="pill2026" onclick="setMode('2026')">
+      <button class="mode-pill m-year active" id="pill2026" onclick="setMode(String(YEAR_CUR))">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        2026
+        <span data-y="0">2026</span>
       </button>
-      <button class="mode-pill m-year" id="pill2025" onclick="setMode('2025')">2025</button>
-      <button class="mode-pill m-year" id="pill2024" onclick="setMode('2024')">2024</button>
+      <button class="mode-pill m-year" id="pill2025" onclick="setMode(String(YEAR_PREV))"><span data-y="1">2025</span></button>
+      <button class="mode-pill m-year" id="pill2024" onclick="setMode(String(YEAR_P2))"><span data-y="2">2024</span></button>
       <div class="mode-seg-divider"></div>
       <button class="mode-pill m-sem" id="pillS1" onclick="setSemester(1)" title="1er semestre (janvier → juin)">S1</button>
       <button class="mode-pill m-sem" id="pillS2" onclick="setSemester(2)" title="2e semestre (juillet → décembre)">S2</button>
@@ -1836,7 +1836,7 @@ function renderPerfAnalyse(rows){
         ${watch.map(r=>_paItem(r,'watch')).join('')}
       </div>
     </div>
-    <div class="pa-foot">Priorisation combinée : rang réseau (l'essentiel) + tendance annuelle vs YTD 2025 + tendance mensuelle vs 2025. ▲ = favorable, ▼ = défavorable — sens adapté par KPI (pour OEPE et R2P, une baisse est favorable).</div>
+    <div class="pa-foot">Priorisation combinée : rang réseau (l'essentiel) + tendance annuelle vs YTD ${YEAR_PREV} + tendance mensuelle vs 2025. ▲ = favorable, ▼ = défavorable — sens adapté par KPI (pour OEPE et R2P, une baisse est favorable).</div>
   </div>`;
 }
 function renderPerfTable() {
@@ -1851,7 +1851,7 @@ function renderPerfTable() {
     const n = _pnum(r.vs25);
     const arrow = n == null ? '' : (n > 0 ? '▲ +' : n < 0 ? '▼ ' : '');
     const naVs = /^n\/?a$/i.test(String(r.vs25 || ''));
-    const deltaTxt = (r.vs25 && !naVs) ? `${arrow}${_pesc(r.vs25)} <span class="pk-vs">vs 2025</span>` : '';
+    const deltaTxt = (r.vs25 && !naVs) ? `${arrow}${_pesc(r.vs25)} <span class="pk-vs">vs ${YEAR_PREV}</span>` : '';
     h += `<button class="perf-kpi-card ${qc}" onclick="openPerfHistory(${i})" title="Voir l'historique de « ${_pesc(r.kpi)} »">
       <div class="pk-name">${_pesc(r.kpi)}</div>
       <div class="pk-val">${_pesc(r.cur) || '—'}</div>
@@ -1895,7 +1895,7 @@ function renderPerfHistory(box) {
       <span class="perf-hist-title">Historique — ${_pesc(kpi)} · ${_pesc(perfResto)}</span>
     </div>
     <div style="overflow-x:auto"><table class="data-table perf-table"><thead><tr>
-      <th>Mois</th><th>Mois en cours</th><th>vs 2025</th><th>YTD</th><th>vs YTD 2025</th><th>Rang YTD</th></tr></thead>
+      <th>Mois</th><th>Mois en cours</th><th>vs ${YEAR_PREV}</th><th>YTD</th><th>vs YTD ${YEAR_PREV}</th><th>Rang YTD</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6" style="color:var(--muted)">Aucun historique.</td></tr>'}</tbody></table></div>`
     + perfLegend();
 }
@@ -1921,7 +1921,24 @@ const DASHBOARD_DATA = {"2026":{"ca_total":{"JANVIER":{"CHAMBERY":658679.4899999
 // ============================================================
 // STATE
 // ============================================================
-let currentYear = 2026;
+// Années : jamais figées. Valeurs initiales = données embarquées ; recalculées à chaque synchronisation (voir sheet_live_loader).
+let YEAR_CUR = 2026, YEAR_PREV = 2025, YEAR_P2 = 2024;
+function _applyYearLabels() {
+  const ys = [YEAR_CUR, YEAR_PREV, YEAR_P2];
+  document.querySelectorAll('[data-y]').forEach(e => { e.textContent = ys[+e.dataset.y]; });
+  const set = (id, y) => { const b = document.getElementById(id); if (b) { b.onclick = () => setMode(String(y)); const sp = b.querySelector('[data-y]'); if (sp) sp.textContent = y; } };
+  set('pill2026', YEAR_CUR); set('pill2025', YEAR_PREV); set('pill2024', YEAR_P2);
+}
+function _setYears(cy) {
+  if (!cy || cy === YEAR_CUR) return false;
+  const wasCur = currentYear === YEAR_CUR, wasKv = typeof kpiViewYear !== 'undefined' && kpiViewYear === YEAR_CUR;
+  YEAR_CUR = cy; YEAR_PREV = cy - 1; YEAR_P2 = cy - 2;
+  if (wasCur) currentYear = YEAR_CUR;
+  if (wasKv) kpiViewYear = YEAR_CUR;
+  _applyYearLabels();
+  return true;
+}
+let currentYear = YEAR_CUR;
 let compareMode = false;
 let prevMode    = false;
 let kpiViewMode = false;
@@ -2204,8 +2221,8 @@ function computeSelectionWeek(members) {
   }
 }
 function computeSelection(members) {
-  computeSelectionYear(2026, members);
-  computeSelectionYear(2025, members);
+  computeSelectionYear(YEAR_CUR, members);
+  computeSelectionYear(YEAR_PREV, members);
   computeSelectionWeek(members);
 }
 
@@ -2229,7 +2246,7 @@ function hasKpiYear(kpiId, year) {
   return has(d[kpiId]) || has(d[mid]);
 }
 // En mode 2024, seuls les KPI ayant des données 2024 (CA/alim/TAC'S/PM) sont affichés
-function kpiVisibleYear(kpi) { return currentYear !== 2024 || hasKpiYear(kpi.id, 2024); }
+function kpiVisibleYear(kpi) { return currentYear !== YEAR_P2 || hasKpiYear(kpi.id, YEAR_P2); }
 
 function calcAnnual(kpiId, resto, year) {
   const d = getData(year);
@@ -2295,7 +2312,7 @@ function calcAnnual(kpiId, resto, year) {
 
   // Turn Over glissant : dernière valeur, pas de comparable 2025
   if (kpiId === 'to_12m_last' || kpiId === 'to_90j_last') {
-    if (year === 2025) return null;
+    if (year === YEAR_PREV) return null;
     let lastVal = null;
     for (const m of MONTHS) {
       const v = src?.[m]?.[resto];
@@ -2306,7 +2323,7 @@ function calcAnnual(kpiId, resto, year) {
 
   // Absentéisme last : stocké sous clé 'DERNIER' → {'FRANCHISE': val}
   if (kpiId === 'abs_imp_last' || kpiId === 'abs_inj_last') {
-    if (year === 2025) return null;
+    if (year === YEAR_PREV) return null;
     // Essayer d'abord la clé DERNIER
     const dernier = d[kpiId]?.['DERNIER']?.[resto];
     if (dernier !== null && dernier !== undefined) return dernier;
@@ -2323,8 +2340,8 @@ function calcAnnual(kpiId, resto, year) {
 
   // Pour 2025 : se limiter aux mois disponibles en 2026 (comparable à date)
   let months = MONTHS;
-  if (year === 2025 && currentYear === 2026) {
-    const src26 = getData(2026)[monthlyId];
+  if (year === YEAR_PREV && currentYear === YEAR_CUR) {
+    const src26 = getData(YEAR_CUR)[monthlyId];
     if (src26) {
       const last26idx = MONTHS.reduce((last, m, i) => {
         const md = src26[m];
@@ -2359,8 +2376,8 @@ function lastFilledMonth(kpiId, year) {
 
 // Mois communs renseignés entre 2025 et 2026 pour un KPI
 function commonFilledMonths(kpiId) {
-  const last25 = lastFilledMonth(kpiId, 2025);
-  const last26 = lastFilledMonth(kpiId, 2026);
+  const last25 = lastFilledMonth(kpiId, YEAR_PREV);
+  const last26 = lastFilledMonth(kpiId, YEAR_CUR);
   const idx25  = last25 ? MONTHS.indexOf(last25) : -1;
   const idx26  = last26 ? MONTHS.indexOf(last26) : -1;
   const upTo   = Math.min(idx25, idx26);
@@ -2434,8 +2451,8 @@ function calcSemesterComparable(kpiId, resto, year, months, refYear) {
   const src = getData(year)[mid];
   if (!src) return null;
   const partial = (DASHBOARD_DATA.meta || {}).partial_by_resto || {};
-  const useComp = (refYear === 2026 && year === 2025 && COMPARABLE_KPIS.has(kpiId));
-  const compTable = useComp ? (DASHBOARD_DATA['2025'] || {})[kpiId + '_comparable'] : null;
+  const useComp = (refYear === YEAR_CUR && year === YEAR_PREV && COMPARABLE_KPIS.has(kpiId));
+  const compTable = useComp ? (DASHBOARD_DATA[YEAR_PREV] || {})[kpiId + '_comparable'] : null;
   let sum = 0, count = 0;
   for (const m of months) {
     let v;
@@ -2466,12 +2483,12 @@ const COMPARABLE_KPIS = new Set(['ca_total','ca_alim','tacs','pm','vphe']);
 
 // Récupère la valeur comparable à date pour 2025 (mois partiel uniquement)
 function getComparableVal(kpiId, resto, year, month) {
-  if (year !== 2025 || !COMPARABLE_KPIS.has(kpiId)) return null;
+  if (year !== YEAR_PREV || !COMPARABLE_KPIS.has(kpiId)) return null;
   const meta = DASHBOARD_DATA.meta || {};
   const currentMonth = meta.current_month_2026;
   if (!currentMonth || month !== currentMonth) return null; // seulement pour le mois partiel
   const compKey = kpiId + '_comparable';
-  return DASHBOARD_DATA['2025']?.[compKey]?.[month]?.[resto] ?? null;
+  return DASHBOARD_DATA[YEAR_PREV]?.[compKey]?.[month]?.[resto] ?? null;
 }
 
 // Label du cutoff pour affichage selon le restaurant
@@ -2509,7 +2526,7 @@ function calcAnnualComparable(kpiId, resto, year) {
 
   // Mois disponibles en 2026
   const months2026 = MONTHS.filter(m => {
-    const md = DASHBOARD_DATA['2026']?.[kpiId]?.[m];
+    const md = DASHBOARD_DATA[YEAR_CUR]?.[kpiId]?.[m];
     return md && Object.values(md).some(v => v !== null && v !== undefined);
   });
 
@@ -2522,9 +2539,9 @@ function calcAnnualComparable(kpiId, resto, year) {
   let sum = 0, count = 0;
   for (const m of months2026) {
     let v;
-    if (year === 2025 && partialMonths.has(m)) {
+    if (year === YEAR_PREV && partialMonths.has(m)) {
       // Mois partiel → utiliser le comparable à date (existe pour tous les restos + franchise)
-      const compVal = DASHBOARD_DATA['2025']?.[compKey]?.[m]?.[resto] ?? null;
+      const compVal = DASHBOARD_DATA[YEAR_PREV]?.[compKey]?.[m]?.[resto] ?? null;
       v = compVal !== null ? compVal : (d[kpiId]?.[m]?.[resto] ?? null);
     } else {
       v = d[kpiId]?.[m]?.[resto] ?? null;
@@ -2651,10 +2668,10 @@ function getKpiStatus(kpiId, v, resto) {
   // CA — comparaison vs N-1 à date comparable
   if (t.compareN1) {
     // Sommer les mois disponibles en 2026
-    const src26 = DASHBOARD_DATA['2026']?.[kpiId];
+    const src26 = DASHBOARD_DATA[YEAR_CUR]?.[kpiId];
     const compKey = kpiId + '_comparable';
-    const src25comp = DASHBOARD_DATA['2025']?.[compKey];
-    const src25 = DASHBOARD_DATA['2025']?.[kpiId];
+    const src25comp = DASHBOARD_DATA[YEAR_PREV]?.[compKey];
+    const src25 = DASHBOARD_DATA[YEAR_PREV]?.[kpiId];
     if (!src26) return null;
     let tot26 = 0, tot25 = 0, hasData = false;
     for (const m of MONTHS) {
@@ -2684,11 +2701,11 @@ function getKpiStatus(kpiId, v, resto) {
     const dataKey = t.prevAlias || kpiId;
     const prevKey = prevKeyMap[kpiId];
     if (!prevKey) return null;
-    const months = MONTHS.filter(m => DASHBOARD_DATA['2026']?.[dataKey]?.[m]?.[resto] != null);
+    const months = MONTHS.filter(m => DASHBOARD_DATA[YEAR_CUR]?.[dataKey]?.[m]?.[resto] != null);
     const lastM = months[months.length - 1];
     if (!lastM) return null;
-    const vReal = DASHBOARD_DATA['2026']?.[dataKey]?.[lastM]?.[resto];
-    const vPrev = DASHBOARD_DATA['2026']?.[prevKey]?.[lastM]?.[resto];
+    const vReal = DASHBOARD_DATA[YEAR_CUR]?.[dataKey]?.[lastM]?.[resto];
+    const vPrev = DASHBOARD_DATA[YEAR_CUR]?.[prevKey]?.[lastM]?.[resto];
     if (vReal == null || vPrev == null || vPrev === 0) return null;
     const ecartPt = (vReal - vPrev) * 100;
     const isNegKpi = ['cout_mo'].includes(kpiId);
@@ -2741,7 +2758,7 @@ function getAlerts(resto) {
     const t = KPI_THRESHOLDS[id];
     if (!t) continue;
 
-    const src = DASHBOARD_DATA['2026']?.[monthlyId];
+    const src = DASHBOARD_DATA[YEAR_CUR]?.[monthlyId];
     if (!src) continue;
     const months = MONTHS.filter(m => src[m]?.[r] != null);
     const lastM = months[months.length - 1];
@@ -2754,8 +2771,8 @@ function getAlerts(resto) {
 
     // CA : écart % vs N-1 sur le mois en cours
     if (t.compareN1) {
-      const v25 = DASHBOARD_DATA['2025']?.[monthlyId+'_comparable']?.[lastM]?.[r]
-               ?? DASHBOARD_DATA['2025']?.[monthlyId]?.[lastM]?.[r];
+      const v25 = DASHBOARD_DATA[YEAR_PREV]?.[monthlyId+'_comparable']?.[lastM]?.[r]
+               ?? DASHBOARD_DATA[YEAR_PREV]?.[monthlyId]?.[lastM]?.[r];
       if (v == null || v25 == null || v25 === 0) continue;
       const ecartPct = (v - v25) / v25 * 100;
       displayVal = `${ecartPct >= 0 ? '+' : ''}${ecartPct.toFixed(1)}% vs N-1`;
@@ -2773,8 +2790,8 @@ function getAlerts(resto) {
       // Cumuler tous les mois disponibles
       let sumReal = 0, sumPrev = 0, count = 0;
       for (const m of months) {
-        const vR = DASHBOARD_DATA['2026']?.[id]?.[m]?.[r];
-        const vP = DASHBOARD_DATA['2026']?.[prevKey]?.[m]?.[r];
+        const vR = DASHBOARD_DATA[YEAR_CUR]?.[id]?.[m]?.[r];
+        const vP = DASHBOARD_DATA[YEAR_CUR]?.[prevKey]?.[m]?.[r];
         if (vR != null && vP != null) {
           if (isPct) {
             // Pour les % : moyenne pondérée
@@ -2993,7 +3010,7 @@ function getBadge(kpiId, v) {
 // MODE
 // ============================================================
 function updateModePills(val) {
-  const map = { '2026':'pill2026','2025':'pill2025','2024':'pill2024','compare':'pillCompare','prev':'pillPrev','kpiview':'pillKpiview' };
+  const map = { [YEAR_CUR]:'pill2026',[YEAR_PREV]:'pill2025',[YEAR_P2]:'pill2024','compare':'pillCompare','prev':'pillPrev','kpiview':'pillKpiview' };
   Object.entries(map).forEach(([mode, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', mode === val);
@@ -3008,10 +3025,10 @@ function setMode(val) {
     compareMode = true;
   } else if (val === 'prev') {
     prevMode = true;
-    currentYear = 2026;
+    currentYear = YEAR_CUR;
   } else if (val === 'kpiview') {
     kpiViewMode = true;
-    currentYear = 2026;
+    currentYear = YEAR_CUR;
   } else {
     currentYear = parseInt(val);
   }
@@ -3030,7 +3047,7 @@ function setSemester(s) {
   // Le semestre suppose une vue annuelle simple : on quitte compare/prév/classement
   if (currentSemester && (compareMode || prevMode || kpiViewMode)) {
     compareMode = prevMode = kpiViewMode = false;
-    if (!currentYear) currentYear = 2026;
+    if (!currentYear) currentYear = YEAR_CUR;
     updateModePills(String(currentYear));
   }
   updateSemesterPills();
@@ -3221,7 +3238,7 @@ function renderTabs() {
 // VUE COMPARATIVE PAR KPI
 // ============================================================
 let kpiViewSelected = null;
-let kpiViewYear = 2026;
+let kpiViewYear = YEAR_CUR;
 let kpiViewPeriod = 'annuel';   // 'annuel' | 'semestriel' | 'mensuel'
 let kpiViewSem = 1;             // semestre affiché en mode semestriel
 let kpiViewMonth = null;        // index de mois (0-11) en mode mensuel ; défini au rendu
@@ -3239,16 +3256,16 @@ function kvValue(kpi, r, year) {
   if (kpiViewPeriod === 'mensuel') {
     const m = MONTHS[kpiViewMonth];
     // N-1 sur un mois partiel → valeur comparable à date (mêmes jours)
-    if (year !== kpiViewYear && kpiViewYear === 2026 && COMPARABLE_KPIS.has(kpi.id)) {
+    if (year !== kpiViewYear && kpiViewYear === YEAR_CUR && COMPARABLE_KPIS.has(kpi.id)) {
       const partial = (DASHBOARD_DATA.meta || {}).partial_by_resto || {};
       if (partial[r] && partial[r].month === m) {
-        const cv = (DASHBOARD_DATA['2025'] || {})[kpi.id + '_comparable']?.[m]?.[r];
+        const cv = (DASHBOARD_DATA[YEAR_PREV] || {})[kpi.id + '_comparable']?.[m]?.[r];
         if (cv != null) return cv;
       }
     }
     return getData(year)[mid]?.[m]?.[r] ?? null;
   }
-  return (COMPARABLE_KPIS.has(kpi.id) && year === 2026 && (kpi.monthly || kpi.hasMonthly))
+  return (COMPARABLE_KPIS.has(kpi.id) && year === YEAR_CUR && (kpi.monthly || kpi.hasMonthly))
     ? calcAnnualComparable(kpi.id, r, year)
     : calcAnnual(kpi.id, r, year);
 }
@@ -3291,8 +3308,8 @@ function renderKpiView() {
 
   // Sélecteur d'année
   let html = `<div class="kpiview-year-sel">
-    <button class="kpiview-year-btn ${kpiViewYear===2026?'active':''}" onclick="setKpiViewYear(2026)">2026</button>
-    <button class="kpiview-year-btn ${kpiViewYear===2025?'active':''}" onclick="setKpiViewYear(2025)">2025</button>
+    <button class="kpiview-year-btn ${kpiViewYear===YEAR_CUR?'active':''}" onclick="setKpiViewYear(${YEAR_CUR})">${YEAR_CUR}</button>
+    <button class="kpiview-year-btn ${kpiViewYear===YEAR_PREV?'active':''}" onclick="setKpiViewYear(${YEAR_PREV})">${YEAR_PREV}</button>
   </div>`;
 
   // Layout sidebar + contenu (même structure que renderMain)
@@ -3561,7 +3578,7 @@ function renderMain() {
 
     for (const kpi of kpis) {
       const sel = currentKPI === kpi.id ? 'selected' : '';
-      const hasPrevForKpi = !!DASHBOARD_DATA['2026']?.[(kpi.prevKey || kpi.id+'_prev')];
+      const hasPrevForKpi = !!DASHBOARD_DATA[YEAR_CUR]?.[(kpi.prevKey || kpi.id+'_prev')];
       const canClick = prevMode
         ? hasPrevForKpi
         : (kpi.monthly || kpi.id === 'turnover_annual' || kpi.id === 'turnover_3m' || kpi.hasMonthly || kpi.id === 'rgrv_total');
@@ -3570,7 +3587,7 @@ function renderMain() {
 
       if (prevMode) {
         const r = (currentResto === 'FRANCHISE') ? 'FRANCHISE' : currentResto;
-        const hasPrevData = !!DASHBOARD_DATA['2026']?.[(kpi.prevKey || kpi.id+'_prev')];
+        const hasPrevData = !!DASHBOARD_DATA[YEAR_CUR]?.[(kpi.prevKey || kpi.id+'_prev')];
         if (!hasPrevData) {
           contentHtml += `<div class="kpi-card cat-${cat}" style="opacity:.45;cursor:default">
             <div class="kpi-label">${kpi.label}</div>
@@ -3578,9 +3595,9 @@ function renderMain() {
           </div>`;
           continue;
         }
-        const prevSrc = DASHBOARD_DATA['2026'][(kpi.prevKey || kpi.id+'_prev')];
+        const prevSrc = DASHBOARD_DATA[YEAR_CUR][(kpi.prevKey || kpi.id+'_prev')];
         // Comparaison À DATE : ne cumuler que les mois où prévisionnel ET réel existent
-        const realSrc = getData(2026)[kpi.hasMonthly||kpi.id];
+        const realSrc = getData(YEAR_CUR)[kpi.hasMonthly||kpi.id];
         const months = MONTHS.filter(m => prevSrc[m]?.[r] != null && realSrc?.[m]?.[r] != null);
         let vPrev = 0, vReal = 0, count = 0;
         for (const m of months) {
@@ -3608,7 +3625,7 @@ function renderMain() {
               <div class="kpi-compare-val" style="color:#b8860b">${fmt(vPrevFinal, kpi.fmt)}</div>
             </div>
             <div class="kpi-compare-col">
-              <div class="kpi-compare-year">Réel 2026</div>
+              <div class="kpi-compare-year">Réel ${YEAR_CUR}</div>
               <div class="kpi-compare-val y26">${fmt(vRealFinal, kpi.fmt)}</div>
             </div>
           </div>
@@ -3621,32 +3638,32 @@ function renderMain() {
         // Pour les KPIs CA : utiliser comparable à date pour le mois partiel
         let v25;
         if (COMPARABLE_KPIS.has(kpi.id) && months) {
-          v25 = calcAnnualComparable(kpi.id, r25, 2025);
+          v25 = calcAnnualComparable(kpi.id, r25, YEAR_PREV);
         } else {
-          v25 = months ? calcAnnualUpTo(kpi.id, r25, 2025, months) : calcAnnual(kpi.id, r25, 2025);
+          v25 = months ? calcAnnualUpTo(kpi.id, r25, YEAR_PREV, months) : calcAnnual(kpi.id, r25, YEAR_PREV);
         }
         const v26 = COMPARABLE_KPIS.has(kpi.id)
-          ? calcAnnualComparable(kpi.id, r25, 2026)
-          : (months ? calcAnnualUpTo(kpi.id, r25, 2026, months) : calcAnnual(kpi.id, r25, 2026));
+          ? calcAnnualComparable(kpi.id, r25, YEAR_CUR)
+          : (months ? calcAnnualUpTo(kpi.id, r25, YEAR_CUR, months) : calcAnnual(kpi.id, r25, YEAR_CUR));
         const lastM = months ? months[months.length-1] : null;
         const cutoffLblCard = COMPARABLE_KPIS.has(kpi.id) ? getCutoffLabel(r25) : null;
         const delta = calcDelta(v25, v26, kpi.fmt);
         const status26 = deltaStatus(kpi.id, delta);
         contentHtml += `<div class="kpi-card cat-${cat} ${sel}" ${onclick} ${cursor}>
           <div class="kpi-label">${kpi.label}</div>
-          ${kpi.id === 'turnover_3m' ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:2px">25: ${(getData(2025).turnover_3m_label||[]).join('·')} / 26: ${(getData(2026).turnover_3m_label||[]).join('·')}</div>` : ''}
+          ${kpi.id === 'turnover_3m' ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:2px">25: ${(getData(YEAR_PREV).turnover_3m_label||[]).join('·')} / 26: ${(getData(YEAR_CUR).turnover_3m_label||[]).join('·')}</div>` : ''}
           ${(() => {
-            if (kpi.noCompare) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">2025 vs 2026</div>`;
-            if (!kpi.monthly && !kpi.hasMonthly) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">annuel 2025 vs 2026</div>`;
-            return lastM ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${cutoffLblCard ? cutoffLblCard+' vs 2025' : 'jusqu\'à '+lastM}</div>` : '';
+            if (kpi.noCompare) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${YEAR_PREV} vs ${YEAR_CUR}</div>`;
+            if (!kpi.monthly && !kpi.hasMonthly) return `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">annuel ${YEAR_PREV} vs ${YEAR_CUR}</div>`;
+            return lastM ? `<div style="font-size:.65rem;color:var(--muted);margin-bottom:4px">${cutoffLblCard ? cutoffLblCard+' vs '+YEAR_PREV : 'jusqu\'à '+lastM}</div>` : '';
           })()}
           <div class="kpi-compare-row">
             <div class="kpi-compare-col">
-              <div class="kpi-compare-year">2025</div>
+              <div class="kpi-compare-year">${YEAR_PREV}</div>
               <div class="kpi-compare-val y25">${fmt(v25, kpi.fmt)}</div>
             </div>
             <div class="kpi-compare-col">
-              <div class="kpi-compare-year">2026</div>
+              <div class="kpi-compare-year">${YEAR_CUR}</div>
               <div class="kpi-compare-val y26">${fmt(v26, kpi.fmt)}</div>
             </div>
           </div>
@@ -3657,7 +3674,7 @@ function renderMain() {
         // Le « comparable à date » (coupé au cutoff 2026) ne vaut que pour l'année
         // partielle en cours. Une année passée complète (ex. 2025) doit afficher son
         // total annuel réel, cohérent avec le libellé « jusqu'à décembre ».
-        const v = (COMPARABLE_KPIS.has(kpi.id) && currentYear === 2026)
+        const v = (COMPARABLE_KPIS.has(kpi.id) && currentYear === YEAR_CUR)
           ? calcAnnualComparable(kpi.id, r, currentYear)
           : calcAnnual(kpi.id, r, currentYear);
         // Comparaison seulement si CE KPI a des données pour l'année N-1
@@ -3666,7 +3683,7 @@ function renderMain() {
         let vPrev;
         if (noPrevYear) {
           vPrev = null;
-        } else if (currentYear === 2026 && kpi.monthly) {
+        } else if (currentYear === YEAR_CUR && kpi.monthly) {
           // Année courante partielle → comparable « à date »
           vPrev = COMPARABLE_KPIS.has(kpi.id)
             ? calcAnnualComparable(kpi.id, r, currentYear - 1)
@@ -3682,7 +3699,7 @@ function renderMain() {
         }
         const delta = noPrevYear ? null : calcDelta(vPrev, v, kpi.fmt);
         // Label cutoff pour mois partiel
-        const cutoffLabel = !kpi.noCompare && COMPARABLE_KPIS.has(kpi.id) && currentYear === 2026 ? getCutoffLabel(r) : null;
+        const cutoffLabel = !kpi.noCompare && COMPARABLE_KPIS.has(kpi.id) && currentYear === YEAR_CUR ? getCutoffLabel(r) : null;
         // ── Filtre SEMESTRE : recalcule la carte sur S1/S2 (comparaison au même semestre N-1) ──
         let vShown = v, vPrevShown = vPrev, deltaShown = delta, semSub = null;
         if (currentSemester > 0) {
@@ -4055,8 +4072,8 @@ function getSparkline(kpiId, resto, year) {
   if (['cash_flow','resultat_net'].includes(kpiId)) {
     const prevKeyMap = { cash_flow:'cash_flow_prev', resultat_net:'resultat_net_prev' };
     const prevKey = prevKeyMap[kpiId];
-    const src26 = getData(2026)[monthlyId];
-    const srcPrev = getData(2026)[prevKey];
+    const src26 = getData(YEAR_CUR)[monthlyId];
+    const srcPrev = getData(YEAR_CUR)[prevKey];
     if (!src26 || !srcPrev) return '';
     const months26 = MONTHS.filter(m => src26[m]?.[resto] != null && srcPrev[m]?.[resto] != null);
     if (months26.length < 2) return '';
@@ -4202,14 +4219,14 @@ function renderDetail() {
 
   // Sécurité : hebdo/quotidien seulement pour les KPI journaliers, et pas en 2024
   // (le quotidien 2024 est aligné sur le calendrier 2025 → réservé au comparable).
-  if ((!isDailyKpi(kpi) || currentYear === 2024) && (currentPeriod === 'hebdo' || currentPeriod === 'quotidien')) {
+  if ((!isDailyKpi(kpi) || currentYear === YEAR_P2) && (currentPeriod === 'hebdo' || currentPeriod === 'quotidien')) {
     currentPeriod = 'mensuel'; currentDrillMonth = null;
   }
   // Semestriel réservé aux KPI mensuels
   if (currentPeriod === 'semestriel' && !kpi.monthly && !kpi.hasMonthly) currentPeriod = 'annuel';
   let periodBtns = '';
   if ((kpi.monthly || kpi.hasMonthly) && !prevMode) {
-    const daily = isDailyKpi(kpi) && currentYear !== 2024;
+    const daily = isDailyKpi(kpi) && currentYear !== YEAR_P2;
     if (daily && currentPeriod === 'quotidien') {
       const mLbl = MONTH_SHORT[currentDrillMonth] || 'Mois';
       periodBtns = `<div class="period-btns">
@@ -4226,7 +4243,7 @@ function renderDetail() {
     }
   }
 
-  const modeLabel = prevMode ? 'Prévisionnel vs Réel 2026' : (compareMode ? '2025 vs 2026' : currentYear);
+  const modeLabel = prevMode ? 'Prévisionnel vs Réel '+YEAR_CUR : (compareMode ? YEAR_PREV+' vs '+YEAR_CUR : currentYear);
   const franceMention = '';
   div.innerHTML = `
     <div class="detail-header">
@@ -4260,7 +4277,7 @@ function populateDetail() {
 
   // ── CAS SPÉCIAL : RGRV → tableau des 5 sous-indicateurs ────────────
   if (currentKPI === 'rgrv_total') {
-    const detail = DASHBOARD_DATA['2026']?.rgrv_detail || {};
+    const detail = DASHBOARD_DATA[YEAR_CUR]?.rgrv_detail || {};
     const restos = currentResto === 'FRANCHISE' ? RESTOS : [currentResto];
     const labels = ['QUALITE','SERVICE','PROPRETE','GESTION DE QUART','PREVENTION ET SECURITE','TOTAL'];
     let html = `<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Indicateur</th>`;
@@ -4291,7 +4308,7 @@ function populateDetail() {
 
   // ── MODE PRÉVISIONNEL ────────────────────────────────────────────────
   if (prevMode) {
-    const prevSrc = DASHBOARD_DATA['2026']?.[(kpi.prevKey || kpi.id+'_prev')];
+    const prevSrc = DASHBOARD_DATA[YEAR_CUR]?.[(kpi.prevKey || kpi.id+'_prev')];
     if (!prevSrc) {
       body.innerHTML = '<div class="no-data">Non disponible en prévisionnel</div>';
       return;
@@ -4309,7 +4326,7 @@ function populateDetail() {
       html += `<tr><td>${m}</td>`;
       for (const r of restosP) {
         const vp = prevSrc[m]?.[r] ?? null;
-        const vr = getData(2026)[kpi.hasMonthly||kpi.id]?.[m]?.[r] ?? null;
+        const vr = getData(YEAR_CUR)[kpi.hasMonthly||kpi.id]?.[m]?.[r] ?? null;
         const d  = calcDelta(vp, vr, kpi.fmt);
         html += `<td style="color:#b8860b">${fmt(vp,kpi.fmt)}</td><td>${fmt(vr,kpi.fmt)}</td><td>${fmtDelta(d,kpi.fmt,kpi.id,vp)}</td>`;
       }
@@ -4339,22 +4356,22 @@ function populateDetail() {
     let html = `<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Restaurant</th>`;
     if (compareMode) {
       html += noComp
-        ? `<th class="y26">2026</th>`
-        : `<th class="y25">2025</th><th class="y26">2026</th><th class="delta">Évolution</th>`;
+        ? `<th class="y26">${YEAR_CUR}</th>`
+        : `<th class="y25">${YEAR_PREV}</th><th class="y26">${YEAR_CUR}</th><th class="delta">Évolution</th>`;
     } else {
       html += noComp
         ? `<th>${currentYear}</th>`
-        : `<th>${currentYear}</th><th>${currentYear-1}</th><th class="delta">Évol.</th>${ann2024 ? '<th>2024</th><th class="delta">Évol. 24</th>' : ''}`;
+        : `<th>${currentYear}</th><th>${currentYear-1}</th><th class="delta">Évol.</th>${ann2024 ? '<th>'+YEAR_P2+'</th><th class="delta">Évol. '+String(YEAR_P2).slice(2)+'</th>' : ''}`;
     }
     html += `</tr></thead><tbody>`;
 
     for (const r of restos) {
       if (compareMode) {
-        const v26 = COMPARABLE_KPIS.has(kpi.id) ? calcAnnualComparable(kpi.id, r, 2026) : calcAnnual(kpi.id, r, 2026);
+        const v26 = COMPARABLE_KPIS.has(kpi.id) ? calcAnnualComparable(kpi.id, r, YEAR_CUR) : calcAnnual(kpi.id, r, YEAR_CUR);
         if (noComp) {
           html += `<tr><td>${r}</td><td>${fmt(v26,kpi.fmt)}</td></tr>`;
         } else {
-          const v25 = COMPARABLE_KPIS.has(kpi.id) ? calcAnnualComparable(kpi.id, r, 2025) : calcAnnual(kpi.id, r, 2025);
+          const v25 = COMPARABLE_KPIS.has(kpi.id) ? calcAnnualComparable(kpi.id, r, YEAR_PREV) : calcAnnual(kpi.id, r, YEAR_PREV);
           const d = calcDelta(v25, v26, kpi.fmt);
           html += `<tr><td>${r}</td><td>${fmt(v25,kpi.fmt)}</td><td>${fmt(v26,kpi.fmt)}</td><td>${fmtDelta(d,kpi.fmt,kpi.id,v25)}</td></tr>`;
         }
@@ -4363,7 +4380,7 @@ function populateDetail() {
         if (noComp) {
           html += `<tr><td>${r}</td><td>${fmt(vc,kpi.fmt)}</td></tr>`;
         } else {
-          const vp = COMPARABLE_KPIS.has(kpi.id) && currentYear === 2026
+          const vp = COMPARABLE_KPIS.has(kpi.id) && currentYear === YEAR_CUR
             ? calcAnnualComparable(kpi.id, r, currentYear - 1)
             : calcAnnual(kpi.id, r, currentYear - 1);
           const d  = calcDelta(vp, vc, kpi.fmt);
@@ -4398,7 +4415,7 @@ function populateDetail() {
       for (const r of restos) {
         const short = r === 'AIX LES BAINS' ? 'AIX' : r === 'LES ABRETS' ? 'ABRETS' : r;
         if (noComp) html += `<th>${short} ${currentYear}</th>`;
-        else html += `<th>${short} ${currentYear}</th><th style="color:var(--muted)">${short} ${currentYear-1}</th><th class="delta">Δ</th>${mo2024 ? `<th style="color:var(--muted)">${short} 2024</th><th class="delta">Δ 24</th>` : ''}`;
+        else html += `<th>${short} ${currentYear}</th><th style="color:var(--muted)">${short} ${currentYear-1}</th><th class="delta">Δ</th>${mo2024 ? `<th style="color:var(--muted)">${short} ${YEAR_P2}</th><th class="delta">Δ 24</th>` : ''}`;
       }
     }
     html += `</tr></thead><tbody>`;
@@ -4424,13 +4441,13 @@ function populateDetail() {
       html += `<tr${drillAttr}><td>${m}${drillHint}${partialLabel ? `<br><span style="font-size:.65rem;color:var(--blue)">${partialLabel}</span>` : ''}</td>`;
       for (const r of restos) {
         if (compareMode) {
-          const v26 = getData(2026)[monthlyId]?.[m]?.[r] ?? null;
+          const v26 = getData(YEAR_CUR)[monthlyId]?.[m]?.[r] ?? null;
           if (noComp) {
             html += `<td>${fmt(v26,kpi.fmt)}</td>`;
           } else {
             const v25 = isPartialForResto(r)
-              ? (DASHBOARD_DATA['2025']?.[monthlyId+'_comparable']?.[m]?.[r] ?? null)
-              : (getData(2025)[monthlyId]?.[m]?.[r] ?? null);
+              ? (DASHBOARD_DATA[YEAR_PREV]?.[monthlyId+'_comparable']?.[m]?.[r] ?? null)
+              : (getData(YEAR_PREV)[monthlyId]?.[m]?.[r] ?? null);
             const d   = calcDelta(v25, v26, kpi.fmt);
             html += `<td>${fmt(v25,kpi.fmt)}</td><td>${fmt(v26,kpi.fmt)}</td><td>${fmtDelta(d,kpi.fmt,kpi.id,v25)}</td>`;
           }
@@ -4440,8 +4457,8 @@ function populateDetail() {
             html += `<td>${fmt(v,kpi.fmt)}</td>`;
           } else {
             let vPrev;
-            if (currentYear === 2026 && isPartialForResto(r)) {
-              vPrev = DASHBOARD_DATA['2025']?.[monthlyId+'_comparable']?.[m]?.[r] ?? null;
+            if (currentYear === YEAR_CUR && isPartialForResto(r)) {
+              vPrev = DASHBOARD_DATA[YEAR_PREV]?.[monthlyId+'_comparable']?.[m]?.[r] ?? null;
             } else {
               vPrev = getData(currentYear-1)[monthlyId]?.[m]?.[r] ?? null;
             }
@@ -4476,7 +4493,7 @@ function whenChart(cb) {
 }
 function kpiHas25(kpi) {
   const mid = kpi.hasMonthly || kpi.id;
-  const s = DASHBOARD_DATA['2025'] && DASHBOARD_DATA['2025'][mid];
+  const s = DASHBOARD_DATA[YEAR_PREV] && DASHBOARD_DATA[YEAR_PREV][mid];
   if (!s) return false;
   const vals = Object.values(s);
   return vals.some(v => (v && typeof v === 'object')
@@ -4640,7 +4657,7 @@ function renderDailyChart(canvas, kpi) {
     tension: .3, pointRadius: many ? 0 : 3, borderWidth: 2, spanGaps: true,
   });
   if (ser.rows.some(x => x.v24 != null)) datasets.push({
-    label: '2024 (équivalent)', data: ser.rows.map(x => x.v24),
+    label: YEAR_P2 + ' (équivalent)', data: ser.rows.map(x => x.v24),
     borderColor: '#94a3b8', borderDash: [2, 3], backgroundColor: 'transparent',
     tension: .3, pointRadius: many ? 0 : 2, borderWidth: 1.8, spanGaps: true,
   });
@@ -4677,7 +4694,7 @@ function renderDailyTable(body, kpi) {
   const cols = has24 ? 6 : 4;
   body.innerHTML = `<div style="overflow-x:auto"><table class="data-table"><thead>
     <tr><th>${head}</th><th>${currentYear}</th><th>${ser.cmpLabel || (currentYear - 1)}</th><th class="delta">${ser.weekly ? 'Δ' : 'Δ 25'}</th>`
-    + (has24 ? `<th>2024</th><th class="delta">Δ 24</th>` : '') + `</tr></thead>
+    + (has24 ? `<th>${YEAR_P2}</th><th class="delta">Δ 24</th>` : '') + `</tr></thead>
     <tbody>${rows || `<tr><td colspan="${cols}" style="color:var(--muted)">Aucune donnée.</td></tr>`}</tbody></table></div>`;
 }
 function openMonthDaily(mi) {
@@ -4717,28 +4734,28 @@ function renderSemesterTable(body, kpi) {
 }
 // Valeur 2024 « à date » d'un mois (CA) : jours couverts en 2026 → -364 j → daily 2024
 function ca2024Month(kpiId, resto, monthIdx) {
-  const y = 2026, last = _lastCovered(y);
+  const y = YEAR_CUR, last = _lastCovered(y);
   const dim = new Date(Date.UTC(y, monthIdx + 1, 0)).getUTCDate();
   let start = new Date(Date.UTC(y, monthIdx, 1));
   let end = new Date(Date.UTC(y, monthIdx, dim));
   if (last && end.getTime() > last.getTime()) end = last;
   if (start.getTime() > end.getTime()) return null;
   const s = new Date(start.getTime() - 364 * 86400000), e = new Date(end.getTime() - 364 * 86400000);
-  return dailyKpiRange(kpiId, resto, 2024, s, e);
+  return dailyKpiRange(kpiId, resto, YEAR_P2, s, e);
 }
 function ca2024Annual(kpiId, resto) {
   let ca = 0, al = 0, tc = 0, has = false;
   for (let mi = 0; mi < 12; mi++) {
     // pour PM on somme les composants ; sinon on somme la valeur du mois
-    const s = new Date(Date.UTC(2026, mi, 1)), lastc = _lastCovered(2026);
-    const dim = new Date(Date.UTC(2026, mi + 1, 0)).getUTCDate();
-    let end = new Date(Date.UTC(2026, mi, dim));
+    const s = new Date(Date.UTC(YEAR_CUR, mi, 1)), lastc = _lastCovered(YEAR_CUR);
+    const dim = new Date(Date.UTC(YEAR_CUR, mi + 1, 0)).getUTCDate();
+    let end = new Date(Date.UTC(YEAR_CUR, mi, dim));
     if (lastc && end.getTime() > lastc.getTime()) end = lastc;
     if (s.getTime() > end.getTime()) continue;
     const ss = new Date(s.getTime() - 364 * 86400000), ee = new Date(end.getTime() - 364 * 86400000);
-    const c = dailyKpiRange('ca_total', resto, 2024, ss, ee);
-    const a = dailyKpiRange('ca_alim', resto, 2024, ss, ee);
-    const t = dailyKpiRange('tacs', resto, 2024, ss, ee);
+    const c = dailyKpiRange('ca_total', resto, YEAR_P2, ss, ee);
+    const a = dailyKpiRange('ca_alim', resto, YEAR_P2, ss, ee);
+    const t = dailyKpiRange('tacs', resto, YEAR_P2, ss, ee);
     if (c != null || a != null || t != null) has = true;
     ca += c || 0; al += a || 0; tc += t || 0;
   }
@@ -4772,8 +4789,8 @@ function initChart() {
     const isP = COMPARABLE_KPIS.has(mid) &&
       ((_partialMeta[r] && _partialMeta[r].month === m) ||
        ((r === 'FRANCHISE' || r === SEL_KEY) && _isPartialMonth(m)));
-    if (isP) { const c = DASHBOARD_DATA['2025']?.[mid + '_comparable']?.[m]?.[r]; if (c != null) return c; }
-    return getData(2025)[mid]?.[m]?.[r] ?? null;
+    if (isP) { const c = DASHBOARD_DATA[YEAR_PREV]?.[mid + '_comparable']?.[m]?.[r]; if (c != null) return c; }
+    return getData(YEAR_PREV)[mid]?.[m]?.[r] ?? null;
   };
 
   // Définition des objectifs par KPI (ligne horizontale sur le graphique)
@@ -4819,7 +4836,7 @@ function initChart() {
   let datasets = [];
 
   if (prevMode) {
-    const prevSrc = DASHBOARD_DATA['2026']?.[(kpi.prevKey || kpi.id+'_prev')];
+    const prevSrc = DASHBOARD_DATA[YEAR_CUR]?.[(kpi.prevKey || kpi.id+'_prev')];
     if (!prevSrc) { canvas.parentElement.style.display='none'; return; }
     const months = MONTHS.filter(m => Object.values(prevSrc[m] || {}).some(v => v !== null && v !== undefined));
     const labels = months.map(m => MONTH_SHORT[MONTHS.indexOf(m)]);
@@ -4833,7 +4850,7 @@ function initChart() {
       });
       datasets.push({
         label: `${restoDisplay(r)} Réel`,
-        data: months.map(m => getData(2026)[kpi.hasMonthly||kpi.id]?.[m]?.[r] ?? null),
+        data: months.map(m => getData(YEAR_CUR)[kpi.hasMonthly||kpi.id]?.[m]?.[r] ?? null),
         borderColor: colors26[i % colors26.length],
         backgroundColor: 'transparent',
         tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true,
@@ -4860,7 +4877,7 @@ function initChart() {
     restos.forEach((r, i) => {
       if (!kpi.noCompare) {
         datasets.push({
-          label: `${restoDisplay(r)} 2025`,
+          label: `${restoDisplay(r)} ${YEAR_PREV}`,
           data: months.map(m => val25AtDate(monthlyId || kpi.id, m, r)),
           borderColor: colors25[i % colors25.length],
           backgroundColor: 'transparent',
@@ -4868,8 +4885,8 @@ function initChart() {
         });
       }
       datasets.push({
-        label: `${restoDisplay(r)} 2026`,
-        data: months.map(m => getData(2026)[monthlyId || kpi.id]?.[m]?.[r] ?? null),
+        label: `${restoDisplay(r)} ${YEAR_CUR}`,
+        data: months.map(m => getData(YEAR_CUR)[monthlyId || kpi.id]?.[m]?.[r] ?? null),
         borderColor: colors26[i % colors26.length],
         backgroundColor: 'transparent',
         tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true,
@@ -4902,7 +4919,7 @@ function initChart() {
       restos.forEach((r, i) => {
         datasets.push({
           label: `${restoDisplay(r)} N-1`,
-          data: MONTHS.map(m => (currentYear === 2026 ? val25AtDate(monthlyId || kpi.id, m, r) : (getData(currentYear-1)[monthlyId || kpi.id]?.[m]?.[r] ?? null))),
+          data: MONTHS.map(m => (currentYear === YEAR_CUR ? val25AtDate(monthlyId || kpi.id, m, r) : (getData(currentYear-1)[monthlyId || kpi.id]?.[m]?.[r] ?? null))),
           borderColor: colors25[i % colors25.length],
           backgroundColor: 'transparent',
           borderDash: [5,3], tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true,
@@ -4913,7 +4930,7 @@ function initChart() {
     if (false) {
       const r = restos[0];
       datasets.push({
-        label: `${restoDisplay(r)} 2024`,
+        label: `${restoDisplay(r)} ${YEAR_P2}`,
         data: MONTHS.map((m, mi) => ca2024Month(kpi.id, r, mi)),
         borderColor: '#94a3b8', backgroundColor: 'transparent',
         borderDash: [2, 3], tension: 0.3, pointRadius: 2, borderWidth: 1.8, spanGaps: true,
@@ -5057,9 +5074,22 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
   // ════════════════════════════════════════════════════════════════
   function build(S, BASE) {
     BASE = BASE || {};
-    const B26 = BASE['2026'] || {}, B25 = BASE['2025'] || {};
-    const OUT = { '2026': {}, '2025': {}, '2024': {}, meta: {}, week: null, daily: null };
-    const Y26 = OUT['2026'], Y25 = OUT['2025'];
+    // ── Années : rien n'est figé. L'année COURANTE (CY) est la plus récente (≥ 2026) pour laquelle TOUS les restaurants
+    //    ont déjà au moins un CA saisi ; N-1 = PY et N-2 = P2. Au passage à une nouvelle année, tout bascule seul.
+    //    (Y26 / B26 désignent l'année courante, Y25 / B25 l'année N-1, quelle que soit l'année réelle.)
+    const yrStores = {};
+    for (const row of (S.quotidien || [])) {
+      const p0 = normPeriode(row.periode), s0 = String(row.restaurant || '').trim().toUpperCase();
+      if (!STORES.includes(s0) || !/^\d{4}-/.test(p0) || !(numOrNull(row.ca_net_total) > 0)) continue;
+      (yrStores[+p0.slice(0, 4)] = yrStores[+p0.slice(0, 4)] || new Set()).add(s0);
+    }
+    let CY = 2026;
+    for (const [y0, set] of Object.entries(yrStores)) if (+y0 > CY && set.size === STORES.length) CY = +y0;
+    const PY = CY - 1, P2 = CY - 2, CYs = String(CY), PYs = String(PY), P2s = String(P2);
+    const B26 = BASE[CYs] || {}, B25 = BASE[PYs] || {};
+    const OUT = { meta: {}, week: null, daily: null };
+    OUT[CYs] = {}; OUT[PYs] = {}; OUT[P2s] = {};
+    const Y26 = OUT[CYs], Y25 = OUT[PYs];
 
     // ── 1. QUOTIDIEN → tableaux jour de l'an ──
     const DF = [['ca', 'ca_net_total'], ['alim', 'ca_net_alim'], ['tacs', 'transactions'], ['heures', 'heures_equipier'],
@@ -5068,12 +5098,12 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const OPEN = { 'VIVIERS': '2025-01-03' };   // date d'ouverture : aucun jour antérieur n'est pris en compte (ex. 11 € de test le 02/01/2025)
     const comments = {};   // date ISO → restaurant → { meteo, commentaire }
     const daily = {}; // year -> store -> field -> []
-    const years = { 2024: ['ca', 'alim', 'tacs'], 2025: null, 2026: null };
-    for (const y of [2024, 2025, 2026]) {
+    const years = { [P2]: ['ca', 'alim', 'tacs'], [PY]: null, [CY]: null };
+    for (const y of [P2, PY, CY]) {
       daily[y] = {};
       for (const s of STORES) { daily[y][s] = {}; for (const [f] of DF) daily[y][s][f] = new Array(nDays(y)).fill(null); }
     }
-    // 2024 : dates RÉELLES dans le Sheet (rapports d'exploitation). Deux représentations :
+    // N-2 : dates RÉELLES dans le Sheet (rapports d'exploitation). Deux représentations :
     //  - real24 : calendrier 2024 réel (pour l'année 2024 elle-même) ;
     //  - daily[2024] : lui aussi au calendrier réel (index = jour de l'année) ; le comparatif N-1 d'un jour 2025 se lit à −364 jours.
     const real24 = {}; for (const s of STORES) real24[s] = { ca: new Array(366).fill(null), alim: new Array(366).fill(null), tacs: new Array(366).fill(null) };
@@ -5082,8 +5112,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       if (!STORES.includes(s) || !/^\d{4}-/.test(p)) continue;
       if (OPEN[s] && p < OPEN[s]) continue;
       const y = +p.slice(0, 4); if (!daily[y]) continue;
-      if (y === 2024) {
-        const ri = doy(2024, p);
+      if (y === P2) {
+        const ri = doy(P2, p);
         if (ri >= 0 && ri < 366) for (const [f, k] of DF.slice(0, 3)) { const v = numOrNull(row[k]); real24[s][f][ri] = (v != null && v > 0) ? r2(v) : null; }
       }
       const i = doy(y, p); const arrs = daily[y][s];       // calendrier réel pour toutes les années (2024 compris)
@@ -5101,10 +5131,10 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     // pas de CA 2026 saisi → on garde tout en l'état
     const lastDays = {};
     for (const s of STORES) {
-      const a = daily[2026][s].ca; let li = -1;
+      const a = daily[CY][s].ca; let li = -1;
       for (let i = 0; i < a.length; i++) if (a[i]) li = i;
       if (li < 0) return null;
-      lastDays[s] = utc(2026, 1, 1) + li * DAY_MS;
+      lastDays[s] = utc(CY, 1, 1) + li * DAY_MS;
     }
     const commonLast = Math.min(...Object.values(lastDays));
     const cl = new Date(commonLast); const clMonth = cl.getUTCMonth() + 1, clDay = cl.getUTCDate();
@@ -5134,10 +5164,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     OUT.meta = {
       open: OPEN,
       partial_by_resto: Object.fromEntries(STORES.map(s => { const d = new Date(lastDays[s]); return [s, { month: MONTHS[d.getUTCMonth()], day: d.getUTCDate() }]; })),
-      franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < maxMonth ? iso(utc(2026, i + 1, daysInMonth(2026, i + 1))) : iso(maxLast)])),
+      franchise_cutoff: Object.fromEntries(MONTHS26.map((m, i) => [m, i + 1 < maxMonth ? iso(utc(CY, i + 1, daysInMonth(CY, i + 1))) : iso(maxLast)])),
       lagging: STORES.filter(s => lastDays[s] < maxLast).map(s => ({ resto: s, day: iso(lastDays[s]) })),
       last_day_by_resto: Object.fromEntries(STORES.map(s => [s, iso(lastDays[s])])),
-      current_month_2026: MONTHS[maxMonth - 1],
+      current_month_2026: MONTHS[maxMonth - 1],        // nom historique, conservé
+      current_month: MONTHS[maxMonth - 1], year: CY, year_prev: PY, year_p2: P2,
       import_date: (BASE.meta || {}).import_date || null,
       source: 'sheet',
     };
@@ -5160,8 +5191,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       });
       return [ca, alim, tacs, pm, vphe];
     }
-    [Y26.ca_total, Y26.ca_alim, Y26.tacs, Y26.pm, Y26.vphe] = caFamily(2026);
-    [Y25.ca_total, Y25.ca_alim, Y25.tacs, Y25.pm, Y25.vphe] = caFamily(2025);
+    [Y26.ca_total, Y26.ca_alim, Y26.tacs, Y26.pm, Y26.vphe] = caFamily(CY);
+    [Y25.ca_total, Y25.ca_alim, Y25.tacs, Y25.pm, Y25.vphe] = caFamily(PY);
 
     // Comparables 2025 à date
     const comp = { t: {}, a: {}, tc: {}, pm: {}, v: {} };
@@ -5171,7 +5202,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         const ld = new Date(lastDays[s]), sm = ld.getUTCMonth() + 1;
         if (mi > sm) { rt[s] = ra[s] = rtc[s] = rpm[s] = rv[s] = null; continue; }     // pas encore de données 2026 ce mois-là
         const day = mi === sm ? ld.getUTCDate() : null;                                 // mois du dernier jour = partiel, sinon mois entier
-        const vt = dsum(2025, s, mi, 'ca', day), va = dsum(2025, s, mi, 'alim', day), vtc = dsum(2025, s, mi, 'tacs', day), [pa, ph] = dsumBoth(2025, s, mi, 'alim', 'heures', day);
+        const vt = dsum(PY, s, mi, 'ca', day), va = dsum(PY, s, mi, 'alim', day), vtc = dsum(PY, s, mi, 'tacs', day), [pa, ph] = dsumBoth(PY, s, mi, 'alim', 'heures', day);
         rt[s] = vt; ra[s] = va; rtc[s] = vtc; rpm[s] = (vt && vtc) ? vt / vtc : null; rv[s] = (pa && ph) ? pa / ph : null;
         st += vt || 0; sa += va || 0; stc += vtc || 0; spa += pa; sh += ph;
       }
@@ -5201,7 +5232,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       });
       return out;
     };
-    for (const [y, Y] of [[2026, Y26], [2025, Y25]]) {
+    for (const [y, Y] of [[CY, Y26], [PY, Y25]]) {
       Y.vphe_rh = clone(Y.vphe);
       Y.vphe_annual = annualRatio(y, 'alim', 'heures');
       Y.vphg_monthly = vphgMonthly(y);
@@ -5246,7 +5277,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const wAlim = y => AGG.w(OUT[y].ca_alim), wTot = y => AGG.w(OUT[y].ca_total);
 
     // changed[year][metric] = Set(stores dont une valeur a changé vs BASE)
-    const changed = { '2026': {}, '2025': {} };
+    const changed = { [CYs]: {}, [PYs]: {} };
 
     // Construit une table mensuelle : base conservée si inchangée, sinon recalcul.
     // opts.filter : 'none' (12 mois), 'nonzero' (filter_months), 'any' (filter_months keep_zero)
@@ -5271,7 +5302,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       return Object.fromEntries(MONTHS.filter(m => m in out).map(m => [m, out[m]]));
     }
 
-    for (const y of ['2026', '2025']) {
+    for (const y of [CYs, PYs]) {
       const Y = OUT[y];
       Y.oepe = monthlyTable(y, 'oepe', 'oepe', AGG.mean, { filter: 'none', transform: hebdo('oepe') });
       Y.r2p = monthlyTable(y, 'r2p', 'r2p', AGG.mean, { filter: 'none', transform: hebdo('r2p') });
@@ -5309,7 +5340,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
           return (r != null && a) ? r / a : null;
         },
       });
-      Y.ecart_rendement_monthly = monthlyTable(y, 'ecart_rendement_monthly', 'ecart_rendement', wAlim(y), { filter: y === '2025' ? 'any' : 'none' });
+      Y.ecart_rendement_monthly = monthlyTable(y, 'ecart_rendement_monthly', 'ecart_rendement', wAlim(y), { filter: y === PYs ? 'any' : 'none' });
       // Pertes (% du CA alim) : Σ pertes quotidiennes ÷ CA alim
       Y.pertes_monthly = monthlyTable(y, 'pertes_monthly', '__none__', wAlim(y), {
         filter: 'none',
@@ -5319,39 +5350,9 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         },
       });
     }
-    // Promotion (% du CA alim) et Écart de caisse (€) : sommes des saisies quotidiennes
-    Y26.promotion_monthly = monthlyTable('2026', 'promotion_monthly', '__none__', wAlim('2026'), {
-      filter: 'any',
-      transform: (v, s, m) => { const p = dsum(2026, s, MONTHS.indexOf(m) + 1, 'promo'), a = ((Y26.ca_alim[m] || {})[s]); return (p != null && a) ? p / a : null; },
-    });
-    // Écart de caisse (% du CA alim) : Σ écarts quotidiens ÷ CA alim (positif = excédent, négatif = manquant)
-    Y26.ecart_caisse_monthly = monthlyTable('2026', 'ecart_caisse_monthly', '__none__', wAlim('2026'), {
-      filter: 'any',
-      transform: (v, s, m) => { const e = dsum(2026, s, MONTHS.indexOf(m) + 1, 'ecart'), a = ((Y26.ca_alim[m] || {})[s]); return (e != null && a) ? e / a : null; },
-    });
-    Y26.uvhe_monthly = monthlyTable('2026', 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
-    // Digital : FID en % ; C&C, Uber Eats et LAD M+ saisis en MONTANTS (€). Pourcentages calculés comme dans l'Excel :
-    //   C&C / CA net total · Uber Eats / CA net total · LAD M+ / CA livraison (= Uber Eats + LAD M+).
-    // Sans montants saisis, on garde le pourcentage d'origine (historique Excel).
-    const eurDig = (m, s, k) => val(MEN, `${m} 2026`, s, k);
-    const DELIV = {};                                                   // CA livraison = Uber Eats + LAD M+
-    MONTHS.forEach(m => { for (const s of STORES) { const u = eurDig(m, s, 'uber_eur'), l = eurDig(m, s, 'lad_eur'); if (u != null && l != null) (DELIV[m] = DELIV[m] || {})[s] = u + l; } });
-    const caTot = (m, s) => (Y26.ca_total[m] || {})[s];
-    const aggCa = wTot('2026');
-    const aggLad = (row, m) => { let n = 0, d = 0; for (const s of STORES) { const x = row[s], w = (DELIV[m] || {})[s]; if (isNum(x) && isNum(w) && w) { n += x * w; d += w; } } return d ? n / d : aggCa(row, m); };
-    // FID : saisi en NOMBRE de comptes actifs → taux = comptes ÷ transactions du mois ; sans nombre, on garde le taux d'origine
-    Y26.dig_fid_actifs_m = monthlyTable('2026', 'dig_fid_actifs_m', 'fid_actifs', aggCa, { filter: 'any',
-      transform: (v, s, m) => { const nb = eurDig(m, s, 'fid_nb'), tx = dsum(2026, s, MONTHS.indexOf(m) + 1, 'tacs'); return (nb != null && tx) ? nb / tx : v; } });
-    Y26.dig_cc_ca_m = monthlyTable('2026', 'dig_cc_ca_m', 'cc_ca', aggCa, { filter: 'any',
-      transform: (v, s, m) => { const x = eurDig(m, s, 'cc_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
-    Y26.dig_uber_ca_m = monthlyTable('2026', 'dig_uber_ca_m', 'uber_ca', aggCa, { filter: 'any',
-      transform: (v, s, m) => { const x = eurDig(m, s, 'uber_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
-    Y26.dig_lad_ca_m = monthlyTable('2026', 'dig_lad_ca_m', 'lad_ca', aggLad, { filter: 'any',
-      transform: (v, s, m) => { const x = eurDig(m, s, 'lad_eur'), d = (DELIV[m] || {})[s]; return (x != null && d) ? x / d : v; } });
-
     // ── 4. PRÉVISIONNEL ──
-    Y26.ca_total_prev = monthlyTable('2026', 'ca_total_prev', 'ca_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
-    Y26.ca_alim_prev = monthlyTable('2026', 'ca_alim_prev', 'ca_alim_prev', AGG.sum, { table: PREV, filter: 'none' });
+    Y26.ca_total_prev = monthlyTable(CYs, 'ca_total_prev', 'ca_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
+    Y26.ca_alim_prev = monthlyTable(CYs, 'ca_alim_prev', 'ca_alim_prev', AGG.sum, { table: PREV, filter: 'none' });
     // Prévision CA jour par jour (page de saisie « Prévision CA ») : un mois entièrement prévu remplace le prévisionnel mensuel
     const PJ = {};
     for (const r of (S.prevjour || [])) {
@@ -5362,10 +5363,10 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     }
     OUT.prevjour = PJ;
     MONTHS.forEach((m, mi) => {
-      const dim = daysInMonth(2026, mi + 1);
+      const dim = daysInMonth(CY, mi + 1);
       for (const s of STORES) {
         let ta = 0, tt = 0, n = 0;
-        for (let d = 1; d <= dim; d++) { const x = (PJ[s] || {})[`2026-${String(mi + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`]; if (x) { ta += x.alim; tt += x.total; n++; } }
+        for (let d = 1; d <= dim; d++) { const x = (PJ[s] || {})[`${CY}-${String(mi + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`]; if (x) { ta += x.alim; tt += x.total; n++; } }
         if (n !== dim) continue;
         for (const [tbl, v] of [[Y26.ca_alim_prev, ta], [Y26.ca_total_prev, tt]]) {
           const row = tbl[m] = tbl[m] || Object.fromEntries(ALL9.map(k => [k, null])); row[s] = r2(v);
@@ -5374,11 +5375,11 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const tbl of [Y26.ca_alim_prev, Y26.ca_total_prev]) if (tbl[m]) tbl[m].FRANCHISE = AGG.sum(tbl[m]);
     });
     for (const k of ['ca_alim_prev', 'ca_total_prev']) Y26[k] = Object.fromEntries(MONTHS.filter(m => m in Y26[k]).map(m => [m, Y26[k][m]]));
-    Y26.cout_mo_prev = monthlyTable('2026', 'cout_mo_prev', 'cout_mo_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
-    Y26.cash_flow_prev = monthlyTable('2026', 'cash_flow_prev', 'cash_flow_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
-    Y26.resultat_net_prev = monthlyTable('2026', 'resultat_net_prev', 'resultat_net_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
-    const mp = monthlyTable('2026', 'marge_fin_prev', 'marge_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
-    const pp = monthlyTable('2026', 'pac_fin_prev', 'pac_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
+    Y26.cout_mo_prev = monthlyTable(CYs, 'cout_mo_prev', 'cout_mo_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
+    Y26.cash_flow_prev = monthlyTable(CYs, 'cash_flow_prev', 'cash_flow_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
+    Y26.resultat_net_prev = monthlyTable(CYs, 'resultat_net_prev', 'resultat_net_prev', AGG.sum, { table: PREV, filter: 'nonzero' });
+    const mp = monthlyTable(CYs, 'marge_fin_prev', 'marge_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
+    const pp = monthlyTable(CYs, 'pac_fin_prev', 'pac_prev', AGG.w(Y26.ca_total_prev), { table: PREV, filter: 'nonzero' });
     Y26.marge_fin_prev = Object.fromEntries(Object.entries(mp).filter(([m]) => m in Y26.marge_fin));
     Y26.pac_fin_prev = Object.fromEntries(Object.entries(pp).filter(([m]) => m in Y26.pac_fin));
 
@@ -5401,7 +5402,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const colWeighted = (T, W) => s => { let n = 0, d = 0; for (const m of monthsOf(T)) { const x = T[m][s], w = (W[m] || {})[s]; if (isNum(x) && isNum(w)) { n += x * w; d += w; } } return d ? n / d : null; };
     const franchiseWeighted = (T, W) => () => { let n = 0, d = 0; for (const m of monthsOf(T)) for (const s of STORES) { const x = T[m][s], w = (W[m] || {})[s]; if (isNum(x) && isNum(w)) { n += x * w; d += w; } } return d ? n / d : null; };
 
-    for (const y of ['2026', '2025']) {
+    for (const y of [CYs, PYs]) {
       const Y = OUT[y];
       Y.oph_annual = annual(y, 'oph_annual', ['oph'], () => perStore(colWeighted(Y.oph, Y.tacs), franchiseWeighted(Y.oph, Y.tacs)));
       Y.oepe_annual = annual(y, 'oepe_annual', ['oepe'], () => perStore(colMean(Y.oepe)));
@@ -5416,14 +5417,52 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       for (const [k, t] of [['pertes_annual', 'pertes_monthly'], ['ecart_rendement_annual', 'ecart_rendement_monthly'], ['remboursement_annual', 'remboursement_monthly']])
         Y[k] = annual(y, k, [t], () => perStore(colWeighted(Y[t], Y.ca_alim), franchiseWeighted(Y[t], Y.ca_alim)));
     }
-    Y26.promotion_annual = perStore(colWeighted(Y26.promotion_monthly, Y26.ca_alim), franchiseWeighted(Y26.promotion_monthly, Y26.ca_alim));
-    Y26.ecart_caisse_total = perStore(colWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim), franchiseWeighted(Y26.ecart_caisse_monthly, Y26.ca_alim));
-    Y26.uvhe_annual = annual('2026', 'uvhe_annual', ['uvhe_monthly'], () => perStore(colMean(Y26.uvhe_monthly)));
-    const WLAD = {}; MONTHS.forEach(m => { WLAD[m] = {}; for (const s of STORES) WLAD[m][s] = ((DELIV[m] || {})[s]) ?? caTot(m, s); });   // poids = CA livraison (à défaut CA net)
-    for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca']) {
-      const W = k === 'dig_lad_ca' ? WLAD : Y26.ca_total;
-      Y26[k] = annual('2026', k, [k + '_m'], () => perStore(colWeighted(Y26[k + '_m'], W), franchiseWeighted(Y26[k + '_m'], W)));
+    // (indicateurs saisis depuis 2026 : voir sheetOnly ci-dessous)
+    // Indicateurs saisis uniquement dans le Sheet (depuis 2026) : valables pour l'année courante et, dès 2027, pour N-1.
+    function sheetOnly(yn, Y) {
+      const ys = String(yn);
+      // Promotion (% du CA alim) et Écart de caisse (€) : sommes des saisies quotidiennes
+      Y.promotion_monthly = monthlyTable(ys, 'promotion_monthly', '__none__', wAlim(ys), {
+        filter: 'any',
+        transform: (v, s, m) => { const p = dsum(yn, s, MONTHS.indexOf(m) + 1, 'promo'), a = ((Y.ca_alim[m] || {})[s]); return (p != null && a) ? p / a : null; },
+      });
+      // Écart de caisse (% du CA alim) : Σ écarts quotidiens ÷ CA alim (positif = excédent, négatif = manquant)
+      Y.ecart_caisse_monthly = monthlyTable(ys, 'ecart_caisse_monthly', '__none__', wAlim(ys), {
+        filter: 'any',
+        transform: (v, s, m) => { const e = dsum(yn, s, MONTHS.indexOf(m) + 1, 'ecart'), a = ((Y.ca_alim[m] || {})[s]); return (e != null && a) ? e / a : null; },
+      });
+      Y.uvhe_monthly = monthlyTable(ys, 'uvhe_monthly', 'uvhe', AGG.mean, { filter: 'nonzero', transform: hebdo('uvhe') });
+      // Digital : FID en % ; C&C, Uber Eats et LAD M+ saisis en MONTANTS (€). Pourcentages calculés comme dans l'Excel :
+      //   C&C / CA net total · Uber Eats / CA net total · LAD M+ / CA livraison (= Uber Eats + LAD M+).
+      // Sans montants saisis, on garde le pourcentage d'origine (historique Excel).
+      const eurDig = (m, s, k) => val(MEN, `${m} ${yn}`, s, k);
+      const DELIV = {};                                                   // CA livraison = Uber Eats + LAD M+
+      MONTHS.forEach(m => { for (const s of STORES) { const u = eurDig(m, s, 'uber_eur'), l = eurDig(m, s, 'lad_eur'); if (u != null && l != null) (DELIV[m] = DELIV[m] || {})[s] = u + l; } });
+      const caTot = (m, s) => (Y.ca_total[m] || {})[s];
+      const aggCa = wTot(ys);
+      const aggLad = (row, m) => { let n = 0, d = 0; for (const s of STORES) { const x = row[s], w = (DELIV[m] || {})[s]; if (isNum(x) && isNum(w) && w) { n += x * w; d += w; } } return d ? n / d : aggCa(row, m); };
+      // FID : saisi en NOMBRE de comptes actifs → taux = comptes ÷ transactions du mois ; sans nombre, on garde le taux d'origine
+      Y.dig_fid_actifs_m = monthlyTable(ys, 'dig_fid_actifs_m', 'fid_actifs', aggCa, { filter: 'any',
+        transform: (v, s, m) => { const nb = eurDig(m, s, 'fid_nb'), tx = dsum(yn, s, MONTHS.indexOf(m) + 1, 'tacs'); return (nb != null && tx) ? nb / tx : v; } });
+      Y.dig_cc_ca_m = monthlyTable(ys, 'dig_cc_ca_m', 'cc_ca', aggCa, { filter: 'any',
+        transform: (v, s, m) => { const x = eurDig(m, s, 'cc_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
+      Y.dig_uber_ca_m = monthlyTable(ys, 'dig_uber_ca_m', 'uber_ca', aggCa, { filter: 'any',
+        transform: (v, s, m) => { const x = eurDig(m, s, 'uber_eur'), ca = caTot(m, s); return (x != null && ca) ? x / ca : v; } });
+      Y.dig_lad_ca_m = monthlyTable(ys, 'dig_lad_ca_m', 'lad_ca', aggLad, { filter: 'any',
+        transform: (v, s, m) => { const x = eurDig(m, s, 'lad_eur'), d = (DELIV[m] || {})[s]; return (x != null && d) ? x / d : v; } });
+
+      Y.promotion_annual = perStore(colWeighted(Y.promotion_monthly, Y.ca_alim), franchiseWeighted(Y.promotion_monthly, Y.ca_alim));
+      Y.ecart_caisse_total = perStore(colWeighted(Y.ecart_caisse_monthly, Y.ca_alim), franchiseWeighted(Y.ecart_caisse_monthly, Y.ca_alim));
+      Y.uvhe_annual = annual(ys, 'uvhe_annual', ['uvhe_monthly'], () => perStore(colMean(Y.uvhe_monthly)));
+      const WLAD = {}; MONTHS.forEach(m => { WLAD[m] = {}; for (const s of STORES) WLAD[m][s] = ((DELIV[m] || {})[s]) ?? caTot(m, s); });   // poids = CA livraison (à défaut CA net)
+      for (const k of ['dig_fid_actifs', 'dig_cc_ca', 'dig_uber_ca', 'dig_lad_ca']) {
+        const W = k === 'dig_lad_ca' ? WLAD : Y.ca_total;
+        Y[k] = annual(ys, k, [k + '_m'], () => perStore(colWeighted(Y[k + '_m'], W), franchiseWeighted(Y[k + '_m'], W)));
+      }
+
+
     }
+    sheetOnly(CY, Y26); if (PY >= 2026) sheetOnly(PY, Y25);
 
     // ── 6. ANNUEL (Sheet) : Mérieux, CFV, PPFV ──
     const ANN = idx(S.annuel, p => p);
@@ -5438,12 +5477,12 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       if (base && !diff) return clone(base);
       row.FRANCHISE = mean(STORES.map(s => row[s])); return row;
     }
-    for (const y of ['2026', '2025']) {
+    for (const y of [CYs, PYs]) {
       OUT[y].audit_merieux_annual = annualSheet(y, 'audit_merieux_annual', 'merieux');
       OUT[y].analyses_merieux_annual = annualSheet(y, 'analyses_merieux_annual', 'silliker');
     }
-    Y26.cfv = annualSheet('2026', 'cfv', 'cfv', true);
-    Y26.ppfv = annualSheet('2026', 'ppfv', 'ppfv', true);
+    Y26.cfv = annualSheet(CYs, 'cfv', 'cfv', true);
+    Y26.ppfv = annualSheet(CYs, 'ppfv', 'ppfv', true);
 
     // ── 6 bis. PONCTUEL (visites & audits datés) : prend le pas sur l'annuel ──
     const PONC = (S.ponctuel || []).map(r => ({ p: normPeriode(r.periode), s: String(r.restaurant || '').trim().toUpperCase(),
@@ -5459,13 +5498,13 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       cur.FRANCHISE = mean(STORES.map(s => cur[s]));
       OUT[y][key] = cur;
     }
-    for (const y of ['2026', '2025']) {
+    for (const y of [CYs, PYs]) {
       ponctOverlay(y, 'audit_merieux_annual', 'AUDIT_MERIEUX', 'mean');
       ponctOverlay(y, 'analyses_merieux_annual', 'ANALYSE_SILLIKER', 'mean');
     }
     // Analyses : le taux est calculé sur les nombres saisis (Σ OK ÷ Σ analyses de l'année) ; nombres exposés pour l'affichage
     OUT.meta.analyses = {};
-    for (const y of ['2026', '2025']) {
+    for (const y of [CYs, PYs]) {
       const A = {}, tot = { ok: 0, nok: 0 }; let allCounts = true;
       for (const s of STORES) {
         const rows = PONC.filter(x => x.t === 'ANALYSE_SILLIKER' && x.s === s && x.p.startsWith(y));
@@ -5480,8 +5519,8 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         A.FRANCHISE = tot; OUT.meta.analyses[y] = A;
       }
     }
-    ponctOverlay('2026', 'cfv', 'CFV', 'last');
-    ponctOverlay('2026', 'ppfv', 'PPFV', 'last');
+    ponctOverlay(CYs, 'cfv', 'CFV', 'last');
+    ponctOverlay(CYs, 'ppfv', 'PPFV', 'last');
 
     // ── 7. RGRV : dernière visite de l'année par restaurant ──
     const RG = [['QUALITE', 'qualite'], ['SERVICE', 'service'], ['PROPRETE', 'proprete'], ['GESTION DE QUART', 'gestion_quart'], ['PREVENTION ET SECURITE', 'securite_prevention']];
@@ -5489,7 +5528,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const rgrvRows = [...(S.rgrv || []), ...(S.ponctuel || []).filter(r => String(r.type || '').toUpperCase() === 'RGRV')];
     for (const r of rgrvRows) {
       const p = normPeriode(r.periode), s = String(r.restaurant || '').trim().toUpperCase();
-      if (!STORES.includes(s) || !p.startsWith('2026')) continue;
+      if (!STORES.includes(s) || !p.startsWith(CYs)) continue;
       if (!lastVisit[s] || p >= lastVisit[s].p) lastVisit[s] = { p, r };
     }
     // Par restaurant : note Excel conservée si la visite n'a pas changé,
@@ -5530,7 +5569,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
     const off = (cl.getUTCDay() + 7) % 7;           // dimanche ≤ cutoff (getUTCDay : 0 = dimanche)
     const wEnd = commonLast - off * DAY_MS, wStart = wEnd - 6 * DAY_MS;
     const wDays = [...Array(7)].map((_, i) => wStart + i * DAY_MS), wDaysN1 = wDays.map(t => t - 364 * DAY_MS);
-    const at = (t, s, f) => { const d = new Date(t), y = d.getUTCFullYear(); if (!daily[y] || y === 2024) return null; const a = daily[y][s][f]; const i = doy(y, iso(t)); return a[i] ?? null; };
+    const at = (t, s, f) => { const d = new Date(t), y = d.getUTCFullYear(); if (!daily[y] || y === P2) return null; const a = daily[y][s][f]; const i = doy(y, iso(t)); return a[i] ?? null; };
     const WF = { ca_total: 'ca', ca_alim: 'alim', tacs: 'tacs', heures: 'heures', perte_eur: 'perte' };
     const wk = {}; for (const k of [...Object.keys(WF), 'vphe']) wk[k] = { cur: {}, n1: {} };
     for (const s of STORES) {
@@ -5559,10 +5598,10 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       return out;
     };
     const F6 = ['ca', 'alim', 'tacs', 'heures', 'perte', 'heures_total', 'remb', 'promo', 'ecart'];
-    OUT.daily = { '2026': pack(2026, F6), '2025': pack(2025, F6), '2024': pack(2024, ['ca', 'alim', 'tacs']) };
-    const Y24 = OUT['2024'] = { ca_total: {}, ca_alim: {}, tacs: {}, pm: {} };
+    OUT.daily = { [CYs]: pack(CY, F6), [PYs]: pack(PY, F6), [P2s]: pack(P2, ['ca', 'alim', 'tacs']) };
+    const Y24 = OUT[P2s] = { ca_total: {}, ca_alim: {}, tacs: {}, pm: {} };
     MONTHS.forEach((m, k) => {
-      const [i0, i1] = monthRange(2024, k + 1);                       // mois civils réels de 2024
+      const [i0, i1] = monthRange(P2, k + 1);                       // mois civils réels de N-2
       const sumStore = (s, f) => { const v = real24[s][f].slice(i0, i1 + 1).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
       for (const [key, f] of [['ca_total', 'ca'], ['ca_alim', 'alim'], ['tacs', 'tacs']]) {
         Y24[key][m] = {}; let tot = 0, any = false;
@@ -5663,7 +5702,9 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
 
   function apply(sheet) {
     const fresh = SheetAdapter.build(sheet, EMBEDDED);
-    if (!fresh || !fresh['2026'] || !fresh.meta) throw new Error('données du Sheet incomplètes');
+    if (!fresh || !fresh.meta || !fresh[String(fresh.meta.year)]) throw new Error('données du Sheet incomplètes');
+    // L'année courante vient des données (la plus récente saisie par tous les restaurants) : bascule automatique au 1er janvier
+    if (typeof _setYears === 'function') _setYears(fresh.meta.year);
     for (const k of Object.keys(fresh)) {
       const cur = DASHBOARD_DATA[k], nxt = fresh[k];
       if (cur && typeof cur === 'object' && !Array.isArray(cur) && nxt && typeof nxt === 'object') replaceInPlace(cur, nxt);
@@ -5706,7 +5747,7 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXM
   function fetchOnce(timeoutMs) {
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
-    return fetch(SHEET_URL + '?action=all&_=' + Date.now() + Math.floor(Math.random() * 1000), ctrl ? { signal: ctrl.signal } : {})
+    return fetch(SHEET_URL + '?action=all&from=' + (new Date().getFullYear() - 2) + '-01-01&_=' + Date.now() + Math.floor(Math.random() * 1000), ctrl ? { signal: ctrl.signal } : {})
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .finally(() => clearTimeout(timer));
   }
@@ -6444,13 +6485,13 @@ function parseQuery(raw) {
   if ((m = q.match(/^(20\d\d)$/)))
     return { type:'year', y:+m[1], start:_utc(+m[1],0,1), end:_utc(+m[1],11,31), label:`Année ${m[1]}` };
   if ((m = q.match(/^s(?:emaine)?\s*(\d{1,2})(?:\s+(20\d\d))?$/))) {
-    const y = m[2] ? +m[2] : 2026, w = +m[1];
+    const y = m[2] ? +m[2] : YEAR_CUR, w = +m[1];
     if (w < 1 || w > 53) return null;
     const st = isoWeekMonday(y, w), en = new Date(st); en.setUTCDate(st.getUTCDate() + 6);
     return { type:'week', y, start:st, end:en, label:`Semaine ${w} · ${y} (du ${frDate(st)} au ${frDate(en)})` };
   }
   if ((m = q.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](20\d\d))?$/))) {
-    const a = +m[1], b = +m[2], y = m[3] ? +m[3] : 2026;
+    const a = +m[1], b = +m[2], y = m[3] ? +m[3] : YEAR_CUR;
     if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
       if (m[3] && a <= 12 && b > 12) return null;
       if (a > 12 || !m[3] || true) {
@@ -6471,14 +6512,14 @@ function parseQuery(raw) {
   if ((m = q.match(/^(\d{1,2})\s+([a-z]+)(?:\s+(20\d\d))?$/))) {
     const mi = MOIS_FR.indexOf(m[2]);
     if (mi >= 0) {
-      const y = m[3] ? +m[3] : 2026, d = _utc(y, mi, +m[1]);
+      const y = m[3] ? +m[3] : YEAR_CUR, d = _utc(y, mi, +m[1]);
       if (d.getUTCDate() === +m[1]) return { type:'date', y, start:d, end:d, label:`${frDate(d)}` };
     }
   }
   if ((m = q.match(/^([a-z]+)(?:\s+(20\d\d))?$/))) {
     const mi = MOIS_FR.indexOf(m[1]);
     if (mi >= 0) {
-      const y = m[2] ? +m[2] : 2026;
+      const y = m[2] ? +m[2] : YEAR_CUR;
       return { type:'month', y, start:_utc(y,mi,1), end:_utc(y,mi+1,0), label:`${MOIS_LBL[mi]} ${y}` };
     }
   }
@@ -6569,7 +6610,7 @@ function renderSearchResult() {
   const pair = aggPaired(r, p.start, p.end, n1p.start);
   const cur = pair.cur, n1 = pair.n1;
   if (cur.ca == null) {
-    box.innerHTML = `<div style="color:var(--muted);font-size:.85rem;padding:14px 4px">Aucune donnée pour « ${p.label} » ${r==='FRANCHISE'?'':('— '+r)} (données 2026 jusqu'au ${(DASHBOARD_DATA.meta||{}).franchise_cutoff ? Object.values(DASHBOARD_DATA.meta.franchise_cutoff).slice(-1)[0].split('-').reverse().join('/') : ''}).</div>`;
+    box.innerHTML = `<div style="color:var(--muted);font-size:.85rem;padding:14px 4px">Aucune donnée pour « ${p.label} » ${r==='FRANCHISE'?'':('— '+r)} (données ${YEAR_CUR} jusqu'au ${(DASHBOARD_DATA.meta||{}).franchise_cutoff ? Object.values(DASHBOARD_DATA.meta.franchise_cutoff).slice(-1)[0].split('-').reverse().join('/') : ''}).</div>`;
     return;
   }
   let partial = '';
@@ -6703,7 +6744,7 @@ body.dark-mode .as-flag { color: #c4b5fd; }
 </style>
 <script>
 function _sumPct(kpiId, r) {
-  const a = calcAnnualComparable(kpiId, r, 2026), b = calcAnnualComparable(kpiId, r, 2025);
+  const a = calcAnnualComparable(kpiId, r, YEAR_CUR), b = calcAnnualComparable(kpiId, r, YEAR_PREV);
   return (a != null && b) ? (a - b) / b * 100 : null;
 }
 function _pctFR(p) { return Math.abs(p).toFixed(1).replace('.', ','); }
@@ -6726,7 +6767,7 @@ function _numFR(n) { return n < _NUM_FR.length ? _NUM_FR[n] : String(n); }
 function renderAutoSummary() {
   const el = document.getElementById('autoSummary');
   if (!el) return;
-  if (kpiViewMode || compareMode || prevMode || currentYear !== 2026 || !WEEK) { el.innerHTML = ''; return; }
+  if (kpiViewMode || compareMode || prevMode || currentYear !== YEAR_CUR || !WEEK) { el.innerHTML = ''; return; }
   const r = currentResto || 'FRANCHISE';
   const nom = r === 'FRANCHISE' ? 'la franchise' : r;
 
@@ -6745,7 +6786,7 @@ function renderAutoSummary() {
   const caM  = (p) => move(p, 'bondit de', 'progresse de', 'chute de', 'recule de', 'reste stable');
 
   const ca = dw('ca_total'), vphe = dw('vphe');
-  let body = `<b>${nom}</b> : le chiffre d'affaires ${caM(ca)} sur ${weekMode === 'm' ? 'la même période' : 'la même semaine'} 2025`;
+  let body = `<b>${nom}</b> : le chiffre d'affaires ${caM(ca)} sur ${weekMode === 'm' ? 'la même période' : 'la même semaine'} ${YEAR_PREV}`;
   const vM = move(vphe, 'bondit de', 'progresse de', 'chute de', 'recule de', 'reste stable');
   body += `, la productivité horaire (VPHE) ${vM}.`;
 
@@ -6905,8 +6946,8 @@ const CAT_COLORS = { ca:['F59E0B','FFF8E1'], digital:['0EA5E9','E0F2FE'], qsp:['
 let EXP = null;
 function _expLoad() {
   let s = null; try { s = JSON.parse(localStorage.getItem(EXP_KEY) || 'null'); } catch (e) {}
-  const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
-  EXP = Object.assign({ format: 'periods', year: years[0] || '2026', restos: ['FRANCHISE', ...RESTOS],
+  const years = [String(YEAR_CUR), String(YEAR_PREV), String(YEAR_P2)].filter(y => hasYearData(+y));
+  EXP = Object.assign({ format: 'periods', year: years[0] || String(YEAR_CUR), restos: ['FRANCHISE', ...RESTOS],
                         kpis: KPIs.map(k => k.id), n1: true, synth: true }, s || {});
   EXP.restos = EXP.restos.filter(r => r === 'FRANCHISE' || RESTOS.includes(r));
   EXP.kpis = EXP.kpis.filter(id => KPIs.some(k => k.id === id));
@@ -6932,7 +6973,7 @@ function _expRender() {
   document.querySelectorAll('#expFormat button').forEach(b => b.classList.toggle('on', b.dataset.v === EXP.format));
   document.getElementById('expXlsxOpts').style.display = EXP.format === 'xlsx' ? '' : 'none';
   document.getElementById('expPeriodsOpts').style.display = EXP.format === 'periods' ? '' : 'none';
-  const years = ['2026', '2025', '2024'].filter(y => hasYearData(+y));
+  const years = [String(YEAR_CUR), String(YEAR_PREV), String(YEAR_P2)].filter(y => hasYearData(+y));
   document.getElementById('expYear').innerHTML = years.map(y => `<button class="${y === EXP.year ? 'on' : ''}" onclick="expSet('year','${y}')">${y}</button>`).join('');
   document.getElementById('expRestos').innerHTML = ['FRANCHISE', ...RESTOS].map(r =>
     `<button class="${EXP.restos.includes(r) ? 'on' : ''}" onclick="expToggleResto('${r}')">${restoDisplay(r)}</button>`).join('');
@@ -7031,7 +7072,7 @@ function _sheetName(n, used) {
   used.add(s); return s;
 }
 function exportExcel(opts) {
-  const y = +opts.year, kpis = KPIs.filter(k => opts.kpis.includes(k.id) && (y !== 2024 || hasKpiYear(k.id, 2024)));
+  const y = +opts.year, kpis = KPIs.filter(k => opts.kpis.includes(k.id) && (y !== YEAR_P2 || hasKpiYear(k.id, YEAR_P2)));
   const restos = ['FRANCHISE', ...RESTOS].filter(r => opts.restos.includes(r));
   const meta = DASHBOARD_DATA.meta || {};
   const lastDays = Object.values(meta.last_day_by_resto || {}).filter(Boolean).sort();
@@ -7388,8 +7429,8 @@ function exportPeriods() {
 
       <div class="faq-sec-title" style="color:#6d28d9;border-color:#6d28d9">🧭 Utiliser le dashboard</div>
       <div class="faq-item"><div class="faq-q">Choisir un restaurant</div><div class="faq-a">Les onglets en haut basculent entre <b>Vue Franchise</b> (les 8 restaurants cumulés) et chaque site. Toutes les vues, cartes et le commentaire suivent ce choix.</div></div>
-      <div class="faq-item"><div class="faq-q">Les modes (2026 · 2025 · N-1 · Prév · Classement)</div><div class="faq-a"><b>2026</b> : l'année en cours. <b>2025</b> : l'année passée seule. <b>N-1</b> : 2026 face à 2025 côte à côte. <b>Prév</b> : le réel 2026 face au prévisionnel (budget). <b>Classement</b> : comparer les restaurants entre eux sur un indicateur.</div></div>
-      <div class="faq-item"><div class="faq-q">Comparable « à date »</div><div class="faq-a">Les écarts avec 2025 ne comptent que la <b>même période écoulée</b> : au 12 juillet 2026, on compare au 1<sup>er</sup>→12 juillet 2025, jamais à l'année pleine. Sur les courbes, 2025 peut s'afficher sur toute l'année pour référence, mais le pourcentage d'évolution reste à date.</div></div>
+      <div class="faq-item"><div class="faq-q">Les modes (<span data-y="0">2026</span> · <span data-y="1">2025</span> · N-1 · Prév · Classement)</div><div class="faq-a"><b><span data-y="0">2026</span></b> : l'année en cours. <b><span data-y="1">2025</span></b> : l'année passée seule. <b>N-1</b> : <span data-y="0">2026</span> face à <span data-y="1">2025</span> côte à côte. <b>Prév</b> : le réel <span data-y="0">2026</span> face au prévisionnel (budget). <b>Classement</b> : comparer les restaurants entre eux sur un indicateur.</div></div>
+      <div class="faq-item"><div class="faq-q">Comparable « à date »</div><div class="faq-a">Les écarts avec <span data-y="1">2025</span> ne comptent que la <b>même période écoulée</b> : au 12 juillet <span data-y="0">2026</span>, on compare au 1<sup>er</sup>→12 juillet <span data-y="1">2025</span>, jamais à l'année pleine. Sur les courbes, <span data-y="1">2025</span> peut s'afficher sur toute l'année pour référence, mais le pourcentage d'évolution reste à date.</div></div>
       <div class="faq-item"><div class="faq-q">Détail d'un indicateur</div><div class="faq-a">Cliquer une carte KPI ouvre le graphique et le tableau mois par mois, avec bascule <b>Annuel / Mensuel</b> et navigation d'un restaurant à l'autre.</div></div>
       <div class="faq-item"><div class="faq-q">Bandeau semaine</div><div class="faq-a">Sous les bannières, les chiffres clés de la <b>semaine en cours</b> (CA, alim, transactions, VPHE, pertes) vs la semaine équivalente de l'an dernier, et le CA vs le <b>prévisionnel</b>. Les flèches ◀ ▶ changent de semaine ; la météo et les commentaires saisis s'affichent dessous. Cliquer une carte déroule le détail jour par jour.</div></div>
       <div class="faq-item"><div class="faq-q">Recherche par période 🔍</div><div class="faq-a">Choisir un restaurant et une période — un raccourci (cette semaine, ce mois, cette année) ou des dates au calendrier — pour obtenir CA, alim, transactions et VPHE sur cette période vs 2025.</div></div>
@@ -7823,7 +7864,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261013-125608';
+const BUILD_VERSION = '20261013-151743';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

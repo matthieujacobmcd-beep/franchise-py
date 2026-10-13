@@ -399,7 +399,7 @@ function loadTx(){
   TXLoading=(async()=>{
     try{
       const c=new AbortController(), to=setTimeout(()=>c.abort(),90000);
-      const r=await fetch(APPS_SCRIPT_URL+'?action=all&_='+Date.now(),{signal:c.signal}); clearTimeout(to);
+      const r=await fetch(APPS_SCRIPT_URL+'?action=all&from='+(new Date().getFullYear()-2)+'-01-01&_='+Date.now(),{signal:c.signal}); clearTimeout(to);
       const j=await r.json(), m={}, caMap={}, alMap={};
       (j.quotidien||[]).forEach(x=>{
         if(typeof x.transactions==='number'){ (m[x.restaurant]=m[x.restaurant]||{})[x.periode]=x.transactions; }
@@ -791,14 +791,16 @@ async function parsePerfFile(file){
   }
   if(!monthKey) throw new Error('mois introuvable dans le fichier (colonne B des onglets) — est-ce bien un fichier Performance Restaurants ?');
   if(!order.length) throw new Error('aucun onglet restaurant lu');
-  return { key:monthKey, label:monthKey.charAt(0)+monthKey.slice(1).toLowerCase()+(year?' '+year:''), idx:PERF_MONTHS.indexOf(monthKey), restos, order, lexique:lexique.length?lexique:null };
+  // 2026 : clés historiques (JUIN…) ; toute autre année : clé « JUIN 2027 » et rang décalé → l'historique n'est jamais écrasé
+  const m0=PERF_MONTHS.indexOf(monthKey), other=year&&year!==2026;
+  return { key:other?`${monthKey} ${year}`:monthKey, label:monthKey.charAt(0)+monthKey.slice(1).toLowerCase()+(year?' '+year:''), idx:other?12*(year-2026)+m0:m0, restos, order, lexique:lexique.length?lexique:null };
 }
 
 // ── Prévision CA (calendrier) : CA N-1 / N-2 visibles, saisie en € ou en %, ventilation d'un objectif mensuel, export Excel ──
 const PV_TAB = 'prevca';
 let PREVJ = null, PREVT = null, ALIMM = null;              // prévisions enregistrées (CA alim / CA total) et CA alim réel : { restaurant: { 'AAAA-MM-JJ': euros } }
 const PV = { ym: null, resto: null, vals: {}, objU: 'e', w: '7030', coef: 1.01 };
-const PV_MIN = '2026-11', PV_MAX = '2032-12';              // saisie possible à partir de novembre 2026
+const PV_MIN = '2026-11', PV_YMAX = new Date().getFullYear() + 6, PV_MAX = PV_YMAX + '-12';   // saisie à partir de novembre 2026 et jusqu'à 6 ans après l'année en cours (glisse avec le temps)
 const PV_JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const _pvT = s => Date.parse(s + 'T00:00:00Z');
 const pvShift = (iso, days) => new Date(_pvT(iso) + days * 86400000).toISOString().slice(0, 10);
@@ -855,7 +857,7 @@ function renderPrevCa() {
   if (!ALIMM || !PREVJ) { p.innerHTML = `<div class="panel-head"><div class="panel-title">Prévision CA</div></div><div class="hint">⏳ Chargement du CA des années précédentes…</div>`; loadTx(); return; }
   pvInit();
   const [y, m] = PV.ym.split('-').map(Number), days = pvDays(PV.ym), name = RESTOS.find(r => r[0] === curResto)[1];
-  const mois = MONTHS.map(x => x.charAt(0) + x.slice(1).toLowerCase()), minM = y === 2026 ? 11 : 1, maxM = y === 2032 ? 12 : 12;
+  const mois = MONTHS.map(x => x.charAt(0) + x.slice(1).toLowerCase()), minM = y === 2026 ? 11 : 1, maxM = 12;
   const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7, today = new Date().toISOString().slice(0, 10);
   let cells = PV_JOURS.map((j, i) => `<div class="pv-h ${i > 4 ? 'we' : ''}">${j}</div>`).join('') + '<div class="pv-empty"></div>'.repeat(lead);
   for (const iso of days) {
@@ -872,7 +874,7 @@ function renderPrevCa() {
       <div class="last-saisie">Saisis le CA NET ALIMENTAIRE prévu : le CA net total s'en déduit (alimentaire × coefficient, +1 % en général). Chaque jour affiche le CA alimentaire du jour équivalent N-1 et N-2 (même jour de la semaine).</div></div>
       <div class="period"><button class="step" onclick="pvMonth(-1)">◀</button>
         <select id="pvM" onchange="pvPick()">${mois.map((n, i) => `<option value="${i + 1}" ${i + 1 === m ? 'selected' : ''} ${i + 1 < minM || i + 1 > maxM ? 'disabled' : ''}>${n}</option>`).join('')}</select>
-        <select id="pvY" onchange="pvPick()">${[2026, 2027, 2028, 2029, 2030, 2031, 2032].map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <select id="pvY" onchange="pvPick()">${Array.from({ length: PV_YMAX - 2025 }, (_, i) => 2026 + i).map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <button class="step next" onclick="pvMonth(1)">Mois suivant ▶</button></div></div>
     <div class="pv-recap" id="pvRecap"></div>
     <div class="pv-obj"><div class="field"><label>Objectif du mois (CA alimentaire)</label><div style="display:flex;gap:6px"><input type="number" step="any" id="pvObj" placeholder="ex. 450000 ou 3"><select id="pvObjU" style="max-width:90px"><option value="e">€</option><option value="p">% vs N-1</option></select></div></div>
