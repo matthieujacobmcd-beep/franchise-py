@@ -273,6 +273,12 @@ function weekMonthKey(p){
 }
 
 // ── Dernière période saisie (pour se placer sur la suivante) ──
+let RECENT=null, RECENT_P=null;                  // CA des ~10 dernières semaines : {restaurant:{date:CA}}
+function loadRecent(){
+  if(RECENT||RECENT_P||!configured()) return RECENT_P;
+  RECENT_P=(async()=>{ try{ const r=await fetch(APPS_SCRIPT_URL+'?action=recent&days=70&_='+Date.now()); const j=await r.json(); if(j&&j.ca) RECENT=j.ca; }catch(e){} RECENT_P=null; })();
+  return RECENT_P;
+}
 let LAST=null, LAST_STATE='loading';          // loading → (cache) → live | fail : tant que la dernière saisie n'est pas connue, la saisie reste fermée
 const LAST_KEY='py_last_v1';
 try{ const c=JSON.parse(localStorage.getItem(LAST_KEY)||'null'); if(c&&c.last){ LAST=c.last; LAST_STATE='cache'; } }catch(e){}
@@ -320,7 +326,7 @@ function init(){
   if(saved && RESTOS.some(r=>r[0]===saved)) setResto(saved); else showPicker();
   const before=curResto?JSON.stringify(LAST&&LAST[curTab]&&LAST[curTab][curResto]):null;
   loadLast().then(()=>{
-    loadTx();                                       // CA des semaines précédentes : sert au contrôle de cohérence avant enregistrement
+    loadRecent();                                   // CA des dernières semaines (léger) : contrôle de cohérence avant enregistrement
     if(!curResto||curTab==='documents'||curTab==='ponctuel'||curTab==='prevca') return;
     const typed=[...document.querySelectorAll('#fieldsGrid input, #fieldsGrid textarea')].some(e=>!e.readOnly&&e.value!=='');
     const changed=before!==JSON.stringify(LAST&&LAST[curTab]&&LAST[curTab][curResto]);
@@ -657,9 +663,9 @@ function updateDateBanner(){
 function periodWarning(){ const m=periodMsgs(); return m.length?m.map(x=>'⚠️ '+x).join('\n\n')+'\n\nEnregistrer quand même ?':''; }
 // ── Contrôle de cohérence du CA saisi avec les mêmes jours de la semaine des semaines précédentes ──
 function salesSanity(){
-  if(curTab!=='quotidien'||!CAM) return '';
+  const SRC=RECENT||CAM; if(curTab!=='quotidien'||!SRC) return '';
   const ca=num('f_ca_net_total'), iso=currentPeriode(); if(ca==null||!iso) return '';
-  const avgFor=(wd)=>{ const v=[]; const base=new Date(iso+'T12:00:00'); for(let k=1;k<=56;k++){ const d=new Date(base); d.setDate(d.getDate()-k); if(d.getDay()!==wd) continue; const x=(CAM[curResto]||{})[isoDate(d)]; if(typeof x==='number'&&x>0) v.push(x); } return v.length>=3?v.reduce((a,b)=>a+b,0)/v.length:null; };
+  const avgFor=(wd)=>{ const v=[]; const base=new Date(iso+'T12:00:00'); for(let k=1;k<=56;k++){ const d=new Date(base); d.setDate(d.getDate()-k); if(d.getDay()!==wd) continue; const x=(SRC[curResto]||{})[isoDate(d)]; if(typeof x==='number'&&x>0) v.push(x); } return v.length>=3?v.reduce((a,b)=>a+b,0)/v.length:null; };
   const wd=new Date(iso+'T12:00:00').getDay(), avg=avgFor(wd); if(!avg) return '';
   const eur=n=>Math.round(n).toLocaleString('fr-FR')+' €';
   let best=wd, bestGap=Math.abs(ca-avg)/avg;
@@ -703,7 +709,7 @@ async function save(){
   if(['quotidien','hebdomadaire','mensuel'].includes(curTab)){
     const st=periodState();
     if(st&&st.blocking){ msg.className='save-msg err'; msg.textContent='Cette période est dans le futur : enregistrement impossible.'; return; }
-    if(curTab==='quotidien'&&!CAM&&TXLoading) await Promise.race([TXLoading,new Promise(r=>setTimeout(r,4000))]);
+    if(curTab==='quotidien'&&!RECENT&&!CAM){ const pr=loadRecent()||TXLoading; if(pr) await Promise.race([pr,new Promise(r=>setTimeout(r,4000))]); }
     const warns=periodMsgs(); const sane=salesSanity(); if(sane) warns.push(sane);
     if(curTab==='quotidien'){ const miss=[['ca_net_alim','CA net alimentaire'],['transactions','transactions'],['heures_equipier','heures équipier']].filter(([k])=>!(data[k]>0)).map(x=>x[1]); if(miss.length) warns.push('Non renseigné ou à 0 : '+miss.join(', ')+'.'); }
     const rows=fieldsFor(curTab).filter(f=>data[f.k]!=null&&f.type!=='textarea'&&f.type!=='select').slice(0,10).map(f=>{ const v=data[f.k]; return [f.l, (isPct(f)||f.auto)&&typeof v==='number'?(Math.round(v*1e6)/1e4).toString().replace('.',',')+' %':String(v).replace('.',',')+(f.u&&f.u!=='%'?' '+f.u:'')]; });
