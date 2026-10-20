@@ -18,6 +18,12 @@
   .login-box input{ width:100%; padding:11px 13px; border:1.5px solid var(--border); border-radius:11px; font-size:1rem; font-family:inherit; margin-bottom:12px; }
   .login-box button{ width:100%; padding:11px; border:none; border-radius:11px; background:var(--gold); color:#fff; font-size:1rem; font-weight:800; cursor:pointer; font-family:inherit; }
   .login-err{ color:var(--red); font-size:.8rem; height:18px; margin-top:4px; }
+  .login-box label.rem{ display:flex; align-items:center; gap:8px; font-size:.8rem; color:var(--muted); margin:0 0 14px; cursor:pointer; user-select:none; text-align:left; }
+  .login-box label.rem input{ width:auto; margin:0; padding:0; accent-color:var(--gold); }
+  .login-box button.loading{ cursor:wait; opacity:.92; }
+  .lspin{ display:inline-block; width:15px; height:15px; border:2.5px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:lspin .7s linear infinite; vertical-align:-3px; margin-right:9px; }
+  @keyframes lspin{ to{ transform:rotate(360deg); } }
+  .foot-out{ text-align:center; padding:18px 12px 26px; font-size:.74rem; } .foot-out a{ color:var(--muted); cursor:pointer; text-decoration:underline; }
   /* App */
   #app{ display:none; }
   .topbar{ background:#fff; border-bottom:1px solid var(--border); padding:14px 22px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; position:sticky; top:0; z-index:20; }
@@ -144,7 +150,8 @@
     <h1>Franchise PY — Saisie</h1>
     <p>Saisie des indicateurs par restaurant</p>
     <input type="password" id="pwd" placeholder="Mot de passe" autocomplete="current-password">
-    <button onclick="checkPwd()">Accéder</button>
+    <label class="rem"><input type="checkbox" id="remMe"> Se souvenir de moi</label>
+    <button id="loginBtn" onclick="checkPwd()">Accéder</button>
     <div class="login-err" id="loginErr"></div>
   </div>
 </div>
@@ -170,6 +177,7 @@
   </div>
   <div class="tab-bar" id="tabBar"></div>
   <div class="wrap"><div class="panel" id="panel"></div></div>
+  <div class="foot-out"><a onclick="logoutSaisie()">Se déconnecter de cet appareil</a></div>
   <div class="cfg-warn" id="cfgWarn" style="display:none">⚙️ La page n'est pas encore reliée au Google Sheet — remplace <b>APPS_SCRIPT_URL</b> en haut du script par l'URL de ton Apps Script (étape 3). En attendant, l'enregistrement est désactivé.</div>
 </div>
 
@@ -177,21 +185,33 @@
 // ══════════════════════════════════════════════════════════════════
 //  CONFIG
 // ══════════════════════════════════════════════════════════════════
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXMj0WBqA1lZueFh6rVm1E8UQAvb7ClCh3JUmbcjOfvs0zPphuw/exec';   // …/exec
-const PWD_HASH = '08c8196053521a48310c141260c4a9475488de7b7828a2f8c2e4ee964b6cf941'; // « FranchisePY2026 »
+/*CFG_START*/const CFG = {"id": "py", "title": "Franchise PY", "restos": [{"key": "CHAMBERY", "name": "Chambery", "export_name": "Chambéry", "short": "Chambery", "tab": "Chambery", "chip": "CHAMBERY", "noms": "Chambéry", "label": "Chambéry", "bg": "#fff8e1", "color": "#92650a", "perf": "CHAMBERY NORD"}, {"key": "AIX LES BAINS", "name": "Aix les Bains", "short": "Aix", "tab": "Aix les Bains", "chip": "AIX", "noms": "Aix", "label": "Aix les Bains", "bg": "#e8f5e9", "color": "#15803d", "perf": "AIX LES BAINS"}, {"key": "BELLEY", "name": "Belley", "short": "Belley", "tab": "Belley", "chip": "BELLEY", "noms": "Belley", "label": "Belley", "bg": "#e3f2fd", "color": "#1565c0", "perf": "BELLEY"}, {"key": "ST ALBAN", "name": "St Alban", "short": "St Alban", "tab": "St alban", "chip": "ST ALBAN", "noms": "St Alban", "label": "St Alban", "bg": "#fce4ec", "color": "#c2185b", "perf": "SAINT ALBAN LEYSSE RN"}, {"key": "LES ABRETS", "name": "Les Abrets", "short": "Les Abrets", "tab": "Les abrets", "chip": "ABRETS", "noms": "Les Abrets", "label": "Les Abrets", "bg": "#e0f2f1", "color": "#00695c", "perf": "LES ABRETS"}, {"key": "PDB", "name": "Pont-de-Beauvoisin", "short": "Pont-de-B.", "tab": "Pdb", "chip": "PDB", "noms": "PDB", "label": "Pont-de-Beauvoisin", "bg": "#fff3e0", "color": "#e65100", "perf": "PONT DE BEAUVOISIN"}, {"key": "FRANCIN", "name": "Francin", "short": "Francin", "tab": "Francin", "chip": "FRANCIN", "noms": "Francin", "label": "Francin", "bg": "#f3e8ff", "color": "#7c3aed", "perf": "FRANCIN"}, {"key": "VIVIERS", "name": "Viviers", "short": "Viviers", "tab": "Viviers", "chip": "VIVIERS", "noms": "Viviers", "label": "Viviers", "bg": "#fef2f2", "color": "#dc2626", "perf": "VIVIERS DU LAC"}], "open": {"VIVIERS": "2025-01-03"}, "apps_script_url": "https://script.google.com/macros/s/AKfycbzMqrUyD2x2PfEY3qjnXMj0WBqA1lZueFh6rVm1E8UQAvb7ClCh3JUmbcjOfvs0zPphuw/exec", "pwd_hash": "08c8196053521a48310c141260c4a9475488de7b7828a2f8c2e4ee964b6cf941", "files": {"dashboard": "dashboard_restogroup.html", "saisie": "saisie_franchise_py.html", "apps_script": "AppsScript_SaisiePY.gs"}};/*CFG_END*/
+const APPS_SCRIPT_URL = CFG.apps_script_url;   // …/exec
+const PWD_HASH = CFG.pwd_hash;
+const OPEN_DATES = CFG.open || {};            // dates d'ouverture : aucun CA avant
 
 // ── Mot de passe ──
 async function sha256(s){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+function loginBusy(on){ const b=document.getElementById('loginBtn'); if(!b) return; b.disabled=on; b.classList.toggle('loading',on); b.innerHTML=on?'<span class="lspin"></span>Connexion en cours…':'Accéder'; }
 async function checkPwd(){
+  const b=document.getElementById('loginBtn'); if(b&&b.disabled) return;
   const v=document.getElementById('pwd').value;
+  loginBusy(true);                                                   // indicateur visible tout de suite
+  await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,60)));
   const hv=await sha256(v);
-  if(hv===PWD_HASH){ sessionStorage.setItem('py_saisie','1'); sessionStorage.setItem('py_pwdhash',hv); showApp(); }
-  else { const e=document.getElementById('loginErr'); e.textContent='Mot de passe incorrect'; setTimeout(()=>e.textContent='',2500); }
+  if(hv===PWD_HASH){
+    sessionStorage.setItem('py_saisie','1'); sessionStorage.setItem('py_pwdhash',hv);
+    try{ if(document.getElementById('remMe').checked) localStorage.setItem('py_remember',hv); else localStorage.removeItem('py_remember'); }catch(e){}
+    await new Promise(r=>setTimeout(r,350));
+    showApp(); loginBusy(false);
+  }
+  else { loginBusy(false); const e=document.getElementById('loginErr'); e.textContent='Mot de passe incorrect'; setTimeout(()=>e.textContent='',2500); }
 }
+function logoutSaisie(){ try{ localStorage.removeItem('py_remember'); }catch(e){} try{ sessionStorage.removeItem('py_saisie'); sessionStorage.removeItem('py_pwdhash'); }catch(e){} location.reload(); }
 function showApp(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='block'; init(); }
 
 // ── Modèle ──
-const RESTOS=[['CHAMBERY','Chambéry'],['AIX LES BAINS','Aix les Bains'],['BELLEY','Belley'],['ST ALBAN','St Alban'],['LES ABRETS','Les Abrets'],['PDB','Pont-de-Beauvoisin'],['FRANCIN','Francin'],['VIVIERS','Viviers']];
+const RESTOS=CFG.restos.map(r=>[r.key,r.label]);
 const MONTHS=['JANVIER','FÉVRIER','MARS','AVRIL','MAI','JUIN','JUILLET','AOÛT','SEPTEMBRE','OCTOBRE','NOVEMBRE','DÉCEMBRE'];
 const TABS=[['quotidien','Quotidien'],['hebdomadaire','Hebdomadaire'],['mensuel','Mensuel'],['ponctuel','Ponctuel (visites & audits)'],['previsionnel','Prévisionnel'],['prevca','Prévision CA (calendrier)'],['documents','Documents']];
 // Indicateurs saisis chaque semaine : le mois correspondant (onglet Mensuel)
@@ -921,8 +941,8 @@ const pvShift = (iso, days) => new Date(_pvT(iso) + days * 86400000).toISOString
 const pvEur = n => n == null ? '—' : Math.round(n).toLocaleString('fr-FR') + ' €';
 const pvPct = n => n == null ? '—' : (n >= 0 ? '+' : '−') + Math.abs(n * 100).toFixed(1).replace('.', ',') + ' %';
 function pvDays(ym) { const [y, m] = ym.split('-').map(Number), n = new Date(Date.UTC(y, m, 0)).getUTCDate(); return [...Array(n)].map((_, i) => `${y}-${pad2(m)}-${pad2(i + 1)}`); }
-function pvCa(r, iso) {                                     // CA alimentaire réel saisi ; Viviers : rien avant son ouverture (03/01/2025)
-  if (r === 'VIVIERS' && iso < '2025-01-03') return null;
+function pvCa(r, iso) {                                     // CA alimentaire réel saisi ; restaurant ouvert plus tard : rien avant son ouverture
+  if (OPEN_DATES[r] && iso < OPEN_DATES[r]) return null;
   const v = ((ALIMM || {})[r] || {})[iso]; return (typeof v === 'number' && v > 0) ? v : null;
 }
 const pvRef = (r, iso) => pvCa(r, iso) ?? (((PREVJ || {})[r] || {})[iso] ?? null);   // réel, sinon la prévision enregistrée (années lointaines)
@@ -1190,7 +1210,7 @@ function pvModelSheet(r, Y, months, base, prevOf, prevT) {
   const nb = months.length + (months.length > 1 ? 1 : 0);
   return { name: `PREV ${Y} ${base === 'alim' ? 'ALIM' : 'TOTAL'} - ${nm}`.slice(0, 31), rows, widths: [11, ...Array.from({ length: nb }, () => [15, 11, 10]).flat()], freeze: [1, 2], hasData: tot.pv > 0 };
 }
-const pvTotRef = (r, iso) => { const ri = pvShift(iso, -364), v = ((CAM || {})[r] || {})[ri]; if (r === 'VIVIERS' && ri < '2025-01-03') return null; return (typeof v === 'number' && v > 0) ? v : (((PREVT || {})[r] || {})[ri] ?? null); };
+const pvTotRef = (r, iso) => { const ri = pvShift(iso, -364), v = ((CAM || {})[r] || {})[ri]; if (OPEN_DATES[r] && ri < OPEN_DATES[r]) return null; return (typeof v === 'number' && v > 0) ? v : (((PREVT || {})[r] || {})[ri] ?? null); };
 async function pvExport() {
   const scope = document.getElementById('pvScope').value, base = document.getElementById('pvBase').value, [Y, M] = PV.ym.split('-').map(Number);
   const restos = scope === 'all' ? RESTOS.map(r => r[0]) : [curResto], months = scope === 'month' ? [M] : [...Array(12)].map((_, i) => i + 1);
@@ -1218,7 +1238,9 @@ async function pvExport() {
 
 // ── Démarrage ──
 document.getElementById('pwd').addEventListener('keydown',e=>{ if(e.key==='Enter') checkPwd(); });
-if(sessionStorage.getItem('py_saisie')==='1') showApp();
+(function(){ let ok=sessionStorage.getItem('py_saisie')==='1';
+  if(!ok){ try{ if(localStorage.getItem('py_remember')===PWD_HASH){ sessionStorage.setItem('py_saisie','1'); sessionStorage.setItem('py_pwdhash',PWD_HASH); ok=true; } }catch(e){} }
+  if(ok) showApp(); })();
 </script>
 </body>
 </html>
