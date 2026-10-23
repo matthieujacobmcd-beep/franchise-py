@@ -8063,12 +8063,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) esbT
 @media (max-width:760px){ .svc-add, .svc-act .suivi-done-btn { width:100%; padding:9px; font-size:.78rem; } }
 </style>
 <script>
-// Une demande traitée peut recevoir un commentaire (ce qui a été fait, pièce commandée, suite à donner…). Enregistré dans le Sheet du suivi par l'Apps Script du suivi
+// Toute demande (en attente ou traitée) peut recevoir un commentaire (ce qui a été fait, pièce commandée, suite à donner…). Enregistré dans le Sheet du suivi par l'Apps Script du suivi
 // (colonnes « commentaire » et « date_commentaire »), donc lu par tous les utilisateurs du dashboard. Modifiable à tout moment ; vide = commentaire retiré.
 let suiviEdit = null;                                           // id de la demande dont le commentaire est en cours de saisie
 const svcEsc = s => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
 function suiviComCell(i, done) {
-  if (!done) return '';                                         // le commentaire s'ajoute une fois la demande faite
   const id = String(i.id), t = String(i.commentaire || '').trim();
   if (suiviEdit === id) return `<div class="svc-blk"><textarea class="svc-ta" id="svcTxt" maxlength="600" placeholder="Ex. porte réparée, pièce commandée, passage de … prévu le …">${svcEsc(t)}</textarea>
     <div class="svc-act"><button type="button" class="suivi-done-btn" onclick="suiviComSave('${svcEsc(id)}')">Enregistrer</button><button type="button" class="svc-cancel" onclick="suiviComCancel()">Annuler</button><span class="svc-msg" id="svcMsg"></span></div></div>`;
@@ -9058,7 +9057,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261023-130835';
+const BUILD_VERSION = '20261023-131812';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
