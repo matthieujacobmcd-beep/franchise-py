@@ -8048,6 +8048,48 @@ setInterval(esbTick, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) esbTick(); });
 </script>
 
+<!-- ════════ SUIVI DES INTERVENTIONS : COMMENTAIRE SUR CHAQUE DEMANDE TRAITÉE ════════ -->
+<style>
+.svc-blk { margin-top:7px; padding-top:6px; border-top:1px dashed var(--border); }
+.svc-txt { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.76rem; line-height:1.45; color:var(--text); }
+.svc-meta { font-size:.64rem; color:var(--muted); margin-top:3px; } .svc-meta a { color:#0d9488; font-weight:700; cursor:pointer; text-decoration:underline; margin-left:6px; }
+.svc-add { background:transparent; color:#0d9488; border:1.5px dashed #0d9488; border-radius:8px; padding:4px 9px; font-size:.68rem; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; margin-top:6px; }
+.svc-add:hover { background:rgba(13,148,136,.08); }
+.svc-ta { width:100%; min-width:210px; box-sizing:border-box; font-family:inherit; font-size:.78rem; padding:7px 9px; border:1.5px solid #0d9488; border-radius:9px; background:var(--card); color:var(--text); resize:vertical; min-height:64px; }
+.svc-act { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+.svc-cancel { background:transparent; border:1.5px solid var(--border); color:var(--muted); border-radius:8px; padding:5px 10px; font-size:.68rem; font-weight:700; cursor:pointer; font-family:inherit; }
+.svc-msg { font-size:.68rem; font-weight:700; color:#b45309; flex:1 1 100%; }
+.suivi-table td[data-label="Demande"]:has(.svc-ta) { max-width:360px !important; }
+@media (max-width:760px){ .svc-add, .svc-act .suivi-done-btn { width:100%; padding:9px; font-size:.78rem; } }
+</style>
+<script>
+// Une demande traitée peut recevoir un commentaire (ce qui a été fait, pièce commandée, suite à donner…). Enregistré dans le Sheet du suivi par l'Apps Script du suivi
+// (colonnes « commentaire » et « date_commentaire »), donc lu par tous les utilisateurs du dashboard. Modifiable à tout moment ; vide = commentaire retiré.
+let suiviEdit = null;                                           // id de la demande dont le commentaire est en cours de saisie
+const svcEsc = s => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+function suiviComCell(i, done) {
+  if (!done) return '';                                         // le commentaire s'ajoute une fois la demande faite
+  const id = String(i.id), t = String(i.commentaire || '').trim();
+  if (suiviEdit === id) return `<div class="svc-blk"><textarea class="svc-ta" id="svcTxt" maxlength="600" placeholder="Ex. porte réparée, pièce commandée, passage de … prévu le …">${svcEsc(t)}</textarea>
+    <div class="svc-act"><button type="button" class="suivi-done-btn" onclick="suiviComSave('${svcEsc(id)}')">Enregistrer</button><button type="button" class="svc-cancel" onclick="suiviComCancel()">Annuler</button><span class="svc-msg" id="svcMsg"></span></div></div>`;
+  if (!t) return `<div><button type="button" class="svc-add" onclick="suiviComEdit('${svcEsc(id)}')">💬 Ajouter un commentaire</button></div>`;
+  const d = String(i.date_commentaire || ''), when = d.length >= 16 ? `${d.slice(8, 10)}/${d.slice(5, 7)} ${d.slice(11, 16)}` : '';
+  return `<div class="svc-blk"><div class="svc-txt">💬 ${svcEsc(t)}</div><div class="svc-meta">${when}<a onclick="suiviComEdit('${svcEsc(id)}')">Modifier</a></div></div>`;
+}
+function suiviComEdit(id) { suiviEdit = String(id); renderSuivi(); const ta = document.getElementById('svcTxt'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+function suiviComCancel() { suiviEdit = null; renderSuivi(); }
+async function suiviComSave(id) {
+  const ta = document.getElementById('svcTxt'), msg = document.getElementById('svcMsg'); if (!ta) return;
+  const txt = ta.value.trim().slice(0, 600); if (msg) msg.textContent = 'Enregistrement…';
+  let j = null;
+  try { j = await (await fetch(SUIVI_URL + '?action=comment&id=' + encodeURIComponent(id) + '&commentaire=' + encodeURIComponent(txt) + '&_=' + Date.now(), { redirect: 'follow' })).json(); }
+  catch (e) { if (msg) msg.textContent = 'Enregistrement impossible (connexion ?) : ' + e.message; return; }
+  if (!j || j.commented !== true) { if (msg) msg.textContent = j && j.error ? 'Refusé : ' + j.error : "L'Apps Script du suivi doit être mis à jour (nouvelle version) pour enregistrer les commentaires."; return; }
+  const it = (suiviItems || []).find(x => String(x.id) === String(id)); if (it) { it.commentaire = txt; it.date_commentaire = new Date().toISOString(); }
+  suiviEdit = null; renderSuivi();
+}
+</script>
+
 <!-- ════════ INDICES DE GESTION : extraction imprimable (A4, 2 pages) ════════ -->
 <style>
 #igModal { display:none; position:fixed; inset:0; z-index:10000; background:rgba(15,17,23,.55); align-items:flex-start; justify-content:center; padding:8vh 14px; overflow-y:auto; }
@@ -8795,7 +8837,7 @@ function renderSuivi() {
     h += `<tr>
       <td data-label="Date">${fdate(i.date)}</td>
       <td data-label="Restaurant"><b>${esc(i.restaurant)}</b><br><span style="color:var(--muted);font-size:.68rem">${esc(i.demandeur)}</span></td>
-      <td data-label="Demande" style="max-width:230px">${esc(i.description)}${i.photos ? ` <a href="${esc(i.photos)}" target="_blank" style="color:#0d9488;font-weight:700;white-space:nowrap">📷 photo(s)</a>` : ''}<br><span style="color:var(--muted);font-size:.68rem">→ ${esc(i.techniciens)}${i.superviseur ? ' · '+esc(i.superviseur) : ''}</span></td>
+      <td data-label="Demande" style="max-width:230px">${esc(i.description)}${i.photos ? ` <a href="${esc(i.photos)}" target="_blank" style="color:#0d9488;font-weight:700;white-space:nowrap">📷 photo(s)</a>` : ''}<br><span style="color:var(--muted);font-size:.68rem">→ ${esc(i.techniciens)}${i.superviseur ? ' · '+esc(i.superviseur) : ''}</span>${suiviComCell(i, done)}</td>
       <td data-label="Urgence" class="${/URGENT/i.test(urg)?'suivi-urg-high':''}">${esc(urg)}</td>
       <td data-label="Traité par" style="font-size:.72rem;color:var(--muted)">${done ? esc(i.valide_par||'') : '—'}</td>
       <td data-label="Statut"><span class="suivi-badge ${done?'sb-done':'sb-wait'}">${done?'✅ Traité':'🟠 En attente'}</span></td>
@@ -9016,7 +9058,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261023-124152';
+const BUILD_VERSION = '20261023-130835';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
