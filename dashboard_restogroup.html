@@ -7704,6 +7704,7 @@ function qhInitChart(canvas) {
 .pc-dh { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); text-align:center; padding:2px 0; } .pc-dh.we { color:#2563eb; }
 .pc-day { min-height:104px; border:1.5px solid var(--border); border-radius:10px; padding:5px 6px; background:var(--card); cursor:pointer; display:flex; flex-direction:column; gap:3px; min-width:0; }
 .pc-day:hover { border-color:#0891b2; } .pc-day.out { background:transparent; border-style:dashed; opacity:.55; cursor:default; } .pc-day.we { background:color-mix(in srgb, #3b82f6 6%, var(--card)); }
+.pc-cal { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:9px 10px; border:1.5px dashed var(--border); border-radius:10px; font-size:.76rem; font-weight:700; color:var(--muted); } .pc-cal .pc-btn { font-size:.72rem; padding:5px 10px; }
 .pc-day.fer { background:color-mix(in srgb, #ef4444 8%, var(--card)); border-color:color-mix(in srgb, #ef4444 35%, var(--border)); } .pc-fn { font-size:.64rem; font-weight:800; color:#b91c1c; line-height:1.2; overflow-wrap:anywhere; }
 .pc-lfer { background:color-mix(in srgb, #ef4444 7%, var(--card)); --tc:#ef4444; cursor:default; } .pc-lfer .pc-lt { color:#b91c1c; }
 .pc-day.today { border-color:#0891b2; border-width:2px; } .pc-dn { font-size:.78rem; font-weight:800; color:var(--text); } .pc-day.today .pc-dn { color:#0891b2; }
@@ -7746,6 +7747,7 @@ function qhInitChart(canvas) {
       <div class="pc-row"><div><label>Début</label><input type="date" id="pcStart"></div><div><label>Fin (facultatif)</label><input type="date" id="pcEnd"></div><div><label>Heure (facultatif)</label><input id="pcTime" maxlength="30" placeholder="ex. 09:00 – 12:00"></div></div>
       <label>Lieu (facultatif)</label><input id="pcPlace" maxlength="80" placeholder="ex. Salle de réunion Chambéry, Teams, Siège, restaurant de Belley…">
       <label>Note (champ libre)</label><textarea id="pcNote" maxlength="500" placeholder="Participants, ordre du jour, précisions…"></textarea>
+      <div class="pc-cal">📅 Ajouter à mon agenda : <button type="button" class="pc-btn" onclick="pcCalForm('ics')" title="Fichier à ouvrir avec Apple Calendar, Outlook, Google Agenda…">Fichier .ics</button><button type="button" class="pc-btn" onclick="pcCalForm('google')">Google Agenda</button></div>
       <div class="pc-msg" id="pcMsg"></div>
     </div>
     <div class="pc-mf"><button type="button" class="pc-btn pc-del" id="pcDel" onclick="pcDelete()" style="display:none">Supprimer</button><span style="flex:1"></span><button type="button" class="pc-btn" onclick="pcClose()">Annuler</button><button type="button" class="pc-btn pc-save" id="pcSaveBtn" onclick="pcSave()">Enregistrer</button></div>
@@ -7786,6 +7788,53 @@ function pcFeries(y) {
 }
 const pcFer = iso => pcFeries(+iso.slice(0, 4))[iso] || '';
 const pcFerMonth = ym => Object.entries(pcFeries(+ym.slice(0, 4))).filter(([d]) => d.startsWith(ym)).sort((x, y) => x[0].localeCompare(y[0]));
+// ── Ajouter à mon agenda : fichier .ics (Apple Calendar, Outlook, Google Agenda…) ou lien Google Agenda ──
+// Un événement d'un seul jour avec une heure (« 09:00 – 12:00 », « 14h30 ») devient un rendez-vous horaire (1 h par défaut si une seule heure) ; sinon, journée entière / plage de jours.
+const pcAdd = (iso, n) => pcIso(new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000));
+const pcTimes = t => { const m = [...String(t || '').matchAll(/(\d{1,2})\s*(?:h|H|:)\s*(\d{2})?/g)].map(x => [+x[1], +(x[2] || 0)]).filter(x => x[0] < 24 && x[1] < 60); return m.length ? { s: m[0], e: m[1] || null } : null; };
+function pcCalBuild(o) {                                          // o = { type, detail, periode, fin, heure, lieu, note, restos[] }
+  const t = pcT(o.type), main = o.type === 'formation' ? 'Formation' + (o.detail ? ' · ' + o.detail : '') : (o.detail || t.l), rs = (o.restos || []).filter(Boolean);
+  const names = rs.map(r => r === PC_FR ? 'Toute la franchise' : restoDisplay(r)), where = names.length === 1 ? names[0] : names.length > 1 ? names.length + ' restaurants' : '';
+  const fr = (typeof FRANCHISE_CFG !== 'undefined' && FRANCHISE_CFG.title) || 'Franchise', tm = pcTimes(o.heure), d0 = o.periode, d1 = o.fin && o.fin >= d0 ? o.fin : d0, one = d0 === d1;
+  const hh = a => String(a[0]).padStart(2, '0') + String(a[1]).padStart(2, '0') + '00', e0 = tm && one ? tm.s : null;
+  let e1 = null; if (e0) { e1 = tm.e && (tm.e[0] * 60 + tm.e[1]) > (e0[0] * 60 + e0[1]) ? tm.e : [Math.min(e0[0] + 1, 23), e0[0] + 1 > 23 ? 59 : e0[1]]; }
+  const desc = [names.length ? 'Restaurant(s) : ' + names.join(', ') : '', o.heure ? 'Horaire : ' + o.heure : '', o.lieu ? 'Lieu : ' + o.lieu : '', o.note || '', '— Plan de communication · ' + fr].filter(Boolean).join('\n');
+  return { title: main + (where ? ' · ' + where : ''), loc: o.lieu || '', desc, d0, d1, t0: e0 ? hh(e0) : null, t1: e1 ? hh(e1) : null, one };
+}
+function pcIcs(c, uid) {
+  const esc = x => String(x == null ? '' : x).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const fold = line => { const enc = new TextEncoder(); let out = '', cur = '', n = 0; for (const ch of line) { const b = enc.encode(ch).length; if (n + b > 74) { out += cur + '\r\n '; cur = ''; n = 1; } cur += ch; n += b; } return out + cur; };
+  const ymd = d => d.replace(/-/g, ''), stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Franchise//Plan de communication//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', 'UID:' + uid + '@plan-de-communication', 'DTSTAMP:' + stamp];
+  if (c.t0) L.push('DTSTART:' + ymd(c.d0) + 'T' + c.t0, 'DTEND:' + ymd(c.d0) + 'T' + c.t1); else L.push('DTSTART;VALUE=DATE:' + ymd(c.d0), 'DTEND;VALUE=DATE:' + ymd(pcAdd(c.d1, 1)));
+  L.push('SUMMARY:' + esc(c.title)); if (c.loc) L.push('LOCATION:' + esc(c.loc)); L.push('DESCRIPTION:' + esc(c.desc), 'TRANSP:OPAQUE', 'END:VEVENT', 'END:VCALENDAR');
+  return L.map(fold).join('\r\n') + '\r\n';
+}
+function pcGoogleUrl(c) {
+  const ymd = d => d.replace(/-/g, ''), dates = c.t0 ? `${ymd(c.d0)}T${c.t0}/${ymd(c.d0)}T${c.t1}` : `${ymd(c.d0)}/${ymd(pcAdd(c.d1, 1))}`;
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(c.title) + '&dates=' + dates + '&details=' + encodeURIComponent(c.desc) + (c.loc ? '&location=' + encodeURIComponent(c.loc) : '') + '&ctz=Europe%2FParis';
+}
+function pcCalGo(o, how) {
+  const c = pcCalBuild(o);
+  if (how === 'google') { window.open(pcGoogleUrl(c), '_blank', 'noopener'); return; }
+  const uid = (o.id || Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)).replace(/[^A-Za-z0-9_-]/g, ''), blob = new Blob([pcIcs(c, uid)], { type: 'text/calendar;charset=utf-8' });
+  const slug = c.title.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40).toLowerCase() || 'evenement';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `agenda-${c.d0}-${slug}.ics`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function pcFormData() {                                         // événement tel qu'il est saisi dans la fenêtre (valide ou non)
+  const type = PC.mType, subSel = document.getElementById('pcSub').value, detail = (type === 'libre' || subSel === PC_OTHER ? document.getElementById('pcDetail').value : subSel).trim();
+  const fr = document.getElementById('pcFr'), restos = fr && fr.checked ? [PC_FR] : [...document.querySelectorAll('#pcMRestos input[name=pcr]:checked')].map(i => i.value);
+  return { type, detail, periode: document.getElementById('pcStart').value, fin: document.getElementById('pcEnd').value, heure: document.getElementById('pcTime').value.trim(), lieu: document.getElementById('pcPlace').value.trim(), note: document.getElementById('pcNote').value.trim(), restos, id: PC.edit ? (PC.edit.ids ? PC.edit.ids[0] : PC.edit.id) : '' };
+}
+function pcCalForm(how) {
+  const o = pcFormData();
+  if (!o.periode) return pcMsg('err', 'Indique la date de début pour l’ajouter à ton agenda.');
+  if (!o.detail) return pcMsg('err', o.type === 'libre' ? 'Donne un titre à l’événement.' : 'Précise le type.');
+  pcMsg('', ''); pcCalGo(o, how);
+}
+const pcCalOf = e => ({ type: e.type, detail: e.detail, periode: e.periode, fin: e.fin, heure: e.heure, lieu: e.lieu, note: e.note, restos: [e.restaurant], id: e.id });
+function pcCalList(id, how) { const e = pcAll().find(x => x.id === id); if (e) pcCalGo(pcCalOf(e), how || 'ics'); }
+function pcCalLast(how) { if (PC.lastCal) pcCalGo(PC.lastCal, how); }
 function pcToggleFer() { PC.fer = !PC.fer; try { localStorage.setItem(PC_FERKEY, PC.fer ? '1' : '0'); } catch (e) {} pcRender(); }
 function pcNorm(r) {
   const p = String(r.periode || '').slice(0, 10), f = r.fin ? String(r.fin).slice(0, 10) : '';
@@ -7887,7 +7936,7 @@ function pcRender() {
   const sorted = monthEv.slice().sort((a, b) => a.periode.localeCompare(b.periode) || PC_TYPES.findIndex(t => t.k === a.type) - PC_TYPES.findIndex(t => t.k === b.type));
   const ferRows = PC.fer ? pcFerMonth(PC.ym).map(([d, n]) => ({ fer: n, periode: d })) : [], mixed = sorted.concat(ferRows).sort((a, b) => a.periode.localeCompare(b.periode) || (b.fer ? 1 : 0) - (a.fer ? 1 : 0));
   const ferLi = e => `<div class="pc-lrow pc-lfer"><div class="pc-ld">${pcFmt(e.periode).slice(0, 5)}<small>${PC_J[pcDow(e.periode)].toLowerCase()}</small></div><div class="pc-lt">${pcEsc(e.fer)}<small>Jour férié</small></div><div class="pc-la"></div></div>`;
-  const list = mixed.length ? `<div class="pc-list">${mixed.map(e => e.fer ? ferLi(e) : `<div class="pc-lrow ${fresh.has(pcKeyOf(e)) ? 'pc-new' : ''}" style="--tc:${pcT(e.type).c}"><div class="pc-ld">${fresh.has(pcKeyOf(e)) ? '<span class="pc-newtag">NOUVEAU</span>' : ''}${pcFmt(e.periode).slice(0, 5)}${e.fin ? ' → ' + pcFmt(e.fin).slice(0, 5) : ''}<small>${PC_J[pcDow(e.periode)].toLowerCase()}${e.heure ? ' · ' + pcEsc(e.heure) : ''}</small></div><div class="pc-lt">${pcEsc(pcLabel(e, false))}<small>${pcEsc(restoDisplay(e.restaurant))}${e.lieu ? ' · 📍 ' + pcEsc(e.lieu) : ''}${e.note ? ' — ' + pcEsc(e.note) : ''}</small></div><div class="pc-la"><button type="button" class="pc-btn" data-id="${pcEsc(e.id)}">Modifier</button></div></div>`).join('')}</div>` : `<div class="pc-empty">Aucun événement ce mois-ci${PC.resto === 'ALL' ? '' : ' pour ' + pcEsc(restoDisplay(PC.resto))}.<br>Utilise « + Ajouter un événement » ou clique sur un jour du calendrier.</div>`;
+  const list = mixed.length ? `<div class="pc-list">${mixed.map(e => e.fer ? ferLi(e) : `<div class="pc-lrow ${fresh.has(pcKeyOf(e)) ? 'pc-new' : ''}" style="--tc:${pcT(e.type).c}"><div class="pc-ld">${fresh.has(pcKeyOf(e)) ? '<span class="pc-newtag">NOUVEAU</span>' : ''}${pcFmt(e.periode).slice(0, 5)}${e.fin ? ' → ' + pcFmt(e.fin).slice(0, 5) : ''}<small>${PC_J[pcDow(e.periode)].toLowerCase()}${e.heure ? ' · ' + pcEsc(e.heure) : ''}</small></div><div class="pc-lt">${pcEsc(pcLabel(e, false))}<small>${pcEsc(restoDisplay(e.restaurant))}${e.lieu ? ' · 📍 ' + pcEsc(e.lieu) : ''}${e.note ? ' — ' + pcEsc(e.note) : ''}</small></div><div class="pc-la"><button type="button" class="pc-btn" onclick="pcCalList('${pcEsc(e.id)}')" title="Ajouter à mon agenda (fichier .ics)">📅</button><button type="button" class="pc-btn" data-id="${pcEsc(e.id)}">Modifier</button></div></div>`).join('')}</div>` : `<div class="pc-empty">Aucun événement ce mois-ci${PC.resto === 'ALL' ? '' : ' pour ' + pcEsc(restoDisplay(PC.resto))}.<br>Utilise « + Ajouter un événement » ou clique sur un jour du calendrier.</div>`;
   card.innerHTML = top + body + (view === 'list' ? list : `<div class="pc-onlymobile">${list}</div>`) + `<div class="pc-note">${monthEv.length} événement${monthEv.length > 1 ? 's' : ''} affiché${monthEv.length > 1 ? 's' : ''} sur ${PC_MOIS[M - 1]} ${Y}. Clique sur un jour pour ajouter, sur un événement pour le modifier ou le supprimer.<span class="pc-status" id="pcStatus"></span></div>`;
   const unseenLeft = PC.loaded ? pcAll().filter(e => (e.fin || e.periode) >= pcIso(new Date()) && pcUnseen(e) && !fresh.has(pcKeyOf(e))).length : 0;
   pcMarkSeen(monthEv); pcBadge();
@@ -7966,7 +8015,9 @@ async function pcSave() {
   if (!j.ok) return pcMsg('err', 'Erreur : ' + (j.error || 'enregistrement refusé') + (/action inconnue|mot de passe/.test(j.error || '') ? ' — l’Apps Script doit être mis à jour' + (/mot de passe/.test(j.error) ? ' / reconnecte-toi.' : '.') : ''));
   rows.forEach((r, i) => { const e = pcNorm(Object.assign({}, r, { id: (j.ids || [])[i] || r.id })); if (!e) return; if (PC.edit) { const k = PC.adds.findIndex(a => a.id === e.id); if (k >= 0) PC.adds[k] = e; else PC.over[e.id] = e; } else PC.adds.push(e); });
   { const sm = pcSeen(); if (sm) { rows.forEach((r, i) => { const id = (j.ids || [])[i] || r.id; if (id) sm[id] = '*'; }); pcSeenSave(); } }
+  PC.lastCal = { type, detail, periode: start, fin: end, heure: base.heure, lieu: base.lieu, note: base.note, restos, id: baseId || (j.ids || [])[0] || '' };
   PC.ym = start.slice(0, 7); pcClose(); pcRender(); pcStatus('ok', `✓ ${rows.length > 1 ? rows.length + ' événements enregistrés' : 'Événement enregistré'}`);
+  { const st = document.getElementById('pcStatus'); if (st) st.insertAdjacentHTML('beforeend', ' · 📅 Mon agenda : <a href="#" onclick="pcCalLast(\'ics\');return false" style="color:#0891b2;font-weight:700">fichier .ics</a> · <a href="#" onclick="pcCalLast(\'google\');return false" style="color:#0891b2;font-weight:700">Google Agenda</a>'); }
 }
 async function pcDelete() {
   if (!PC.edit || PC.busy || !confirm('Supprimer cet événement ?\n' + pcLabel(PC.edit, true) + ' — ' + pcFmt(PC.edit.periode))) return;
@@ -9142,7 +9193,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261023-134326';
+const BUILD_VERSION = '20261027-110607';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
