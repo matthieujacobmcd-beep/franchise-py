@@ -1196,6 +1196,7 @@ window.addEventListener('DOMContentLoaded', () => {
   <button class="espace-pill" data-esp="plancom" style="--e-color:#0891b2;--e-bg:rgba(8,145,178,.14)" onclick="switchEspace('plancom')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>Plan de communication</button>
   <button class="espace-pill" data-esp="actualite" style="--e-color:#db2777;--e-bg:rgba(219,39,119,.14)" onclick="switchEspace('actualite')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/></svg></span>Actualité Restaurant</button>
   <button class="espace-pill" data-esp="ext-pointage" style="--e-color:#4f46e5;--e-bg:rgba(79,70,229,.14)" onclick="window.open('https://matthieujacobmcd-beep.github.io/franchise-py-forfait/','_blank','noopener')" title="Suivi du temps de travail (forfait jours) — s'ouvre dans un nouvel onglet"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Suivi Temps Travail</button>
+  <button class="espace-pill" data-esp="revue" style="--e-color:#475569;--e-bg:rgba(71,85,105,.14)" onclick="openBusinessReview()" title="Business Review : s'ouvre dans un nouvel onglet, protégée par mot de passe"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Business Review</button>
 </div>
 
 <!-- ESPACE : PILOTAGE OPÉRATIONNEL -->
@@ -9193,7 +9194,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261027-110607';
+const BUILD_VERSION = '20261027-154442';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
@@ -9213,5 +9214,46 @@ const BUILD_VERSION = '20261027-110607';
   } catch (e) {}
 })();
 </script>
+<!-- REVUE_BUSINESS:START -->
+<script>
+/* Business Review : ouverture (onglet, raccourci) et lien direct vers un indicateur (#kpi=<id>) */
+function openBusinessReview() { window.open('business_review_restogroup.html', '_blank', 'noopener'); }
+(function () {
+  // Raccourci : Alt / Option + double-clic sur le nom « Franchise … » ou sur le logo (le double-clic simple garde son rôle)
+  var brand = document.getElementById('topbarBrand');
+  if (brand) brand.addEventListener('dblclick', function (e) {
+    if (!e.altKey) return;
+    e.stopPropagation(); e.preventDefault();
+    openBusinessReview();
+  }, true);
+})();
+(function () {
+  // Lien direct : #kpi=<identifiant de KPIs>. Attend l'affichage du dashboard, puis ouvre le détail de l'indicateur.
+  var done = null, tries = 0;
+  function voulu() {
+    var m = /(?:^|[#&])kpi=([A-Za-z0-9_]+)/.exec(location.hash || '');
+    return m ? m[1] : null;
+  }
+  function ouvrir() {
+    var id = voulu();
+    if (!id || id === done) return;
+    var app = document.getElementById('app');
+    if (!app || app.style.display === 'none') return;
+    if (typeof openKpiFromAlert !== 'function' || typeof KPIs === 'undefined') return;
+    done = id;
+    if (KPIs.some(function (k) { return k.id === id; })) {
+      openKpiFromAlert(id);
+      // le panneau de détail (#kpiDetail) est créé à l'affichage : on y amène la page
+      setTimeout(function () {
+        var d = document.getElementById('kpiDetail');
+        if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 500);
+    }
+  }
+  var timer = setInterval(function () { ouvrir(); if (done || ++tries > 900) clearInterval(timer); }, 400);
+  window.addEventListener('hashchange', function () { done = null; ouvrir(); });
+})();
+</script>
+<!-- REVUE_BUSINESS:END -->
 </body>
 </html>
