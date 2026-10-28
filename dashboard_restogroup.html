@@ -8158,6 +8158,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) esbT
 
 <!-- ════════ SUIVI DES INTERVENTIONS : FIL DE COMMENTAIRES (style messages) SUR CHAQUE DEMANDE ════════ -->
 <style>
+.suivi-xl { font-family:inherit; font-size:.72rem; font-weight:700; color:#0f766e; background:rgba(15,118,110,.08); border:1.5px solid rgba(15,118,110,.35); border-radius:9px; padding:6px 11px; cursor:pointer; white-space:nowrap; } .suivi-xl:hover { background:rgba(15,118,110,.16); } .suivi-xl:disabled { opacity:.6; cursor:wait; }
 .svc-blk { margin-top:7px; padding-top:6px; border-top:1px dashed var(--border); }
 .svc-add { background:transparent; color:#0d9488; border:1.5px dashed #0d9488; border-radius:8px; padding:4px 9px; font-size:.68rem; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; margin-top:6px; }
 .svc-add:hover { background:rgba(13,148,136,.08); }
@@ -8204,6 +8205,52 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) esbT
   </div>
 </div>
 <script>
+// ── Export Excel du suivi : la liste affichée (filtres statut / restaurant / intervenant) + une feuille avec tous les commentaires ──
+const SVX_HEAD = '#0f766e';
+const svxSerial = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 + 25569 : null; };   // vraie date Excel (tri et filtres)
+const svxDateTime = d => { const s = String(d || ''); const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : (svxSerial(s) ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : s); };
+function svxItems() {                                          // mêmes filtres que le tableau affiché
+  let it = suiviItems || [];
+  if (suiviFilter === 'wait') it = it.filter(i => String(i.statut) !== 'Traité'); else if (suiviFilter === 'done') it = it.filter(i => String(i.statut) === 'Traité');
+  if (suiviResto !== 'all') it = it.filter(i => String(i.restaurant || '').trim() === suiviResto);
+  if (suiviInterv !== 'all') it = it.filter(i => splitTechs(i.techniciens).includes(suiviInterv));
+  return it;
+}
+function svxBuild(items) {                                     // classeur prêt à écrire (fonction pure, testable)
+  const hs = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: SVX_HEAD.slice(1) } }, alignment: { vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: 'CBD5E1' } } } };
+  const txt = (v, wrap) => ({ t: 's', v: String(v == null ? '' : v), s: { alignment: { vertical: 'top', wrapText: !!wrap } } });
+  const dt = v => { const n = svxSerial(v); return n == null ? txt(v) : { t: 'n', v: n, z: 'dd/mm/yyyy', s: { alignment: { vertical: 'top', horizontal: 'left' } } }; };
+  const sheet = (head, rows, widths) => {
+    const aoa = [head.map(h => ({ t: 's', v: h, s: hs }))].concat(rows), ws = XLSX.utils.aoa_to_sheet(aoa.map(r => r.map(c => c.v)));
+    aoa.forEach((r, ri) => r.forEach((c, ci) => { const a = XLSX.utils.encode_cell({ r: ri, c: ci }); ws[a] = Object.assign({}, c); }));
+    ws['!cols'] = widths.map(w => ({ wch: w })); ws['!rows'] = [{ hpt: 24 }];
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ r: 0, c: 0 }, { r: Math.max(aoa.length - 1, 1), c: head.length - 1 }) };
+    return ws;
+  };
+  const rows = items.map(i => {
+    const cs = (i.comments || []).filter(c => c && String(c.texte || '').trim()), last = cs[cs.length - 1];
+    return [txt(i.id), dt(i.date), txt(i.restaurant), txt(i.demandeur), txt(i.description, true), txt(i.urgence), txt(i.techniciens), txt(i.superviseur),
+      txt(String(i.statut) === 'Traité' ? 'Traité' : 'En attente'), txt(String(i.statut) === 'Traité' ? i.valide_par : ''), dt(i.date_validation), i.photos ? { t: 's', v: 'Voir les photos', l: { Target: String(i.photos), Tooltip: 'Ouvrir les photos de la demande' }, s: { font: { color: { rgb: '0563C1' }, underline: true }, alignment: { vertical: 'top' } } } : txt(''),
+      { t: 'n', v: cs.length, s: { alignment: { vertical: 'top', horizontal: 'center' } } }, txt(last ? `${last.auteur || ''} (${svxDateTime(last.date)}) : ${last.texte}` : '', true)];
+  });
+  const crow = [];
+  items.forEach(i => (i.comments || []).filter(c => c && String(c.texte || '').trim()).forEach(c => crow.push([txt(i.id), txt(i.restaurant), dt(i.date), txt(String(i.description || '').slice(0, 140), true), txt(svxDateTime(c.date)), txt(c.auteur), txt(c.texte, true)])));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet(['N°', 'Date de la demande', 'Restaurant', 'Demandeur', 'Demande', 'Urgence', 'Intervenant(s)', 'Superviseur', 'Statut', 'Traité par', 'Date de traitement', 'Photos', 'Commentaires', 'Dernier commentaire'], rows, [16, 14, 18, 18, 52, 14, 20, 18, 12, 16, 14, 28, 12, 52]), 'Interventions');
+  XLSX.utils.book_append_sheet(wb, sheet(['N° demande', 'Restaurant', 'Date de la demande', 'Demande', 'Date du commentaire', 'Auteur', 'Commentaire'], crow, [16, 18, 14, 44, 18, 16, 70]), 'Commentaires');
+  return wb;
+}
+async function suiviExportXlsx() {
+  const items = svxItems(); if (!items.length) return;
+  const b = document.getElementById('svxBtn'); if (b) { b.disabled = true; b.textContent = '⏳ Export…'; }
+  try {
+    await _loadXlsx();
+    const f = [suiviFilter === 'wait' ? 'en-attente' : suiviFilter === 'done' ? 'traitees' : '', suiviResto !== 'all' ? suiviResto : '', suiviInterv !== 'all' ? suiviInterv : ''].filter(Boolean).join('_').normalize('NFD').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    XLSX.writeFile(svxBuild(items), `${((typeof FRANCHISE_CFG !== 'undefined' && FRANCHISE_CFG.title) || 'Franchise').replace(/\s+/g, '_')}_Interventions${f ? '_' + f : ''}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) { alert('Export Excel impossible : ' + e.message + '. Vérifie la connexion et réessaie.'); }
+  if (b) { b.disabled = false; b.textContent = '📊 Exporter Excel'; }
+}
+
 // Chaque demande (en attente ou traitée) a un fil de commentaires façon messages : plusieurs commentaires, jamais modifiables ni effaçables, signés d'un prénom.
 // Stockés dans l'onglet « Commentaires » du Sheet du suivi (Apps Script du suivi : action comment = ajout seul) et lus par tous les utilisateurs du dashboard.
 const SVC = { id: null, timer: null, busy: false }, SVC_NAME = 'fpy_svcname';
@@ -9582,6 +9629,7 @@ function renderSuivi() {
     <select class="suivi-sel" onchange="setSuiviInterv(this.value)"><option value="all"${suiviInterv==='all'?' selected':''}>🔧 Tous les intervenants</option>${opt(intervs, suiviInterv)}</select>
     ${(suiviResto !== 'all' || suiviInterv !== 'all') ? `<button class="suivi-sel-clear" onclick="setSuiviReset()">✕ Réinitialiser</button>` : ''}
     <span class="suivi-count">${items.length} demande${items.length > 1 ? 's' : ''}</span>
+    <button type="button" id="svxBtn" class="suivi-xl" onclick="suiviExportXlsx()" title="Exporter la liste affichée (filtres appliqués) et tous les commentaires au format Excel">📊 Exporter Excel</button>
   </div>`;
 
   if (!items.length) { body.innerHTML = tools + '<div class="suivi-empty">Aucune demande pour ce filtre.</div>'; return; }
@@ -9814,7 +9862,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261028-111412';
+const BUILD_VERSION = '20261028-120016';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

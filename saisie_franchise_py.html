@@ -1715,7 +1715,7 @@ const BD_LINES = [
   { k: 'maint', l: 'Contrat maintenance et réparations', t: 'fix', re: /contrat maintenance/ }, { k: 'autres', l: 'Autres services extérieurs', t: 'fix', re: /autres services ext/ },
   { k: 'svc', l: 'Sous-total services extérieurs', t: 'sum', b: 1 },
   { k: 'foodtech', l: 'Commissions Food Tech.', t: 'pctn', re: /commissions food/ }, { k: 'pub', l: 'Publicité GIE', t: 'pct', re: /publicite gie/ }, { k: 'promo', l: 'Promotion locale', t: 'pct', re: /promotion locale/ },
-  { k: 'energie', l: 'Électricité, eau, gaz, téléphone', t: 'fix', re: /electricite/ }, { k: 'fourn', l: 'Fournitures exploitation et bureau', t: 'fix', re: /fournitures/ },
+  { k: 'elec', l: 'Électricité', t: 'fix', re: /^electricite/ }, { k: 'eau', l: 'Eau', t: 'fix', re: /^eau( |$)/, opt: 1 }, { k: 'gaz', l: 'Gaz', t: 'fix', re: /^gaz( |$)/, opt: 1 }, { k: 'tel', l: 'Téléphonie', t: 'fix', re: /^telephon/, opt: 1 }, { k: 'fourn', l: 'Fournitures exploitation et bureau', t: 'fix', re: /fournitures/ },
   { k: 'depl', l: 'Frais de déplacements', t: 'fix', re: /deplacements/ }, { k: 'divers', l: 'Divers', t: 'fix', re: /^divers$/ },
   { k: 'pac', l: 'Profit après contrôlables (PAC)', t: 'calc', b: 1 },
   { k: 'redev', l: 'Redevance standard', t: 'pct', re: /redevance standard/ }, { k: 'index', l: 'Indexation loyer externe', t: 'fix', re: /indexation/ },
@@ -1738,8 +1738,20 @@ const BD_DET_KEYS = ['nett', 'secu', 'banque', 'maint', 'autres'];
 const BD_PREST = ['Sté nettoyage', 'Sté sécurité', 'Télésurveillance', 'Dératisation / Désinsectisation', 'Climatisation', 'Extraction graisse', 'Entretien matériel frigorifique', 'Entretien hygiène', 'Vérification électricité + gaz', 'Entretien des canalisations', 'Maintenance informatique', 'Machine à café', 'Prestation froid', 'Entretien extincteurs', 'Prestation hygiène (analyses)', 'Prestation Ansul', 'Ramassage monnaie', 'Enlèvement ordures ménagères', 'Espaces verts', 'Contrat adoucisseur', 'Maintenance réseau', 'Maintenance Play Land', 'Collecte huiles usagées', 'Archivage', 'Maintenance lave-verres', 'Prestation GIE', 'Licence balance', 'Location bouteilles gaz', 'Location TPE', 'Locations diverses', 'Médecine du travail', 'Redevance SIR', 'Redevance SACEM', 'Refacturation services extérieurs', 'Frais bancaires', 'Commissions CB', 'Commissions titres-restaurant / ANCV', 'Commissions Paypal / Worldline', 'Entretien & réparations'];
 const BD_STD = { achat: 0, repas: 0, dechets: 0, embal: 0, divmo: 0, foodtech: 0, pub: 0.04, promo: 0, redev: 0.16, incent: 0, redsvc: 0.05, ga: 0.04 };   // seuls les taux réseau sont préremplis
 
+// Électricité, eau, gaz, téléphone : ligne unique à l'origine (clé « energie »). Les anciennes saisies (navigateur, dossiers partagés) sont reprises sur « Électricité » (à répartir) : le total du PNL ne change pas.
+function bdMig(p) {
+  if (!p) return p;
+  if (p.energie !== undefined) {
+    if (Array.isArray(p.energie)) p.elec = (Array.isArray(p.elec) ? p.elec : Array(12).fill(0)).map((v, i) => (v || 0) + (p.energie[i] || 0));
+    for (const o of [p.m, p.pm]) if (o && o.energie !== undefined) { if (o.elec === undefined) o.elec = o.energie; delete o.energie; }
+    delete p.energie;
+  }
+  for (const x of BD_FIX) if (!Array.isArray(p[x.k])) p[x.k] = Array(12).fill(0);
+  return p;
+}
 function bdParams(r) {
   const o = BUD.byResto[r] = BUD.byResto[r] || {};
+  if (o.p) bdMig(o.p);
   if (!o.p) {
     const p = { rn: 1.01, naCost: 1, tis: 0.25, infl: 0, vphe: Array(12).fill(100), coutH: Array(12).fill(0), tEq: Array(12).fill(0.23), tMg: Array(12).fill(0.45) };
     p.det = []; p.pm = {};
@@ -1793,8 +1805,8 @@ function bdCompute(p, alim) {
     s('mo', g('moeq') + g('cseq') + g('momg') + g('csmg') + g('aides') + g('divmo'));
     for (const k of ['nett', 'secu', 'banque', 'maint', 'autres']) s(k, lv(k));
     s('svc', g('nett') + g('secu') + g('banque') + g('maint') + g('autres'));
-    for (const k of ['foodtech', 'pub', 'promo', 'energie', 'fourn', 'depl', 'divers']) s(k, lv(k));
-    s('pac', A - g('achat') - g('repas') - g('dechets') - g('embal') - g('vaisselle') - g('mo') - g('svc') - g('foodtech') - g('pub') - g('promo') - g('energie') - g('fourn') - g('depl') - g('divers'));
+    for (const k of ['foodtech', 'pub', 'promo', 'elec', 'eau', 'gaz', 'tel', 'fourn', 'depl', 'divers']) s(k, lv(k));
+    s('pac', A - g('achat') - g('repas') - g('dechets') - g('embal') - g('vaisselle') - g('mo') - g('svc') - g('foodtech') - g('pub') - g('promo') - g('elec') - g('eau') - g('gaz') - g('tel') - g('fourn') - g('depl') - g('divers'));
     s('redev', lv('redev')); s('index', lv('index')); s('incent', lv('incent')); s('redeff', g('redev') + g('index') + g('incent'));
     s('locatif', lv('locatif')); s('redsvc', lv('redsvc'));
     for (const k of ['compta', 'assur', 'taxes', 'amort', 'credit', 'diversrev']) s(k, lv(k));
@@ -1863,7 +1875,7 @@ function bdFromBook(book) {
   const ratio = (r, base) => { const v = h2.map(i => { const a = val(base, i), x = val(r, i); return a ? x / a : null; }).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
   const nets = h2.map(i => val(rNet, i) / val(rAlim, i)).filter(x => isFinite(x) && x > 0); if (nets.length) p.rn = nets.reduce((a, b) => a + b, 0) / nets.length;
   for (const x of BD_LINES) {
-    if (!x.re) continue; const r = find(x.re); if (!r) { if (x.t === 'fix') p[x.k] = Array(12).fill(0); else p[x.k] = BD_STD[x.k] || 0; miss.push(x.l); continue; }
+    if (!x.re) continue; const r = find(x.re); if (!r) { if (x.t === 'fix') p[x.k] = Array(12).fill(0); else p[x.k] = BD_STD[x.k] || 0; if (!x.opt) miss.push(x.l); continue; }
     if (x.t === 'pct') p[x.k] = ratio(r, rAlim); else if (x.t === 'pctn') p[x.k] = ratio(r, rNet); else if (x.t === 'fix') p[x.k] = [...Array(12)].map((_, i) => num(val(r, i)));
   }
   // main-d'œuvre : paramètres des mois de prévision (cases sous le compte de résultat)
@@ -2130,7 +2142,7 @@ function renderBudget() {
   }).join('');
   const parIn = (k, i, v, pc) => `<td><input type="text" inputmode="decimal" style="${mIn}" value="${pc ? bdIn(v) : bdRaw(v)}" onchange="bdParM('${k}',${i},this.value)"></td>`;
   const parRow = (k, l, pc) => `<tr><td>${l}</td>${p[k].map((v, i) => parIn(k, i, v, pc)).join('')}<td><b>${pc ? bdIn(avg(p[k])) + ' %' : bdRaw(avg(p[k]))}</b></td><td class="p">moy.</td></tr>`;
-  const parRows = `<tr class="b"><td colspan="15">Paramètres mensuels <small style="font-weight:500">(lignes 60 à 64 du PNL : ils alimentent la main d'œuvre ci-dessus)</small></td></tr>`
+  const parRows = `<tr class="b"><td colspan="15">Paramètres mensuels <small style="font-weight:500">(lignes ${6 + BD_LINES.length + 1} à ${6 + BD_LINES.length + 5} du PNL : ils alimentent la main d'œuvre ci-dessus)</small></td></tr>`
     + (mq === 'v' ? parRow('vphe', 'VPHE équipier (€ / h)') + parRow('coutH', 'Coût horaire équipier (€)') : '') + parRow('tEq', '% charges sociales équipiers', true) + parRow('tMg', '% charges sociales managers', true);
   // services extérieurs : détail par prestation et société, comme l'onglet « DEP CONTROLABLE » du classeur
   const dets = p.det || [], dIn = 'padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;', refY = p.detRefY || (Ty - 1);
@@ -2285,9 +2297,9 @@ function bdXEdg(p, Ty, name) {
   return { sheet: { name: 'SALAIRE EDG', rows, widths: [16, 12, 14, ...Array(12).fill(12), 14], header: false, freeze: [3, 2] }, totRow: tr };
 }
 
-// Feuille « PNL <année> » : mêmes lignes (6 à 58), mêmes colonnes (mois + % par groupe, 1er semestre, 2e semestre, année), paramètres lignes 60 à 66 ; les cellules sont des FORMULES comme dans le classeur
+// Feuille « PNL <année> » : mêmes lignes (6 à 5 + nombre de lignes ; 6 à 58 dans le classeur d'origine, avant le détail eau, gaz, électricité, téléphonie), mêmes colonnes (mois + % par groupe, 1er semestre, 2e semestre, année), paramètres lignes 60 à 66 ; les cellules sont des FORMULES comme dans le classeur
 function bdXPnl(r, Ty, p, L, name, edgRow, dep) {
-  const rows = [], put = bdXPut(rows), R = {}; BD_LINES.forEach((x, i) => { R[x.k] = 6 + i; });
+  const rows = [], put = bdXPut(rows), R = {}; BD_LINES.forEach((x, i) => { R[x.k] = 6 + i; }); const P0 = 6 + BD_LINES.length + 1;      // 1re ligne des paramètres (60 dans le classeur d'origine)
   const MC = i => i < 6 ? 2 + 3 * i : 23 + 3 * (i - 6), S1 = 20, S2 = 41, YR = 44, CL = bdColLetter, KEY = ['alim', 'marge', 'pac', 'narn', 'soi', 'cf', 'rnai', 'rn'], SUB = ['mo', 'svc', 'redeff'];
   const detM = bdDetM(p), sum = a => a.reduce((x, y) => x + y, 0), A = L.alim, hN = simHist(r, Ty - 1), okM = hN.map(x => x.n && x.n === x.nd);
   const tl = n => CL(n);
@@ -2321,20 +2333,20 @@ function bdXPnl(r, Ty, p, L, name, edgRow, dep) {
         case 'net': vf = `${cl}${R.alim}*${pl}${ro}`; pHard = p.rn; break;
         case 'alim': vHard = V; pHard = 1; break;
         case 'marge': vf = `${cc('alim')}-${cc('achat')}-${cc('repas')}-${cc('dechets')}-${cc('embal')}-${cc('vaisselle')}`; break;
-        case 'moeq': { const mq = (p.m && p.m.moeq) || 'v'; if (mq === 'v') vf = `${pl}60*${cl}62`; else if (mq === 'r') { vf = `${cl}$${R.alim}*${pl}${ro}`; pHard = p.moeqR || 0; } else vHard = V; break; }
-        case 'cseq': vf = `${cc('moeq')}*${cl}63`; break;
-        case 'csmg': vf = `${cc('momg')}*${cl}64`; break;
+        case 'moeq': { const mq = (p.m && p.m.moeq) || 'v'; if (mq === 'v') vf = `${pl}${P0}*${cl}${P0 + 2}`; else if (mq === 'r') { vf = `${cl}$${R.alim}*${pl}${ro}`; pHard = p.moeqR || 0; } else vHard = V; break; }
+        case 'cseq': vf = `${cc('moeq')}*${cl}${P0 + 3}`; break;
+        case 'csmg': vf = `${cc('momg')}*${cl}${P0 + 4}`; break;
         case 'mo': vf = `SUM(${cc('moeq')}:${cc('divmo')})`; break;
         case 'svc': vf = `SUM(${cc('nett')}:${cc('autres')})`; break;
-        case 'pac': vf = [cc('alim'), ...['achat', 'repas', 'dechets', 'embal', 'vaisselle', 'mo', 'svc', 'foodtech', 'pub', 'promo', 'energie', 'fourn', 'depl', 'divers'].map(k => '-' + cc(k))].join(''); break;
+        case 'pac': vf = [cc('alim'), ...['achat', 'repas', 'dechets', 'embal', 'vaisselle', 'mo', 'svc', 'foodtech', 'pub', 'promo', 'elec', 'eau', 'gaz', 'tel', 'fourn', 'depl', 'divers'].map(k => '-' + cc(k))].join(''); break;
         case 'redeff': vf = `${cc('redev')}+${cc('index')}+${cc('incent')}`; break;
         case 'navente': vf = `${cc('net')}-${cc('alim')}`; break;
-        case 'nacout': vf = `${cc('navente')}*${cl}65`; break;
+        case 'nacout': vf = `${cc('navente')}*${cl}${P0 + 5}`; break;
         case 'narn': vf = `${cc('navente')}-${cc('nacout')}`; break;
         case 'soi': vf = `${cc('pac')}-${cc('redeff')}-SUM(${cc('locatif')}:${cc('diversrev')})+${cc('narn')}-${cc('fin')}`; break;
         case 'cf': vf = `${cc('soi')}+${cc('amort')}+${cc('credit')}+${cc('nacout')}`; break;
         case 'rnai': vf = `${cc('soi')}-${cc('except')}-${cc('ga')}`; break;
-        case 'is': vf = `IF(${cc('rnai')}-${cc('partic')}>0,(${cc('rnai')}-${cc('partic')})*${cl}66,0)`; break;
+        case 'is': vf = `IF(${cc('rnai')}-${cc('partic')}>0,(${cc('rnai')}-${cc('partic')})*${cl}${P0 + 6},0)`; break;
         case 'rn': vf = `${cc('rnai')}-${cc('partic')}-${cc('is')}`; break;
         default:
           if (x.k === 'momg' && edgRow) vf = `'SALAIRE EDG'!${CL(4 + i)}${edgRow}`;
@@ -2351,16 +2363,16 @@ function bdXPnl(r, Ty, p, L, name, edgRow, dep) {
     const Vy = sum(L[x.k]), ay = sum(A), cy = CL(YR);
     put(ro, YR, { f: `${CL(S1)}${ro}+${CL(S2)}${ro}`, v: Vy, s: vS({ color: BDX.sem }) }); put(ro, YR + 1, { f: `IF(${cy}$${R.alim}=0,0,${cy}${ro}/${cy}$${R.alim})`, v: ay ? Vy / ay : 0, s: pS({ color: BDX.sem }) });
   });
-  // paramètres (lignes 60 à 66) : VPHE, coût horaire, charges sociales, coût non alimentaire, impôt
+  // paramètres (lignes P0 à P0 + 6 ; 60 à 66 dans le classeur d'origine) : VPHE, coût horaire, charges sociales, coût non alimentaire, impôt
   const PL = bdXSt({ fill: BDX.grn }), pv = (nf) => bdXSt({ fill: BDX.grn, nf, al: 'right' });
-  [[60, 'VPHE EQUIPIER (€ de CA / heure) — colonne % : heures équipiers'], [61, 'VPHG (non calculé : heures des managers non saisies)'], [62, 'COUT HORAIRE EQUIPIER'], [63, '% CHARGES SOCIALES EQUIPIER'], [64, '% CHARGES SOCIALES MANAGER'], [65, 'COUT NON ALIMENTAIRE (en % des ventes non alimentaires)'], [66, 'TAUX D\'IMPÔT SUR LES SOCIÉTÉS']].forEach(([ro, l]) => put(ro, 1, { v: l, s: bdXSt({ fill: BDX.grn, b: 1 }) }));
+  [[P0, 'VPHE EQUIPIER (€ de CA / heure) — colonne % : heures équipiers'], [P0 + 1, 'VPHG (non calculé : heures des managers non saisies)'], [P0 + 2, 'COUT HORAIRE EQUIPIER'], [P0 + 3, '% CHARGES SOCIALES EQUIPIER'], [P0 + 4, '% CHARGES SOCIALES MANAGER'], [P0 + 5, 'COUT NON ALIMENTAIRE (en % des ventes non alimentaires)'], [P0 + 6, 'TAUX D\'IMPÔT SUR LES SOCIÉTÉS']].forEach(([ro, l]) => put(ro, 1, { v: l, s: bdXSt({ fill: BDX.grn, b: 1 }) }));
   for (let i = 0; i < 12; i++) {
     const c = MC(i), cl = CL(c);
-    put(60, c, { v: p.vphe[i], s: pv('#,##0.00') }); put(60, c + 1, { f: `IF(${cl}60=0,0,${cl}${R.alim}/${cl}60)`, v: p.vphe[i] ? A[i] / p.vphe[i] : 0, s: pv('#,##0') });
-    put(61, c, { v: '', s: PL }); put(61, c + 1, { v: '', s: PL });
-    put(62, c, { v: p.coutH[i], s: pv('#,##0.00 "€"') }); put(63, c, { v: p.tEq[i], s: pv('0.00%') }); put(64, c, { v: p.tMg[i], s: pv('0.00%') });
-    put(65, c, { v: p.naCost, s: pv('0%') }); put(66, c, { v: p.tis, s: pv('0%') });
-    [62, 63, 64, 65, 66].forEach(ro => put(ro, c + 1, { v: '', s: PL }));
+    put(P0, c, { v: p.vphe[i], s: pv('#,##0.00') }); put(P0, c + 1, { f: `IF(${cl}${P0}=0,0,${cl}${R.alim}/${cl}${P0})`, v: p.vphe[i] ? A[i] / p.vphe[i] : 0, s: pv('#,##0') });
+    put(P0 + 1, c, { v: '', s: PL }); put(P0 + 1, c + 1, { v: '', s: PL });
+    put(P0 + 2, c, { v: p.coutH[i], s: pv('#,##0.00 "€"') }); put(P0 + 3, c, { v: p.tEq[i], s: pv('0.00%') }); put(P0 + 4, c, { v: p.tMg[i], s: pv('0.00%') });
+    put(P0 + 5, c, { v: p.naCost, s: pv('0%') }); put(P0 + 6, c, { v: p.tis, s: pv('0%') });
+    [2, 3, 4, 5, 6].forEach(d => put(P0 + d, c + 1, { v: '', s: PL }));
   }
   const widths = Array(YR + 1).fill(2); widths[0] = 60;
   for (let i = 0; i < 12; i++) { const c = MC(i); widths[c - 1] = 16; widths[c] = 12; }
