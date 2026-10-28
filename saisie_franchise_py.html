@@ -2736,7 +2736,7 @@ function bcDismiss() { const x = BC.byKey[bcKey(curResto, +SIM.ty)]; if (!x) ret
 // Lecture légère de l'onglet PlanCom (action=plancom) : à l'ouverture, au choix du restaurant, toutes les 2 minutes et au retour sur la page.
 const PCB = { rows: [], at: 0 };
 const PCB_ICO = { reunion: '👥', rap_session: '🎤', audit: '🔍', evaluation: '📝', election: '🗳️', festif: '🎉', formation: '🎓', campagne: '📣', libre: '📌', reunion_manager: '👥', reunion_directeur: '👥' };
-const PCB_COL = { reunion: '#2563eb', rap_session: '#0d9488', audit: '#d97706', evaluation: '#7c3aed', election: '#e11d48', festif: '#db2777', formation: '#16a34a', campagne: '#c2410c', libre: '#64748b', reunion_manager: '#2563eb', reunion_directeur: '#2563eb' };
+const PCB_COL = { reunion: '#2563eb', rap_session: '#0d9488', audit: '#d97706', evaluation: '#7c3aed', election: '#e11d48', festif: '#db2777', formation: '#16a34a', campagne: '#ea580c', libre: '#64748b', reunion_manager: '#2563eb', reunion_directeur: '#2563eb' };
 function pcbLabel(e) {
   const t = String(e.type || 'libre'), d = String(e.detail || '');
   return (PCB_ICO[t] || '📌') + ' ' + (t === 'formation' ? 'Formation' + (d ? ' · ' + d : '') : (d || { reunion_manager: 'Réunion MANAGERS', reunion_directeur: 'Réunion DIRECTEURS' }[t] || 'Rendez-vous'));
