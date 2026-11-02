@@ -443,7 +443,7 @@ function dashEnter(r) {
 }
 function dashMountLogin() {
   const box = document.querySelector('#login-screen .login-box');
-  return SBA.mount({ box, legacy: [document.getElementById('pwd-input'), box.querySelector('.login-btn'), document.getElementById('login-error')], onOk: dashEnter, scope: dashScope });
+  return SBA.mount({ box, legacy: [document.getElementById('pwd-input'), box.querySelector('.login-remember'), box.querySelector('.login-btn'), document.getElementById('login-error')], onOk: dashEnter, scope: dashScope });
 }
 // Oublier cet appareil (déconnexion)
 async function logoutDevice() {
@@ -9654,10 +9654,13 @@ window.addEventListener('message', e => {
 #espace-planning .plg-btn.pri{background:var(--gold);border-color:var(--gold);color:#fff}
 #espace-planning .plg-btn:disabled{opacity:.5;cursor:default}
 #espace-planning .plg-wrap{overflow-x:auto}
+#espace-planning .plg-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:100%}
+#espace-planning .plg-nav b{flex:1 1 190px;min-width:0;text-align:center;font-size:.9rem}
 #espace-planning table.plg{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.78rem;min-width:760px}
 #espace-planning table.plg th{font-weight:700;color:var(--muted);font-size:.7rem;padding:6px 2px;text-align:center}
 #espace-planning table.plg td{padding:3px 2px;border-top:1px solid var(--border);vertical-align:middle;text-align:center}
 #espace-planning table.plg td.n{text-align:left;padding-left:6px}
+#espace-planning table.plg tr>:first-child{position:sticky;left:0;z-index:2;background:var(--card)}
 #espace-planning .plg-c{width:100%;box-sizing:border-box;height:30px;font-family:inherit;font-size:.78rem;font-weight:700;text-align:center;padding:0 2px;border:1px solid transparent;border-radius:6px;background:var(--card);color:var(--text)}
 #espace-planning .plg-c:focus{outline:2px solid var(--gold)}
 #espace-planning .plg-c.bad{border-color:#c0392b;background:#fdecea;color:#c0392b}
@@ -9690,7 +9693,7 @@ window.addEventListener('message', e => {
 <script>
 // ══ PLANNING EDG : équipe, horaires des lettres par restaurant, grille hebdomadaire, résumés (mois / cycle de 13 semaines) ══
 // Données dans Supabase (tables equipe, planning_*) lues et écrites avec le jeton de la personne ; campagnes lues dans le Plan de communication.
-const PLG = { rights: null, FR: '', resto: null, restos: [], ws: null, team: [], cfg: { modulation: false, debut_cycle: null, seuils: {} }, def: null, over: [], weeks: {}, ver: {}, dirty: false, busy: false, msg: ['', ''], conflict: null, month: null };
+const PLG = { editId: null, rights: null, FR: '', resto: null, restos: [], ws: null, team: [], cfg: { modulation: false, debut_cycle: null, seuils: {} }, def: null, over: [], weeks: {}, ver: {}, dirty: false, busy: false, msg: ['', ''], conflict: null, month: null };
 const PLG_FN = { directeur: 'Directeur', directeur_adjoint: 'Directeur adjoint', assistant_direction: 'Assistant de direction', manager: 'Manager', responsable_zone: 'Responsable de zone' };
 const PLG_SEUILS = { jour_max: 10, semaine_max: 48, moyenne12: 44, repos_jour: 11, repos_hebdo: 35, jours_max: 6, assistant_direction_shifts: 2, directeur_adjoint_shifts_min: 1 };
 const PLG_JL = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], PLG_J = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -9751,12 +9754,20 @@ const plgTm = s => { const a = String(s).split(':'); return +a[0] + (+a[1] || 0)
 const plgDur = c => c.debut && c.fin ? (plgTm(c.fin) <= plgTm(c.debut) ? plgTm(c.fin) + 24 - plgTm(c.debut) : plgTm(c.fin) - plgTm(c.debut)) : c.heures;
 const plgH = h => { const m = Math.round(h * 60), H = Math.floor(m / 60), M = m % 60; return H + ' h' + (M ? ' ' + String(M).padStart(2, '0') : ''); };
 const PLG_ABS = /^(CP|AM|CSS|NT|OFF)$/i;
+const plgFj = p => p.fonction === 'directeur' || p.fonction === 'directeur_adjoint';       // forfait 218 jours : pas de cible hebdomadaire, ni plafonds d'heures (les repos de 11 h et de 35 h restent contrôlés)
+const plgJ = x => x.h > 0 && !x.abs ? 1 : 0;
+function plgShiftOf(d, f, codes) {                                           // plage tapée à la main : ouverture si elle commence à l'heure de O, fermeture si elle finit à l'heure de F, sinon autre shift
+  const o = codes.get('O'), c = codes.get('F'), fin = c && c.debut && c.fin ? (plgTm(c.fin) <= plgTm(c.debut) ? plgTm(c.fin) + 24 : plgTm(c.fin)) : null;
+  if (o && o.debut && d <= plgTm(o.debut) + .01) return 'ouverture';
+  if (fin != null && f >= fin - .01) return 'fermeture';
+  return 'autre';
+}
 function plgInfo(v, codes) {                                                  // une case = une lettre du tableau des codes, ou une plage « 08:00-16:00 »
   v = String(v || '').trim(); if (!v) return { t: '', h: 0, d: null, f: null, shift: null, abs: false };
   const c = codes.get(v.toUpperCase());
   if (c) { const d = c.debut ? plgTm(c.debut) : null, f = c.debut && c.fin ? (plgTm(c.fin) <= d ? plgTm(c.fin) + 24 : plgTm(c.fin)) : null, ab = PLG_ABS.test(c.code); return { t: 'code', code: c.code, h: plgDur(c), d: ab ? null : d, f: ab ? null : f, shift: c.shift, abs: ab, bg: c.fond, fg: c.texte }; }
-  const m = v.match(/^(\d{1,2})\s*[:hH]\s*(\d{2})\s*[-–à]\s*(\d{1,2})\s*[:hH]\s*(\d{2})$/);
-  if (m) { const d = +m[1] + m[2] / 60, f0 = +m[3] + m[4] / 60, f = f0 <= d ? f0 + 24 : f0, p = x => String(x).padStart(2, '0'); return { t: 'range', h: f - d, d, f, shift: null, abs: false, norm: p(m[1]) + ':' + m[2] + '-' + p(m[3]) + ':' + m[4] }; }
+  const m = v.match(/^(\d{1,2})\s*(?:[:hH]\s*(\d{0,2}))?\s*(?:-|–|—|à|a)\s*(\d{1,2})\s*(?:[:hH]\s*(\d{0,2}))?$/);   // 8h-16h · 8h30-17h · 8-16 · 08:00-16:00 · 8h à 16h
+  if (m && +m[1] <= 24 && +m[3] <= 24 && +(m[2] || 0) < 60 && +(m[4] || 0) < 60) { const mn1 = +(m[2] || 0), mn2 = +(m[4] || 0), d = +m[1] + mn1 / 60, f0 = +m[3] + mn2 / 60, f = f0 <= d ? f0 + 24 : f0, p = x => String(x).padStart(2, '0'); return { t: 'range', h: f - d, d, f, shift: plgShiftOf(d, f, codes), abs: false, norm: p(m[1]) + ':' + p(mn1) + '-' + p(m[3]) + ':' + p(mn2) }; }
   return { t: 'bad', h: 0, d: null, f: null, shift: null, abs: false };
 }
 const plgRow = (ws, pid) => { const w = plgW(ws), r = w[pid]; return Array.isArray(r) ? r : (w[pid] = ['', '', '', '', '', '', '']); };
@@ -9765,17 +9776,18 @@ const plgPeek = (ws, pid) => { const r = (PLG.weeks[PLG.resto + '|' + ws] || {})
 function plgAnalyse(p, codes) {
   const ws = PLG.ws, row = plgRow(ws, p.id), inf = row.map(v => plgInfo(v, codes)), tot = inf.reduce((a, x) => a + x.h, 0), al = [], se = k => plgSeuil(k);
   const jours = inf.filter(x => x.h > 0 && !x.abs).length, shifts = inf.filter(x => x.shift).length;
-  inf.forEach((x, j) => { if (x.t === 'bad') al.push('case « ' + row[j] + ' » inconnue (' + PLG_JL[j] + ')'); else if (x.h > se('jour_max') && !x.abs) al.push('plus de ' + se('jour_max') + ' h le ' + PLG_JL[j] + ' (' + plgH(x.h) + ')'); });
+  const fj = plgFj(p);
+  inf.forEach((x, j) => { if (x.t === 'bad') al.push('case « ' + row[j] + ' » inconnue (' + PLG_JL[j] + ')'); else if (!fj && x.h > se('jour_max') && !x.abs) al.push('plus de ' + se('jour_max') + ' h le ' + PLG_JL[j] + ' (' + plgH(x.h) + ')'); });
   const iv = [], add = (ws2, j, x) => { if (x.d != null && x.f != null) iv.push([plgWk(ws, ws2) * 168 + j * 24 + x.d, plgWk(ws, ws2) * 168 + j * 24 + x.f]); };
   const pr = plgPeek(plgAdd(ws, -7), p.id), nx = plgPeek(plgAdd(ws, 7), p.id);
   if (pr) add(plgAdd(ws, -7), 6, plgInfo(pr[6], codes)); inf.forEach((x, j) => add(ws, j, x)); if (nx) add(plgAdd(ws, 7), 0, plgInfo(nx[0], codes));
   iv.sort((a, b) => a[0] - b[0]); let best = 0;
   for (let k = 1; k < iv.length; k++) { const g = iv[k][0] - iv[k - 1][1]; if (iv[k][0] >= 0 && iv[k][0] < 168 && g < se('repos_jour')) al.push('repos de ' + plgH(Math.max(0, g)) + ' avant le ' + PLG_JL[Math.floor(iv[k][0] / 24) % 7] + ' (' + se('repos_jour') + ' h minimum)'); if (iv[k - 1][1] < 168 && iv[k][0] > 0) best = Math.max(best, g); }
   if (iv.some(x => x[0] >= 0 && x[0] < 168) && best < se('repos_hebdo') && !(iv.length < 2)) al.push('repos hebdomadaire de ' + se('repos_hebdo') + ' h consécutives non repéré (plus long repos : ' + plgH(Math.max(0, best)) + ')');
-  if (tot > se('semaine_max')) al.push('plus de ' + se('semaine_max') + ' h dans la semaine (' + plgH(tot) + ')');
+  if (!fj && tot > se('semaine_max')) al.push('plus de ' + se('semaine_max') + ' h dans la semaine (' + plgH(tot) + ')');
   if (jours > se('jours_max')) al.push(jours + ' jours travaillés (' + se('jours_max') + ' maximum)');
   let sum = 0, n = 0; for (let w = 0; w < 12; w++) { const r = plgPeek(plgAdd(ws, -7 * w), p.id); if (r) { n++; sum += r.reduce((a, v) => a + plgInfo(v, codes).h, 0); } }
-  if (n === 12 && sum / 12 > se('moyenne12')) al.push('moyenne de ' + plgH(sum / 12) + ' sur 12 semaines (' + se('moyenne12') + ' h maximum)');
+  if (!fj && n === 12 && sum / 12 > se('moyenne12')) al.push('moyenne de ' + plgH(sum / 12) + ' sur 12 semaines (' + se('moyenne12') + ' h maximum)');
   const rem = [];
   if (jours > 0) { const need = se('assistant_direction_shifts'), min = se('directeur_adjoint_shifts_min');
     if (p.fonction === 'assistant_direction' && shifts !== need) rem.push(p.prenom + ' (assistant de direction) : ' + shifts + ' shift' + (shifts > 1 ? 's' : '') + ' cette semaine, ' + need + ' attendus');
@@ -9797,7 +9809,7 @@ function plgRender() {
   const evs = (plgW(ws)._ev || []), alerts = [], rems = [];
   let h = '<div class="plg-bar"><div style="display:flex;gap:6px;flex-wrap:wrap">' + PLG.restos.map(k => '<button class="plg-chip ' + (k === PLG.resto ? 'on' : '') + '" onclick="plgSetResto(\'' + plgE(k) + '\')">' + plgE(_rtab ? _rtab(k) : k) + '</button>').join('') + '</div>'
     + '<label style="font-size:.8rem;display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" ' + (mod ? 'checked' : '') + ' ' + (can ? '' : 'disabled') + ' onchange="plgSetMod(this.checked)"> Modulation (cycles de 13 semaines)</label></div>';
-  h += '<div class="plg-bar"><div style="display:flex;gap:6px;align-items:center"><button class="plg-btn" onclick="plgGo(-1)" aria-label="Semaine précédente">‹</button><b style="min-width:250px;text-align:center;font-size:.9rem">Semaine du ' + plgFr(ws) + ' au ' + plgFr(we) + '/' + we.slice(0, 4) + '</b><button class="plg-btn" onclick="plgGo(1)" aria-label="Semaine suivante">›</button><button class="plg-btn" onclick="plgToday()">Aujourd\'hui</button></div>'
+  h += '<div class="plg-bar"><div class="plg-nav"><button class="plg-btn" onclick="plgGo(-1)" aria-label="Semaine précédente">‹</button><b>Semaine du ' + plgFr(ws) + ' au ' + plgFr(we) + '/' + we.slice(0, 4) + '</b><button class="plg-btn" onclick="plgGo(1)" aria-label="Semaine suivante">›</button><button class="plg-btn" onclick="plgToday()">Aujourd\'hui</button></div>'
     + '<div style="font-size:.76rem;color:var(--muted)">' + (mod ? '<b>Modulation</b> · cycle ' + cy.n + ', semaine ' + (Math.min(13, plgWk(cy.start, ws) + 1)) + '/13 · 455 h par personne sur le cycle' : 'Planning à 35 h par semaine') + '</div></div>';
   if (camps.length) h += '<div style="margin-bottom:4px">' + camps.map(e => '<span class="plg-camp">📣 ' + plgE(e.detail || 'Campagne') + ' · ' + plgFr(e.periode) + (e.fin ? ' → ' + plgFr(e.fin) : '') + '</span>').join('') + '</div>';
   if (!T.length) h += '<div class="plg-box plg-rem">Aucune personne dans l\'équipe de ce restaurant.' + (can ? ' Ajoutez-les dans « Équipe du restaurant » ci-dessous.' : '') + '</div>';
@@ -9806,10 +9818,10 @@ function plgRender() {
       + '<tr><th style="text-align:left;font-size:.62rem;padding-left:6px">Événements</th>' + PLG_J.map((j, i) => '<th style="vertical-align:top">' + evs.map((e, k) => e.d === i ? '<span class="plg-ev" title="' + (can ? 'Cliquer pour retirer' : '') + '" ' + (can ? 'onclick="plgDelEv(' + k + ')" style="cursor:pointer"' : '') + '>' + (e.h ? plgE(e.h) + ' ' : '') + plgE(e.x) + '</span>' : '').join('') + '</th>').join('') + '<th></th></tr></thead><tbody>';
     T.forEach(p => {
       const a = plgAnalyse(p, codes), cible = +p.heures_hebdo || 35, b = plgOF(p, codes), d = b[0] - b[1], bc = Math.abs(d) <= 1 ? ['#e8f6ee', '#1e8449', 'équilibré'] : (Math.abs(d) === 2 ? ['#fdf3e1', '#b9770e', d > 0 ? 'plus d\'ouvertures' : 'plus de fermetures'] : ['#fdecea', '#a93226', d > 0 ? 'trop d\'ouvertures' : 'trop de fermetures']);
-      const diff = a.tot - cible, cl = a.tot > plgSeuil('semaine_max') ? '#c0392b' : (mod ? 'inherit' : (Math.abs(diff) < .01 ? '#1e8449' : '#b9770e'));
-      h += '<tr><td class="n"><b style="font-size:.78rem">' + plgE(p.prenom) + '</b><br><span class="plg-tag">' + plgE(PLG_FN[p.fonction] || p.fonction) + '</span>' + (b[0] + b[1] > 0 ? '<span class="plg-bal" style="background:' + bc[0] + ';color:' + bc[1] + '" title="Depuis le début du cycle : ' + b[0] + ' ouverture(s), ' + b[1] + ' fermeture(s) — ' + bc[2] + '">O ' + b[0] + ' · F ' + b[1] + '</span>' : '') + '</td>';
-      a.inf.forEach((x, j) => { const v = plgRow(ws, p.id)[j], st = x.bg ? 'background:' + x.bg + ';color:' + x.fg + ';' : ''; h += '<td><input class="plg-c' + (x.t === 'bad' ? ' bad' : '') + '" list="plgCodes" style="' + st + '" value="' + plgE(v) + '" ' + (can ? '' : 'readonly') + ' onchange="plgSet(\'' + p.id + '\',' + j + ',this)" title="' + (x.t === 'bad' ? 'Lettre inconnue : choisissez dans la liste ou saisissez une plage 08:00-16:00' : '') + '"></td>'; });
-      h += '<td><b style="color:' + cl + '">' + plgH(a.tot) + '</b>' + (mod ? '' : '<br><span style="font-size:.62rem;color:' + cl + '">' + (diff < 0 ? '−' : (diff > 0 ? '+' : '')) + plgH(Math.abs(diff)) + '</span>') + '</td></tr>';
+      const fj = plgFj(p), diff = a.tot - cible, cl = !fj && a.tot > plgSeuil('semaine_max') ? '#c0392b' : (fj || mod ? 'inherit' : (Math.abs(diff) < .01 ? '#1e8449' : '#b9770e'));
+      h += '<tr><td class="n"><b style="font-size:.78rem">' + plgE(p.prenom) + '</b><br><span class="plg-tag">' + plgE(PLG_FN[p.fonction] || p.fonction) + (fj ? ' · 218 j' : '') + '</span>' + (b[0] + b[1] > 0 ? '<span class="plg-bal" style="background:' + bc[0] + ';color:' + bc[1] + '" title="Depuis le début du cycle : ' + b[0] + ' ouverture(s), ' + b[1] + ' fermeture(s) — ' + bc[2] + '">O ' + b[0] + ' · F ' + b[1] + '</span>' : '') + '</td>';
+      a.inf.forEach((x, j) => { const v = plgRow(ws, p.id)[j], st = x.bg ? 'background:' + x.bg + ';color:' + x.fg + ';' : ''; h += '<td><input class="plg-c' + (x.t === 'bad' ? ' bad' : '') + '" list="plgCodes" style="' + st + '" value="' + plgE(v) + '" ' + (can ? '' : 'readonly') + ' onchange="plgSet(\'' + p.id + '\',' + j + ',this)" title="' + (x.t === 'bad' ? 'Lettre inconnue : choisissez dans la liste ou saisissez des horaires : 8h-16h, 8h30-17h ou 08:00-16:00' : '') + '"></td>'; });
+      h += '<td><b style="color:' + cl + '">' + (fj ? a.jours + ' j' : plgH(a.tot)) + '</b>' + (fj ? '<br><span style="font-size:.62rem;color:var(--muted)">' + (a.tot ? plgH(a.tot) : 'forfait 218 j') + '</span>' : mod ? '' : '<br><span style="font-size:.62rem;color:' + cl + '">' + (diff < 0 ? '−' : (diff > 0 ? '+' : '')) + plgH(Math.abs(diff)) + '</span>') + '</td></tr>';
       a.al.forEach(t => alerts.push(t)); a.rem.forEach(t => rems.push(t));
     });
     h += '</tbody></table></div><datalist id="plgCodes">' + list.map(c => '<option value="' + plgE(c.code) + '">' + plgE(c.libelle) + '</option>').join('') + '</datalist>';
@@ -9822,7 +9834,8 @@ function plgRender() {
   h += '<details class="plg-sec"><summary>Événements de la semaine</summary><div>' + plgEvForm(can) + '</div></details>';
   h += '<details class="plg-sec"><summary>Horaires des lettres de ce restaurant</summary><div>' + plgCodesTable(list, can) + '</div></details>';
   h += '<details class="plg-sec"><summary>Équipe du restaurant (' + T.length + ')</summary><div>' + plgTeamBox(can) + '</div></details>';
-  card.innerHTML = h; plgMsg(PLG.msg[0], PLG.msg[1]);
+  const was = {}; card.querySelectorAll('details.plg-sec').forEach(d => { was[d.firstElementChild.textContent.slice(0, 10)] = d.open; });   // les sections restent ouvertes ou fermées comme l'utilisateur les a laissées
+  card.innerHTML = h; card.querySelectorAll('details.plg-sec').forEach(d => { const k = d.firstElementChild.textContent.slice(0, 10); if (k in was) d.open = was[k]; }); plgMsg(PLG.msg[0], PLG.msg[1]);
 }
 // ── résumés : mois (35 h) ou cycle de 13 semaines (modulation), comme la feuille « 35H OU MODULATION » ──
 function plgSummary(codes) {
@@ -9831,19 +9844,19 @@ function plgSummary(codes) {
   if (PLG.cfg.modulation) {
     const cy = plgCycleStart(PLG.ws), weeks = Array.from({ length: 13 }, (_, i) => plgAdd(cy.start, i * 7)), cur = Math.min(12, Math.max(0, plgWk(cy.start, PLG.ws)));
     let h = '<div style="font-size:.74rem;color:var(--muted);margin-bottom:6px">Cycle ' + cy.n + ' : du ' + plgFr(cy.start) + ' au ' + plgFr(plgAdd(cy.start, 90)) + '/' + plgAdd(cy.start, 90).slice(0, 4) + ' · objectif = 13 × heures du contrat (455 h à temps plein ; 1 820 h sur les 4 cycles)</div><div class="plg-wrap"><table class="plg plg-sum" style="min-width:900px"><thead><tr><th style="text-align:left;width:120px">Personne</th>' + weeks.map((w, i) => '<th class="' + (i === cur ? 'plg-now' : '') + '">S' + (i + 1) + '<br><span style="font-weight:400">' + plgFr(w) + '</span></th>').join('') + '<th>Total</th><th>Objectif</th><th>Écart</th></tr></thead><tbody>';
-    T.forEach(p => { let tot = 0; const cible = 13 * (+p.heures_hebdo || 35), asof = (+p.heures_hebdo || 35) * (cur + 1);
-      const cells = weeks.map((w, i) => { const r = plgPeek(w, p.id), hh = r ? r.reduce((a, v) => a + plgInfo(v, codes).h, 0) : null; if (hh != null && i <= cur) tot += hh; else if (hh != null) tot += hh; return '<td class="' + (i === cur ? 'plg-now' : '') + '" style="' + (hh == null ? 'color:var(--muted)' : '') + '">' + (hh == null ? '·' : (+hh.toFixed(2)).toString().replace('.', ',')) + '</td>'; }).join('');
+    T.forEach(p => { let tot = 0; const fj = plgFj(p), cible = 13 * (+p.heures_hebdo || 35), asof = (+p.heures_hebdo || 35) * (cur + 1);
+      const cells = weeks.map((w, i) => { const r = plgPeek(w, p.id), hh = r ? r.reduce((a, v) => { const x = plgInfo(v, codes); return a + (fj ? plgJ(x) : x.h); }, 0) : null; if (hh != null && i <= cur) tot += hh; else if (hh != null) tot += hh; return '<td class="' + (i === cur ? 'plg-now' : '') + '" style="' + (hh == null ? 'color:var(--muted)' : '') + '">' + (hh == null ? '·' : (+hh.toFixed(2)).toString().replace('.', ',') + (fj ? ' j' : '')) + '</td>'; }).join('');
       const ecart = tot - cible, ecAs = tot - asof;
-      h += '<tr><td class="n"><b>' + plgE(p.prenom) + '</b></td>' + cells + '<td><b>' + fmt(tot) + '</b></td><td>' + fmt(cible) + '</td><td style="color:' + (ecart > 0 ? '#c0392b' : '#1e8449') + '" title="Par rapport à l\'objectif attendu à ce jour (' + fmt(asof) + ') : ' + (ecAs >= 0 ? '+' : '−') + fmt(Math.abs(ecAs)) + '">' + (ecart >= 0 ? '+' : '−') + fmt(Math.abs(ecart)) + '</td></tr>'; });
-    return h + '</tbody></table></div><div style="font-size:.7rem;color:var(--muted);margin-top:6px">Le « · » signale une semaine pas encore planifiée. Survolez l\'écart pour le comparer à l\'objectif attendu à ce jour.</div>';
+      h += '<tr><td class="n"><b>' + plgE(p.prenom) + '</b></td>' + cells + '<td><b>' + (fj ? tot + ' j' : fmt(tot)) + '</b></td><td>' + (fj ? '218 j/an' : fmt(cible)) + '</td>' + (fj ? '<td>—</td></tr>' : '<td style="color:' + (ecart > 0 ? '#c0392b' : '#1e8449') + '" title="Par rapport à l\'objectif attendu à ce jour (' + fmt(asof) + ') : ' + (ecAs >= 0 ? '+' : '−') + fmt(Math.abs(ecAs)) + '">' + (ecart >= 0 ? '+' : '−') + fmt(Math.abs(ecart)) + '</td></tr>'); });
+    return h + '</tbody></table></div><div style="font-size:.7rem;color:var(--muted);margin-top:6px">Directeur et directeur adjoint (forfait 218 jours) : comptés en jours travaillés. Le « · » signale une semaine pas encore planifiée. Survolez l\'écart pour le comparer à l\'objectif attendu à ce jour.</div>';
   }
   const [Y, M] = PLG.month.split('-').map(Number), first = PLG.month + '-01', last = plgIso(new Date(Date.UTC(Y, M, 0))), ws0 = plgSun(first), nW = plgWk(ws0, plgSun(last)) + 1, wsL = Array.from({ length: nW }, (_, i) => plgAdd(ws0, i * 7));
   let h = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><button class="plg-btn" onclick="plgMonth(-1)">‹</button><b style="min-width:140px;text-align:center">' + PLG_MOIS[M - 1] + ' ' + Y + '</b><button class="plg-btn" onclick="plgMonth(1)">›</button></div>'
     + '<div class="plg-wrap"><table class="plg plg-sum" style="min-width:640px"><thead><tr><th style="text-align:left;width:120px">Personne</th>' + wsL.map(w => '<th>Sem. ' + plgFr(w) + '</th>').join('') + '<th>Total du mois</th><th>Théorique</th><th>Écart</th></tr></thead><tbody>';
-  T.forEach(p => { let tot = 0, miss = false; const c = +p.heures_hebdo || 35, theo = c * 52 / 12;
-    const cells = wsL.map(w => { const r = plgPeek(w, p.id); let s = 0; if (!r) miss = true; else for (let j = 0; j < 7; j++) { const day = plgAdd(w, j); if (day >= first && day <= last) s += plgInfo(r[j], codes).h; } tot += s; return '<td style="' + (r ? '' : 'color:var(--muted)') + '">' + (r ? (+s.toFixed(2)).toString().replace('.', ',') : '·') + '</td>'; }).join('');
-    const ec = tot - theo; h += '<tr><td class="n"><b>' + plgE(p.prenom) + '</b></td>' + cells + '<td><b>' + fmt(tot) + '</b></td><td>' + fmt(theo) + '</td><td style="color:' + (miss ? 'var(--muted)' : (ec > 0 ? '#b9770e' : '#1e8449')) + '">' + (miss ? 'à compléter' : (ec >= 0 ? '+' : '−') + fmt(Math.abs(ec))) + '</td></tr>'; });
-  return h + '</tbody></table></div><div style="font-size:.7rem;color:var(--muted);margin-top:6px">Heures des jours du mois seulement (une semaine à cheval sur deux mois est répartie jour par jour). Théorique = heures du contrat × 52 ÷ 12. Le « · » signale une semaine pas encore planifiée.</div>';
+  T.forEach(p => { let tot = 0, miss = false; const fj = plgFj(p), c = +p.heures_hebdo || 35, theo = c * 52 / 12;
+    const cells = wsL.map(w => { const r = plgPeek(w, p.id); let s = 0; if (!r) miss = true; else for (let j = 0; j < 7; j++) { const day = plgAdd(w, j); if (day >= first && day <= last) { const x = plgInfo(r[j], codes); s += fj ? plgJ(x) : x.h; } } tot += s; return '<td style="' + (r ? '' : 'color:var(--muted)') + '">' + (r ? (+s.toFixed(2)).toString().replace('.', ',') + (fj ? ' j' : '') : '·') + '</td>'; }).join('');
+    const ec = tot - theo; h += '<tr><td class="n"><b>' + plgE(p.prenom) + '</b></td>' + cells + '<td><b>' + (fj ? tot + ' j' : fmt(tot)) + '</b></td><td>' + (fj ? '218 j/an' : fmt(theo)) + '</td>' + (fj ? '<td>—</td>' : '<td style="color:' + (miss ? 'var(--muted)' : (ec > 0 ? '#b9770e' : '#1e8449')) + '">' + (miss ? 'à compléter' : (ec >= 0 ? '+' : '−') + fmt(Math.abs(ec))) + '</td>') + '</tr>'; });
+  return h + '</tbody></table></div><div style="font-size:.7rem;color:var(--muted);margin-top:6px">Heures des jours du mois seulement (une semaine à cheval sur deux mois est répartie jour par jour). Théorique = heures du contrat × 52 ÷ 12 (directeur et directeur adjoint, au forfait 218 jours : jours travaillés). Le « · » signale une semaine pas encore planifiée.</div>';
 }
 async function plgMonth(d) { const [Y, M] = PLG.month.split('-').map(Number), n = new Date(Date.UTC(Y, M - 1 + d, 1)); PLG.month = plgIso(n).slice(0, 7); const f = plgSun(PLG.month + '-01'), t = plgAdd(plgSun(plgIso(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0)))), 0); await plgFetchWeeks(plgAdd(f, -7), plgAdd(t, 7)); plgRender(); }
 // ── événements propres au planning (la lecture du Plan de communication ne reprend que les campagnes) ──
@@ -9882,14 +9895,37 @@ async function plgCodeAdd() {
   if (!r.ok) { plgMsg('Ajout refusé : ' + ((r.j && r.j.message) || 'erreur'), 'err'); return; } PLG.over.push((r.j && r.j[0]) || { franchise: PLG.FR, restaurant: PLG.resto, code: c, libelle: l, heures: 0, debut: d, fin: f, ordre: 100 }); plgRender(); plgMsg('✓ Lettre ' + c + ' ajoutée à ce restaurant.', 'ok');
 }
 // ── équipe du restaurant (le directeur ajoute lui-même ses directeurs adjoints, assistants, managers, responsables de zone) ──
+function plgTeamRow(p, can) {
+  if (can && PLG.editId === p.id) {                                          // ligne en cours de modification : prénom, fonction, contrat, heures
+    const fj = plgFj(p), cur = p.contrat === 'temps_partiel';
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0;border-top:1px solid var(--border)"><input class="plg-in" id="plgMp" maxlength="40" value="' + plgE(p.prenom) + '" style="width:150px" aria-label="Prénom et initiale">'
+      + '<select class="plg-in" id="plgMf" onchange="plgEdFn()" aria-label="Fonction">' + Object.entries(PLG_FN).map(([k, n]) => '<option value="' + k + '" ' + (k === p.fonction ? 'selected' : '') + '>' + n + '</option>').join('') + '</select>'
+      + '<select class="plg-in" id="plgMk" style="' + (fj ? 'display:none' : '') + '" onchange="document.getElementById(\'plgMh\').value=this.value==\'temps_partiel\'?24:35" aria-label="Contrat"><option value="temps_plein" ' + (cur ? '' : 'selected') + '>Temps plein</option><option value="temps_partiel" ' + (cur ? 'selected' : '') + '>Temps partiel</option></select>'
+      + '<input class="plg-in" id="plgMh" type="number" min="1" max="48" step="0.5" value="' + plgE(+p.heures_hebdo || 35) + '" style="width:70px;' + (fj ? 'display:none' : '') + '" title="Heures par semaine du contrat" aria-label="Heures par semaine">'
+      + '<span id="plgMfj" style="' + (fj ? '' : 'display:none;') + 'font-size:.76rem;color:var(--muted)">Forfait 218 jours</span>'
+      + '<button class="plg-btn pri" onclick="plgTeamSave(\'' + p.id + '\')">Enregistrer</button><button class="plg-btn" onclick="plgTeamEdit(\'\')">Annuler</button></div>';
+  }
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;font-size:.78rem;padding:5px 0;border-top:1px solid var(--border)"><span><b>' + plgE(p.prenom) + '</b> · ' + plgE(PLG_FN[p.fonction] || p.fonction) + ' · ' + (plgFj(p) ? 'forfait 218 jours' : (p.contrat === 'temps_partiel' ? 'temps partiel ' : 'temps plein ') + plgE(+p.heures_hebdo) + ' h') + '</span>'
+    + (can ? '<span style="display:flex;gap:6px"><button class="plg-btn" style="padding:2px 8px" onclick="plgTeamEdit(\'' + p.id + '\')">Modifier</button><button class="plg-btn" style="padding:2px 8px" onclick="plgTeamOff(\'' + p.id + '\')">Retirer</button></span>' : '') + '</div>';
+}
+function plgTeamEdit(id) { PLG.editId = id || null; plgRender(); }
+function plgEdFn() { const fj = plgFj({ fonction: document.getElementById('plgMf').value }); ['plgMk', 'plgMh'].forEach(i => { document.getElementById(i).style.display = fj ? 'none' : ''; }); document.getElementById('plgMfj').style.display = fj ? '' : 'none'; }
+async function plgTeamSave(id) {
+  const p = PLG.team.find(x => x.id === id), n = document.getElementById('plgMp').value.trim(); if (!p) return; if (!n) { document.getElementById('plgMp').focus(); return; }
+  const f = document.getElementById('plgMf').value, fj = plgFj({ fonction: f }), body = { prenom: n, fonction: f, contrat: fj ? 'temps_plein' : document.getElementById('plgMk').value, heures_hebdo: fj ? 35 : (+document.getElementById('plgMh').value || 35) };
+  const r = await plgApi('/rest/v1/equipe?id=eq.' + id, 'PATCH', body, { Prefer: 'return=representation' });
+  if (!r.ok || (Array.isArray(r.j) && !r.j.length)) { plgMsg('Modification refusée : ' + ((r.j && r.j.message) || 'droit insuffisant').replace(/^équipe : /, ''), 'err'); return; }
+  Object.assign(p, (r.j && r.j[0]) || body); PLG.editId = null; plgRender(); plgMsg('✓ ' + p.prenom + ' modifié(e). Ses plannings déjà saisis sont conservés.', 'ok');
+}
 function plgTeamBox(can) {
-  let h = PLG.team.length ? PLG.team.map(p => '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem;padding:5px 0;border-top:1px solid var(--border)"><span><b>' + plgE(p.prenom) + '</b> · ' + plgE(PLG_FN[p.fonction] || p.fonction) + ' · ' + (p.contrat === 'temps_partiel' ? 'temps partiel ' : 'temps plein ') + plgE(+p.heures_hebdo) + ' h</span>' + (can ? '<button class="plg-btn" style="padding:2px 8px" onclick="plgTeamOff(\'' + p.id + '\')">Retirer</button>' : '') + '</div>').join('') : '<div style="font-size:.78rem;color:var(--muted)">Personne pour le moment.</div>';
-  if (can) h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input class="plg-in" id="plgNp" maxlength="40" placeholder="Prénom et initiale" style="width:150px"><select class="plg-in" id="plgNf2">' + Object.entries(PLG_FN).map(([k, n]) => '<option value="' + k + '" ' + (k === 'manager' ? 'selected' : '') + '>' + n + '</option>').join('') + '</select><select class="plg-in" id="plgNk" onchange="document.getElementById(\'plgNh\').value=this.value==\'temps_partiel\'?24:35"><option value="temps_plein">Temps plein</option><option value="temps_partiel">Temps partiel</option></select><input class="plg-in" id="plgNh" type="number" min="1" max="48" step="0.5" value="35" style="width:70px" title="Heures par semaine du contrat"><button class="plg-btn" onclick="plgTeamAdd()">Ajouter</button></div><div style="font-size:.7rem;color:var(--muted);margin-top:4px">Prénom et initiale seulement, jamais le nom complet. Une personne retirée disparaît de la grille ; ses plannings passés restent enregistrés.</div>';
+  let h = PLG.team.length ? PLG.team.map(p => plgTeamRow(p, can)).join('') : '<div style="font-size:.78rem;color:var(--muted)">Personne pour le moment.</div>';
+  if (can) h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input class="plg-in" id="plgNp" maxlength="40" placeholder="Prénom et initiale" style="width:150px"><select class="plg-in" id="plgNf2" onchange="plgFnChg()">' + Object.entries(PLG_FN).map(([k, n]) => '<option value="' + k + '" ' + (k === 'manager' ? 'selected' : '') + '>' + n + '</option>').join('') + '</select><select class="plg-in" id="plgNk" onchange="document.getElementById(\'plgNh\').value=this.value==\'temps_partiel\'?24:35"><option value="temps_plein">Temps plein</option><option value="temps_partiel">Temps partiel</option></select><input class="plg-in" id="plgNh" type="number" min="1" max="48" step="0.5" value="35" style="width:70px" title="Heures par semaine du contrat"><span id="plgNfj" style="display:none;font-size:.76rem;color:var(--muted);align-self:center">Forfait 218 jours</span><button class="plg-btn" onclick="plgTeamAdd()">Ajouter</button></div><div style="font-size:.7rem;color:var(--muted);margin-top:4px">Prénom et initiale seulement, jamais le nom complet. Une personne retirée disparaît de la grille ; ses plannings passés restent enregistrés.</div>';
   return h;
 }
+function plgFnChg() { const fj = plgFj({ fonction: document.getElementById('plgNf2').value }); ['plgNk', 'plgNh'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = fj ? 'none' : ''; }); const m = document.getElementById('plgNfj'); if (m) m.style.display = fj ? '' : 'none'; }
 async function plgTeamAdd() {
   const n = document.getElementById('plgNp').value.trim(); if (!n) { document.getElementById('plgNp').focus(); return; }
-  const body = { franchise: PLG.FR, restaurant: PLG.resto, prenom: n, fonction: document.getElementById('plgNf2').value, contrat: document.getElementById('plgNk').value, heures_hebdo: +document.getElementById('plgNh').value || 35, ordre: PLG.team.length };
+  const body = { franchise: PLG.FR, restaurant: PLG.resto, prenom: n, fonction: document.getElementById('plgNf2').value, contrat: plgFj({ fonction: document.getElementById('plgNf2').value }) ? 'temps_plein' : document.getElementById('plgNk').value, heures_hebdo: plgFj({ fonction: document.getElementById('plgNf2').value }) ? 35 : (+document.getElementById('plgNh').value || 35), ordre: PLG.team.length };
   const r = await plgApi('/rest/v1/equipe', 'POST', body, { Prefer: 'return=representation' }); if (!r.ok) { plgMsg('Ajout refusé : ' + ((r.j && r.j.message) || 'erreur').replace(/^équipe : /, ''), 'err'); return; }
   PLG.team.push((r.j && r.j[0]) || body); plgRender(); plgMsg('✓ ' + n + ' ajouté(e) à l\'équipe.', 'ok');
 }
@@ -9901,7 +9937,7 @@ function plgSet(pid, j, el) {
 }
 function plgGo(d) { if (PLG.dirty && !confirm('Des modifications ne sont pas enregistrées : changer de semaine les perdrait. Continuer ?')) return; PLG.dirty = false; PLG.ws = plgAdd(PLG.ws, 7 * d); PLG.month = PLG.ws.slice(0, 7); plgLoad(); }
 function plgToday() { if (PLG.dirty && !confirm('Des modifications ne sont pas enregistrées. Continuer ?')) return; PLG.dirty = false; PLG.ws = plgSun(plgIso(new Date())); PLG.month = PLG.ws.slice(0, 7); plgLoad(); }
-function plgSetResto(k) { if (PLG.dirty && !confirm('Des modifications ne sont pas enregistrées. Continuer ?')) return; PLG.dirty = false; PLG.resto = k; PLG.def = PLG.def; plgLoad(); }
+function plgSetResto(k) { if (PLG.dirty && !confirm('Des modifications ne sont pas enregistrées. Continuer ?')) return; PLG.dirty = false; PLG.editId = null; PLG.resto = k; PLG.def = PLG.def; plgLoad(); }
 async function plgSetMod(v) {
   const r = await plgApi('/rest/v1/rpc/planning_resto_save', 'POST', { f: PLG.FR, resto: PLG.resto, p_modulation: !!v, p_debut: PLG.cfg.debut_cycle, p_seuils: PLG.cfg.seuils || {} });
   if (!r.ok) { plgMsg('Réglage refusé : ' + ((r.j && r.j.message) || 'erreur').replace(/^planning : /, ''), 'err'); plgRender(); return; } PLG.cfg.modulation = !!v; plgRender(); plgMsg(v ? '✓ Ce restaurant passe en modulation (cycles de 13 semaines).' : '✓ Ce restaurant passe à 35 h par semaine.', 'ok');
@@ -9958,7 +9994,7 @@ function plgWorkbook(base) {
   const m0 = 3 + T.length + 2; put(sy, m0, 2, 'MODULATION', HEAD); put(sy, m0, 3, '', HEAD); ['1ER CYCLE', '2e CYCLE', '3e CYCLE', '4e CYCLE', 'TOTAL', 'CIBLE', 'ÉCART'].forEach((t, i) => put(sy, m0, 5 + i, t, HEAD));
   T.forEach((p, q) => { put(sy, m0 + 1 + q, 3, p.prenom, { font: { bold: true }, border: bd }); let tot = 0;
     for (let k = 0; k < 4; k++) { let h = 0; for (let i = 0; i < 13; i++) h += hoursOf(plgAdd(base, (k * 13 + i) * 7), p.id); tot += h; put(sy, m0 + 1 + q, 5 + k, tf(h), { alignment: ctr, border: bd }, { z: '[h]:mm' }); }
-    const cible = 52 * (+p.heures_hebdo || 35); put(sy, m0 + 1 + q, 9, tf(tot), { font: { bold: true }, alignment: ctr, border: bd }, { z: '[h]:mm' }); put(sy, m0 + 1 + q, 10, tf(cible), { alignment: ctr, border: bd }, { z: '[h]:mm' }); put(sy, m0 + 1 + q, 11, (tot - cible) / 24, { alignment: ctr, border: bd }, { z: '[h]:mm;-[h]:mm' }); });
+    const cible = 52 * (+p.heures_hebdo || 35); put(sy, m0 + 1 + q, 9, tf(tot), { font: { bold: true }, alignment: ctr, border: bd }, { z: '[h]:mm' }); if (plgFj(p)) { put(sy, m0 + 1 + q, 10, 'Forfait 218 j', { alignment: ctr, border: bd }); put(sy, m0 + 1 + q, 11, '', { alignment: ctr, border: bd }); } else { put(sy, m0 + 1 + q, 10, tf(cible), { alignment: ctr, border: bd }, { z: '[h]:mm' }); put(sy, m0 + 1 + q, 11, (tot - cible) / 24, { alignment: ctr, border: bd }, { z: '[h]:mm;-[h]:mm' }); } });
   put(sy, 2, 19, 'TABLEAU DES VALEURS', HEAD); put(sy, 2, 20, 'CODE', HEAD); put(sy, 2, 21, 'DURÉE', HEAD); put(sy, 2, 22, 'DÉBUT', HEAD); put(sy, 2, 23, 'FIN', HEAD);
   list.forEach((c, i) => { const st = c.fond ? { fill: { fgColor: { rgb: plgRgb(c.fond) } }, font: { bold: true, color: { rgb: plgRgb(c.texte) } }, alignment: ctr, border: bd } : { alignment: ctr, border: bd }; put(sy, 3 + i, 19, c.libelle, { border: bd }); put(sy, 3 + i, 20, c.code, st); put(sy, 3 + i, 21, tf(plgDur(c)), { alignment: ctr, border: bd }, { z: '[h]:mm' }); put(sy, 3 + i, 22, frac(c.debut), { alignment: ctr, border: bd }, { z: 'hh:mm' }); put(sy, 3 + i, 23, frac(c.fin), { alignment: ctr, border: bd }, { z: 'hh:mm' }); });
   X.book_append_sheet(wb, sy, '35H OU MODULATION');
@@ -10456,7 +10492,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261102-215928';
+const BUILD_VERSION = '20261102-223630';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

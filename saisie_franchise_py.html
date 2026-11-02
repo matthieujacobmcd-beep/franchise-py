@@ -3206,17 +3206,17 @@ function eqPaint() {
   const rows = EQ.rows.map(r => {
     const st = eqState(r), me = SB_RIGHTS && r.email.toLowerCase() === SB_RIGHTS.email.toLowerCase(), low = EQ_RANK[r.role] < (SB_RIGHTS.rang || 0) && !me;
     return `<tr><td style="${td}"><b>${escH(r.nom)}</b>${me ? ' <small style="color:var(--muted)">(vous)</small>' : ''}<br><span style="font-size:.76rem;color:var(--muted)">${escH(r.email)}</span></td>
-      <td style="${td};font-size:.82rem">${escH(eqLabel(r.role))}<br><span style="font-size:.76rem;color:var(--muted)">${escH(eqResto(r))}</span></td>
-      <td style="${td};font-size:.76rem;color:var(--muted)">${(r.modules || []).map(m => escH((EQ_MODS.find(x => x[0] === m) || [m, m])[1])).join(' · ') || '—'}</td>
-      <td style="${td};font-size:.78rem;font-weight:700;color:${eq218(r)[1]}">${escH(eq218(r)[0])}</td>
-      <td style="${td};font-size:.8rem;font-weight:700;color:${st[1]}">${st[0]}</td>
+      <td data-l="Fonction · restaurants" style="${td};font-size:.82rem">${escH(eqLabel(r.role))}<br><span style="font-size:.76rem;color:var(--muted)">${escH(eqResto(r))}</span></td>
+      <td data-l="Accès" style="${td};font-size:.76rem;color:var(--muted)">${(r.modules || []).map(m => escH((EQ_MODS.find(x => x[0] === m) || [m, m])[1])).join(' · ') || '—'}</td>
+      <td data-l="218 jours" style="${td};font-size:.78rem;font-weight:700;color:${eq218(r)[1]}">${escH(eq218(r)[0])}</td>
+      <td data-l="Statut" style="${td};font-size:.8rem;font-weight:700;color:${st[1]}">${st[0]}</td>
       <td style="${td};text-align:right;white-space:nowrap">${low ? `<button class="btn-save" style="padding:5px 10px;font-size:.78rem" onclick="eqOpen('${r.id}')">Modifier</button>` : ''}</td></tr>`;
   }).join('');
   const jr = EQ.journal.map(x => `<li>${escH(eqWhen(x.quand))} · ${escH(x.par || '')} · ${escH(x.cible || '')} : ${escH({ INSERT: 'ajouté', UPDATE: 'modifié', DELETE: 'supprimé' }[x.action] || x.action)}</li>`).join('');
-  p.innerHTML = `<div class="sim-note" style="margin-bottom:10px">Équipes de <b>${escH(CFG.title)}</b> : chaque personne a son propre accès (e-mail + mot de passe personnel). « Désactiver » coupe tout en moins d'une minute.</div>${banner}
+  p.innerHTML = `<style>@media (max-width:700px){.eq-t{min-width:0 !important}.eq-t thead{display:none}.eq-t,.eq-t tbody,.eq-t tr,.eq-t td{display:block;width:100%;box-sizing:border-box}.eq-t tr{border:1.5px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:10px;background:var(--card)}.eq-t td{border-top:0 !important;padding:4px 0 !important;text-align:left !important;white-space:normal !important}.eq-t td[data-l]::before{content:attr(data-l);display:block;font-size:.68rem;font-weight:600;color:var(--muted)}.eq-t td:last-child:not([data-l]){padding-top:8px !important}}</style><div class="sim-note" style="margin-bottom:10px">Équipes de <b>${escH(CFG.title)}</b> : chaque personne a son propre accès (e-mail + mot de passe personnel). « Désactiver » coupe tout en moins d'une minute.</div>${banner}
     ${can ? '<div style="margin:0 0 12px"><button class="btn-save" onclick="eqOpen(\'\')">+ Ajouter une personne</button></div>' : ''}
     <div id="eqForm"></div>
-    <div class="sim-wrap"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr><th style="${th}">Personne</th><th style="${th}">Fonction · restaurants</th><th style="${th}">Accès</th><th style="${th}">218 jours</th><th style="${th}">Statut</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="${td};color:var(--muted)">Aucune personne pour le moment.</td></tr>`}</tbody></table></div>
+    <div class="sim-wrap"><table class="eq-t" style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr><th style="${th}">Personne</th><th style="${th}">Fonction · restaurants</th><th style="${th}">Accès</th><th style="${th}">218 jours</th><th style="${th}">Statut</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="${td};color:var(--muted)">Aucune personne pour le moment.</td></tr>`}</tbody></table></div>
     <div class="save-msg ${EQ.msg[0]}" id="eqMsg" style="margin-top:8px">${escH(EQ.msg[1])}</div>
     ${jr ? `<details class="sim-d" style="margin-top:12px"><summary>Journal des changements</summary><ul style="margin:8px 0 0 18px;font-size:.8rem;line-height:1.6">${jr}</ul></details>` : ''}`;
   if (EQ.edit !== null) eqForm();
