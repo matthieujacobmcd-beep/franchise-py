@@ -1786,7 +1786,7 @@ function bdDetM(p) {
   for (const x of (p.det || [])) { if (!BD_DET_KEYS.includes(x.k)) continue; const a = out[x.k] = out[x.k] || Array(12).fill(0); for (let i = 0; i < 12; i++) a[i] += x.m ? (x.m[i] || 0) : (x.amt || 0) / 12; }
   return out;
 }
-// Équipe de direction (EDG) saisie par poste (initiales, jamais de noms) : coût mensuel = brut + primes (prime annuelle répartie sur les mois travaillés) ; null = ligne « brut managers » saisie à la main
+// Équipe de gestion (EDG) saisie par poste (initiales, jamais de noms) : coût mensuel = brut + primes (prime annuelle répartie sur les mois travaillés) ; null = ligne « brut managers » saisie à la main
 const BD_POSTES = ['Directeur', 'Adjoint', 'Assistant', 'Manager'];
 function bdEdgM(p) {
   if (typeof accCan === 'function' && !accCan('edg')) return null;      // salaires par poste : réservés aux accès qui ont le droit « edg »
@@ -2018,7 +2018,7 @@ function bdDetSetM(id, m, v) {
   x.m = x.m || Array(12).fill((x.amt || 0) / 12); x.m[m] = n; x.amt = x.m.reduce((a, b) => a + b, 0); delete x.amtF; bdSave(); renderBudget();
 }
 function bdDetEven(id) { const x = bdDet().find(r => r.id === id); if (x) { delete x.m; bdSave(); renderBudget(); } }
-// Équipe de direction : salaires par poste
+// Équipe de gestion : salaires par poste
 function bdEdg() { const p = bdParams(curResto).p; return p.edg = p.edg || { on: true, rows: [] }; }
 function bdEdgAdd(poste) { bdEdg().rows.push({ poste: poste || 'Manager', ini: '', ctr: '', sal: Array(12).fill(0), prime: 0, from: 0 }); bdSave(); renderBudget(); }
 function bdEdgPreset() { const e = bdEdg(); if (e.rows.length && !confirm('Ajouter la structure type (1 directeur, 2 adjoints, 2 assistants, 4 managers) aux postes déjà saisis ?')) return; for (const po of ['Directeur', 'Adjoint', 'Adjoint', 'Assistant', 'Assistant', 'Manager', 'Manager', 'Manager', 'Manager']) e.rows.push({ poste: po, ini: '', ctr: '', sal: Array(12).fill(0), prime: 0, from: 0 }); bdSave(); renderBudget(); }
@@ -2095,7 +2095,7 @@ function renderBudget() {
   const editable = BD_LINES.filter(x => x.t === 'pct' || x.t === 'pctn' || x.t === 'fix');
   const hypEdit = x => {
     if (detM[x.k]) return `<tr><td>${x.l}</td><td colspan="2" style="text-align:center;color:var(--muted)">= détail par société (${(p.det || []).filter(d => d.k === x.k).length} ligne(s), ci-dessus)</td><td>${bdE(sum(L[x.k]))}</td><td class="p">${A ? bdP(sum(L[x.k]) / A) : ''}</td></tr>`;
-    if (x.k === 'momg' && edgM) return `<tr><td>${x.l}</td><td colspan="2" style="text-align:center;color:var(--muted)">= salaires par poste (équipe de direction, ci-dessous)</td><td>${bdE(sum(L.momg))}</td><td class="p">${A ? bdP(sum(L.momg) / A) : ''}</td></tr>`;
+    if (x.k === 'momg' && edgM) return `<tr><td>${x.l}</td><td colspan="2" style="text-align:center;color:var(--muted)">= salaires par poste (équipe de gestion, ci-dessous)</td><td>${bdE(sum(L.momg))}</td><td class="p">${A ? bdP(sum(L.momg) / A) : ''}</td></tr>`;
     const md = bdMode(p, x.k), base = x.t === 'pctn' ? 'CA net' : 'CA alim.';
     const varM = md === 'r' && p.pm && p.pm[x.k], wr = varM ? sum(L[x.k]) / (x.t === 'pctn' ? sum(L.net) : A) : null;
     const val = md === 'r' ? bdIn(varM ? (wr || 0) : p[x.k]) : String(Math.round(sum(p[x.k])));
@@ -2171,7 +2171,7 @@ function renderBudget() {
       ${dets.length && BUD.entry === 'm' ? `<div class="sim-h">Détail mensuel (budget ${Ty})</div><div class="sim-wrap"><table class="bd" style="min-width:1250px"><thead><tr><th>Prestation · société</th>${MN.map(m => `<th>${m.slice(0, 4)}</th>`).join('')}<th>Année</th><th></th></tr></thead><tbody>${detGrid}</tbody></table></div>` : ''}
       <datalist id="bdPrest">${BD_PREST.map(x => `<option value="${escH(x)}">`).join('')}</datalist><datalist id="bdSoc">${bdSocList().map(x => `<option value="${escH(x)}">`).join('')}</datalist>
     </details>`;
-  // équipe de direction : une ligne par poste (initiales pour reconnaître la personne sans la nommer)
+  // équipe de gestion : une ligne par poste (initiales pour reconnaître la personne sans la nommer)
   const eIn = 'padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;';
   const eCost = x => x.sal.reduce((a, b) => a + b, 0) + (x.sal.some(v => v > 0) ? (x.prime || 0) : 0);
   const edgRows = edg.rows.map((x, i) => { const from = x.from || 0; return `<tr><td class="l"><select style="${eIn}" onchange="bdEdgSet(${i},'poste',this.value)">${BD_POSTES.map(po => `<option ${po === x.poste ? 'selected' : ''}>${po}</option>`).join('')}</select></td>
@@ -2184,7 +2184,7 @@ function renderBudget() {
   const edgTotal = edg.rows.reduce((a, x) => a + eCost(x), 0);
   const edgGrid = edg.rows.map((x, i) => `<tr><td>${escH(x.poste)} · ${escH(x.ini || '#' + (i + 1))}</td>${x.sal.map((v, k) => `<td><input type="text" inputmode="decimal" style="width:64px;padding:3px 5px;border:1.5px solid var(--border);border-radius:7px;text-align:right;font-family:inherit;font-size:.72rem" value="${v ? Math.round(v) : ''}" onchange="bdEdgMonth(${i},${k},this.value)"></td>`).join('')}<td><b>${bdE(x.sal.reduce((a, b) => a + b, 0))}</b></td><td></td></tr>`).join('');
   const edgBrut = Array.from({ length: 12 }, (_, k) => edg.rows.reduce((a, x) => a + (x.sal[k] || 0), 0)), edgTotRows = edg.rows.length ? `<tr class="b"><td>Brut total</td>${edgBrut.map(v => `<td>${bdE(v)}</td>`).join('')}<td><b>${bdE(sum(edgBrut))}</b></td><td></td></tr>
-      <tr class="k"><td>Coût équipe de direction (brut + primes)</td>${(edgM || Array(12).fill(0)).map(v => `<td>${bdE(v)}</td>`).join('')}<td><b>${bdE(edgM ? sum(edgM) : 0)}</b></td><td></td></tr>` : '';
+      <tr class="k"><td>Coût équipe de gestion (brut + primes)</td>${(edgM || Array(12).fill(0)).map(v => `<td>${bdE(v)}</td>`).join('')}<td><b>${bdE(edgM ? sum(edgM) : 0)}</b></td><td></td></tr>` : '';
   pn.innerHTML = `
     <div class="panel-head"><div><div class="panel-title">Budget & PNL ${Ty} · ${escH(name)}</div>
       <div class="last-saisie">Le CA alimentaire de chaque mois est la somme de la prévision de CA journalière du calendrier « Prévision CA » (la simulation s'y dépose aussi). Le compte de résultat en découle avec les hypothèses du restaurant, comme dans l'onglet PNL du classeur « PREV ET BUDGET ».</div></div>
@@ -2200,10 +2200,10 @@ function renderBudget() {
     ${plHead}
     <div class="sim-wrap">${per === 'a' ? plAnnual : plMonthly}</div>
     <div class="hint" style="margin-top:6px">* mois de ${Ty - 1} encore incomplet (jours saisis / jours du mois au survol) : l'évolution n'est calculée que sur les mois complets.</div>
-    ${canEdg ? `    <details class="sim-d" open><summary>Équipe de direction : salaires par poste</summary>
+    ${canEdg ? `    <details class="sim-d" open><summary>Équipe de gestion : salaires par poste</summary>
       <div class="hint" style="margin:6px 0 8px">Saisis un poste par ligne avec les <b>initiales</b> de la personne (jamais son nom) : brut mensuel, mois d'effet (revalorisation, arrivée ; départ = 0 à partir du mois) et prime annuelle. Le total alimente la ligne « Main d'œuvre brute managers » du compte de résultat ; les charges sociales managers s'y appliquent. <b>Ta saisie est enregistrée à part dans le dossier de validation</b> (« Enregistrer ma version ») : elle est visible de toi et des échelons au-dessus de toi, jamais des échelons en dessous, et tu ne vois jamais la saisie des échelons au-dessus. Elle n'est ni publiée ni envoyée au Sheet public (« Appliquer » n'enregistre que le coût de main-d'œuvre en % du CA).</div>
       <label style="font-size:.78rem"><input type="checkbox" ${edg.on ? 'checked' : ''} onchange="bdEdgOn(this.checked)"> utiliser ces salaires pour la ligne « Main d'œuvre brute managers »${edg.on && !edgM ? ' <small style="color:var(--muted)">(aucun salaire saisi : la ligne reste celle des hypothèses)</small>' : ''}</label>
-      ${edg.rows.length ? `<div class="sim-wrap" style="margin-top:8px"><table class="sim" style="min-width:760px"><thead><tr><th class="l">Poste</th><th class="l">Initiales</th><th class="l">Contrat</th><th>Brut mensuel (€)</th><th class="l">À partir de</th><th>Prime annuelle (€)</th><th>Coût ${Ty} (€)</th><th></th></tr></thead><tbody>${edgRows}<tr class="tot"><td class="l">Total équipe de direction</td><td></td><td></td><td></td><td></td><td></td><td>${bdE(edgTotal)}</td><td></td></tr></tbody></table></div>` : '<div class="hint" style="margin-top:8px">Aucun poste saisi.</div>'}
+      ${edg.rows.length ? `<div class="sim-wrap" style="margin-top:8px"><table class="sim" style="min-width:760px"><thead><tr><th class="l">Poste</th><th class="l">Initiales</th><th class="l">Contrat</th><th>Brut mensuel (€)</th><th class="l">À partir de</th><th>Prime annuelle (€)</th><th>Coût ${Ty} (€)</th><th></th></tr></thead><tbody>${edgRows}<tr class="tot"><td class="l">Total équipe de gestion</td><td></td><td></td><td></td><td></td><td></td><td>${bdE(edgTotal)}</td><td></td></tr></tbody></table></div>` : '<div class="hint" style="margin-top:8px">Aucun poste saisi.</div>'}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${BD_POSTES.map(po => `<button class="step" onclick="bdEdgAdd('${po}')">+ ${po}</button>`).join('')}<button class="step" onclick="bdEdgPreset()" title="1 directeur, 2 adjoints, 2 assistants, 4 managers (comme le classeur)">Structure type du classeur</button></div>
       ${edg.rows.length ? `<details class="sim-d"><summary>Salaires mois par mois (ajustements)</summary><div class="sim-wrap" style="margin-top:8px"><table class="bd" style="min-width:1250px"><thead><tr><th>Poste · initiales</th>${MN.map(m => `<th>${m.slice(0, 4)}</th>`).join('')}<th>Année</th><th></th></tr></thead><tbody>${edgGrid}${edgTotRows}</tbody></table></div></details>` : ''}
     </details>
@@ -3169,7 +3169,7 @@ function sbTabOk(k) {                                                      // on
 const EQ = { rows: [], journal: [], f218: null, edit: null, loading: false, msg: ['', ''] };
 const EQ_218 = { employe: 'Salarié', superviseur: 'Superviseur', lecteur: 'Lecteur', admin: 'Administrateur (DRH)' }, EQ_218_URL = 'https://matthieujacobmcd-beep.github.io/franchise-py-forfait/';
 const EQ_MODS = [['dashboard', 'Dashboard'], ['saisie', 'Saisie'], ['revue', 'Business Review'], ['planning', 'Planning EDG'], ['utilisateurs', 'Équipes (gestion des accès)']];
-const EQ_CAN = [['sim', 'Prévision CA et simulation'], ['budget', 'Budget & PNL'], ['valid', 'Circuit de validation'], ['edg', "Salaires de l'équipe de direction"]];
+const EQ_CAN = [['sim', 'Prévision CA et simulation'], ['budget', 'Budget & PNL'], ['valid', 'Circuit de validation'], ['edg', "Salaires de l'équipe de gestion"]];
 const EQ_RANK = { owner: 3, franchise: 2, collab: 1, superviseur: 0, directeur: 0 };
 const EQ_DEF = {                                                           // droits proposés par fonction (modifiables)
   directeur:   { modules: ['dashboard', 'saisie', 'planning'], can: ['sim', 'budget', 'valid', 'edg'], tous: false },
