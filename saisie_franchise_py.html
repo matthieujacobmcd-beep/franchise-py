@@ -186,6 +186,7 @@
     <div class="topbar-right">
       <div class="resto-badge" id="restoBadge" style="display:none">📍 <span id="restoBadgeName"></span><button onclick="showPicker()">Changer</button></div>
       <a class="dash-link" href="dashboard_restogroup.html" target="_blank" rel="noopener">Voir le dashboard →</a>
+      <button class="dash-link" id="btnLogout" onclick="logoutSaisie()" title="Se déconnecter : le mot de passe sera redemandé" style="cursor:pointer;font-family:inherit;background:transparent">Se déconnecter</button>
     </div>
   </div>
   <div id="restoPick">
@@ -215,7 +216,7 @@ const PWD_HASH = CFG.pwd_hash;
 // Le serveur (Apps Script) revérifie le rôle à chaque action du circuit de validation ; ici, le verrou protège l'affichage.
 const ACCESS = CFG.access || [];
 const ACC_NEED = { sim:'la simulation du prévisionnel', budget:'le Budget & PNL', valid:'le circuit de validation du prévisionnel' };
-const ACC_ROLE = { directeur:'Directeur', superviseur:'Superviseur', franchise:'Franchisé', collab:'Collaboratrice' };
+const ACC_ROLE = { directeur:'Directeur', superviseur:'Superviseur', franchise:'Franchisé', collab:'Collaboratrice', owner:'Propriétaire' };
 function accProfiles(){ try{ return (JSON.parse(sessionStorage.getItem('py_access')||'[]')||[]).filter(p=>p&&typeof p==='object'); }catch(e){ return []; } }
 const accCovers=(p,r)=>!r||p.scope==='*'||(p.scope||[]).includes(r);
 function accCan(right, r){ return accProfiles().some(p=>(p.can||[]).includes(right)&&accCovers(p,r)); }
@@ -2842,18 +2843,20 @@ async function accRecheck(h) {                                  // appareil mém
   if (r.denied) { try { alert('Le mot de passe de cet accès a été modifié. Reconnecte-toi avec le nouveau mot de passe.'); } catch (e) {} logoutSaisie(); }
   else if (r.ok) { accGrant(r.access); try { buildTabs(); } catch (e) {} }
 }
-function accAdmin() { const ps = accProfiles(); return ps.find(p => p.role === 'franchise' && p.h) || ps.find(p => p.role === 'collab' && p.h) || null; }
+function accAdmin() { const ps = accProfiles(); return ps.find(p => p.role === 'owner') || ps.find(p => p.role === 'franchise') || ps.find(p => p.role === 'collab') || null; }      // propriétaire > franchisé > collaboratrice
 function accIsAdmin() { return ACX_ON && !!accAdmin(); }
 
-const ACX = { rows: null, journal: [], dyn: true, open: null, flash: '', busy: false };
+const ACX = { rows: null, journal: [], dyn: true, open: null, flash: '', busy: false, ak: '' };      // ak : clé d'administration (sha256('acc|' + mot de passe)), gardée en mémoire seulement, jamais enregistrée
 const acxHead = '<div class="panel-head"><div class="panel-title">Mots de passe des accès</div></div>';
 const acxWhen = s => { const m = /^(\d{4})-(\d{2})-(\d{2})T?(\d{2}:\d{2})?/.exec(String(s || '')); return m ? `${m[3]}/${m[2]}/${m[1]}${m[4] ? ' ' + m[4] : ''}` : String(s || ''); };
 async function renderAcces() {
   const p = document.getElementById('panel'), me = accAdmin();
-  if (!me) { p.innerHTML = acxHead + '<div class="hint">🔒 Réservé au franchisé et à la collaboratrice : connecte-toi avec ton mot de passe d’accès.</div>'; return; }
+  if (!me) { p.innerHTML = acxHead + '<div class="hint">🔒 Réservé au propriétaire, au franchisé et à la collaboratrice : connecte-toi avec ton mot de passe d’accès.</div>'; return; }
+  if (!ACX.ak) return acxLock();
   p.innerHTML = acxHead + '<div class="hint">⏳ Chargement des accès…</div>';
-  const j = await accPost({ action: 'acc_list', pwd: me.h }, 30000);
+  const j = await accPost({ action: 'acc_list', ak: ACX.ak }, 30000);
   if (!j || !j.ok) {
+    if (j && /mot de passe non reconnu/.test(j.error || '')) { ACX.ak = ''; return acxLock('Mot de passe incorrect'); }
     const old = j && /action inconnue/.test(j.error || '');
     p.innerHTML = acxHead + `<div class="entry-banner err" style="display:block">${old ? 'L’Apps Script doit être mis à jour (nouvelle version) pour gérer les mots de passe en ligne.' : 'Impossible de charger les accès : ' + escH((j && j.error) || 'connexion') + '.'}</div><div style="margin-top:10px"><button class="btn-save" style="padding:8px 16px" onclick="renderAcces()">Réessayer</button></div>`;
     return;
@@ -2861,8 +2864,20 @@ async function renderAcces() {
   ACX.rows = j.rows; ACX.journal = j.journal || []; ACX.dyn = j.dynamique !== false; ACX.me = j.me;
   acxPaint();
 }
+function acxLock(err) {                                         // la gestion des accès se redéverrouille avec le mot de passe, à chaque ouverture de la page
+  const p = document.getElementById('panel');
+  p.innerHTML = acxHead + `<div class="hint" style="margin-bottom:10px">Pour gérer les mots de passe, saisis <b>ton mot de passe</b> (celui avec lequel tu t’es connecté). Il n’est ni affiché, ni enregistré.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="password" id="acxUnlock" placeholder="Ton mot de passe" autocomplete="current-password" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;min-width:230px" onkeydown="if(event.key==='Enter')acxUnlockGo()">
+    <button class="btn-save" style="padding:8px 16px" onclick="acxUnlockGo()">Ouvrir</button></div><div class="save-msg err" id="acxUMsg" style="margin-top:6px">${escH(err || '')}</div>`;
+  const i = document.getElementById('acxUnlock'); if (i) i.focus();
+}
+async function acxUnlockGo() {
+  const i = document.getElementById('acxUnlock'); if (!i || !i.value) return;
+  ACX.ak = await sha256('acc|' + i.value); i.value = '';
+  renderAcces();
+}
 function acxPaint() {
-  const p = document.getElementById('panel'), me = ACX.me || {}, own = me.role === 'franchise' ? 'tous les accès et la Business Review' : 'les directeurs, les superviseurs et le tien';
+  const p = document.getElementById('panel'), me = ACX.me || {}, own = me.role === 'owner' ? 'tous les accès et la Business Review' : me.role === 'franchise' ? 'les directeurs, les superviseurs, la collaboratrice, la Business Review et le tien' : 'les directeurs, les superviseurs et le tien';
   const sc = r => r.scope === '*' ? 'Tous' : (r.scope || []).map(x => (RESTOS.find(q => q[0] === x) || [x, x])[1]).join(', ');
   const rows = ACX.rows.map(r => `<tr><td style="padding:8px 6px;border-top:1px solid var(--border)"><b>${escH(r.label)}</b>${r.id === me.id ? ' <small style="color:var(--muted)">(toi)</small>' : ''}</td>
       <td style="padding:8px 6px;border-top:1px solid var(--border);color:var(--muted);font-size:.8rem">${escH(sc(r))}</td>
@@ -2888,16 +2903,18 @@ function acxMsg(c, t) { const m = document.getElementById('acxMsg'); if (m) { m.
 async function acxSave(id) {
   if (ACX.busy) return;
   const a = document.getElementById('acxA').value, b = document.getElementById('acxB').value, min = id === 'revue' ? 6 : 8, me = accAdmin();
-  if (!me) return acxMsg('err', 'Reconnecte-toi.');
+  if (!me || !ACX.ak) return acxMsg('err', 'Reconnecte-toi.');
   if (a.length < min) return acxMsg('err', `${min} caractères minimum.`);
   if (a !== b) return acxMsg('err', 'Les deux saisies ne sont pas identiques.');
   ACX.busy = true; document.getElementById('acxGo').disabled = true; acxMsg('', 'Enregistrement…');
-  const nh = await sha256((id === 'revue' ? 'rv|' : '') + a), old = me.h, j = await accPost({ action: 'acc_set', pwd: old, id, h: nh }, 40000);
+  const row0 = ACX.rows.find(r => r.id === id), isAdm = !!row0 && ['owner', 'franchise', 'collab'].includes(row0.role);
+  const nh = await sha256((id === 'revue' ? 'rv|' : '') + a), nak = isAdm ? await sha256('acc|' + a) : '', old = (accProfiles().find(x => x.id === id) || {}).h, j = await accPost({ action: 'acc_set', ak: ACX.ak, id, h: nh, nak }, 40000);
   ACX.busy = false;
   if (!j || !j.ok) { const g = document.getElementById('acxGo'); if (g) g.disabled = false; return acxMsg('err', (j && j.error) || 'Enregistrement impossible'); }
   if (j.own) {                                                    // mon propre mot de passe : la session continue avec le nouveau
+    ACX.ak = nak;
     const ps = accProfiles(), mine = ps.find(x => x.id === id); if (mine) { mine.h = nh; mine.pwd_hash = nh; try { sessionStorage.setItem('py_access', JSON.stringify(ps)); } catch (e) {} }
-    try { if (localStorage.getItem('py_remember') === old) localStorage.setItem('py_remember', nh); } catch (e) {}
+    try { if (old && localStorage.getItem('py_remember') === old) localStorage.setItem('py_remember', nh); } catch (e) {}
   }
   const row = ACX.rows.find(r => r.id === id);
   ACX.open = null; ACX.flash = `✓ Mot de passe de « ${row ? row.label : id} » modifié : il est actif immédiatement.`;
