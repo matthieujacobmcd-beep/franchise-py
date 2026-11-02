@@ -331,7 +331,7 @@ const SBA = (() => {
   };
 
   // ── écran de connexion (inséré dans la boîte de connexion existante de la page) ──
-  const CSS = '#sba-box{text-align:left;margin:0 0 6px}#sba-box input[type=email],#sba-box input[type=password],#sba-box input[type=text]{width:100%;padding:11px 13px;border:1.5px solid var(--border,#d6dae4);border-radius:11px;font-size:1rem;font-family:inherit;margin:0 0 10px;box-sizing:border-box;background:#fff;color:#111}#sba-box button{width:100%;padding:11px;border:none;border-radius:11px;background:var(--gold,#27ae60);color:#fff;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit}#sba-box button.sba-sec{background:transparent;color:inherit;border:1.5px solid var(--border,#d6dae4);font-weight:700;margin-top:8px}#sba-box button:disabled{opacity:.6;cursor:wait}#sba-box .sba-rem{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 12px;cursor:pointer}#sba-box .sba-rem input{width:auto;margin:0}#sba-box .sba-a{display:block;text-align:center;font-size:.8rem;color:var(--muted,#6b7280);margin-top:12px;cursor:pointer;text-decoration:underline}#sba-box .sba-msg{min-height:1.2em;font-size:.82rem;margin:2px 0 8px;text-align:center}#sba-box .sba-msg.err{color:var(--red,#c0392b)}#sba-box .sba-msg.ok{color:var(--green,#1e8449)}#sba-box h2{font-size:1rem;margin:0 0 8px;text-align:center}#sba-box p{font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;text-align:center}';
+  const CSS = '.sba-who{font-size:.8rem;font-weight:700;color:var(--muted,#6b7280);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}.sba-who:empty{display:none}#sba-box{text-align:left;margin:0 0 6px}#sba-box input[type=email],#sba-box input[type=password],#sba-box input[type=text]{width:100%;padding:11px 13px;border:1.5px solid var(--border,#d6dae4);border-radius:11px;font-size:1rem;font-family:inherit;margin:0 0 10px;box-sizing:border-box;background:#fff;color:#111}#sba-box button{width:100%;padding:11px;border:none;border-radius:11px;background:var(--gold,#27ae60);color:#fff;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit}#sba-box button.sba-sec{background:transparent;color:inherit;border:1.5px solid var(--border,#d6dae4);font-weight:700;margin-top:8px}#sba-box button:disabled{opacity:.6;cursor:wait}#sba-box .sba-rem{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 12px;cursor:pointer}#sba-box .sba-rem input{width:auto;margin:0}#sba-box .sba-a{display:block;text-align:center;font-size:.8rem;color:var(--muted,#6b7280);margin-top:12px;cursor:pointer;text-decoration:underline}#sba-box .sba-msg{min-height:1.2em;font-size:.82rem;margin:2px 0 8px;text-align:center}#sba-box .sba-msg.err{color:var(--red,#c0392b)}#sba-box .sba-msg.ok{color:var(--green,#1e8449)}#sba-box h2{font-size:1rem;margin:0 0 8px;text-align:center}#sba-box p{font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;text-align:center}';
   function msg(t, kind) { const m = $('sba-msg'); if (m) { m.className = 'sba-msg ' + (kind || ''); m.textContent = t || ''; } }
   function busy(on, label) { const b = $('sba-go'); if (b) { b.disabled = on; if (label) b.textContent = on ? label.on : label.off; } }
   let ui = { view: 'login', onOk: null, scope: null, legacy: [] };
@@ -346,10 +346,15 @@ const SBA = (() => {
     if (p) p.textContent = K ? "Saisissez votre adresse e-mail professionnelle : vous recevez un lien (valable 1 heure) pour définir votre mot de passe." : (P ? '12 caractères minimum. Vous l\'utiliserez ensuite avec votre e-mail.' : '');
     msg('');
   }
+  const ROLE = { owner: 'Propriétaire', franchise: 'Franchisé', collab: 'Collaboratrice', superviseur: 'Superviseur', directeur: 'Directeur' };
+  function showWho(r) {                                                          // « 👤 Camille D. » dans l'en-tête de la page
+    document.querySelectorAll('.sba-who').forEach(e => { e.textContent = r && r.nom ? '👤 ' + r.nom : ''; e.title = r ? (ROLE[r.role] || r.role) + ' · ' + r.email : ''; });
+  }
   async function enter() {                                                       // connexion réussie : droits relus dans la base, puis ouverture de la page
     const r = await rights(true);
     if (!r) { await logout(); return { ok: false, error: "Ce compte n'a aucun accès actif. Demandez à votre responsable de vous ajouter." }; }
     if (!(r.modules || []).includes(MODULE)) { await logout(); return { ok: false, error: MODULE === 'dashboard' ? "Ce compte n'a pas accès au dashboard." : "Ce compte n'a pas accès à la saisie." }; }
+    showWho(r);
     try { if (ui.scope) ui.scope(r); } catch (e) {}                              // périmètre de la personne appliqué AVANT que le moindre appel de données ne parte
     gateRes(); return { ok: true, rights: r };
   }
@@ -1421,6 +1426,7 @@ window.addEventListener('DOMContentLoaded', () => {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       <span>Aide</span>
     </a>
+    <span class="sba-who" id="sbaWho"></span>
     <a id="btnLogout" onclick="logoutDevice()" class="topbar-intervention" title="Se déconnecter : le mot de passe sera redemandé" style="cursor:pointer;border-color:#64748b;color:#475569">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       <span>Se déconnecter</span>
@@ -10113,7 +10119,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261102-152004';
+const BUILD_VERSION = '20261102-170224';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {

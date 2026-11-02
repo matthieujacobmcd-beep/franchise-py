@@ -186,6 +186,7 @@
     <div class="topbar-right">
       <div class="resto-badge" id="restoBadge" style="display:none">📍 <span id="restoBadgeName"></span><button onclick="showPicker()">Changer</button></div>
       <a class="dash-link" href="dashboard_restogroup.html" target="_blank" rel="noopener">Voir le dashboard →</a>
+      <span class="sba-who" id="sbaWho"></span>
       <button class="dash-link" id="btnLogout" onclick="logoutSaisie()" title="Se déconnecter : le mot de passe sera redemandé" style="cursor:pointer;font-family:inherit;background:transparent">Se déconnecter</button>
     </div>
   </div>
@@ -3047,7 +3048,7 @@ const SBA = (() => {
   };
 
   // ── écran de connexion (inséré dans la boîte de connexion existante de la page) ──
-  const CSS = '#sba-box{text-align:left;margin:0 0 6px}#sba-box input[type=email],#sba-box input[type=password],#sba-box input[type=text]{width:100%;padding:11px 13px;border:1.5px solid var(--border,#d6dae4);border-radius:11px;font-size:1rem;font-family:inherit;margin:0 0 10px;box-sizing:border-box;background:#fff;color:#111}#sba-box button{width:100%;padding:11px;border:none;border-radius:11px;background:var(--gold,#27ae60);color:#fff;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit}#sba-box button.sba-sec{background:transparent;color:inherit;border:1.5px solid var(--border,#d6dae4);font-weight:700;margin-top:8px}#sba-box button:disabled{opacity:.6;cursor:wait}#sba-box .sba-rem{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 12px;cursor:pointer}#sba-box .sba-rem input{width:auto;margin:0}#sba-box .sba-a{display:block;text-align:center;font-size:.8rem;color:var(--muted,#6b7280);margin-top:12px;cursor:pointer;text-decoration:underline}#sba-box .sba-msg{min-height:1.2em;font-size:.82rem;margin:2px 0 8px;text-align:center}#sba-box .sba-msg.err{color:var(--red,#c0392b)}#sba-box .sba-msg.ok{color:var(--green,#1e8449)}#sba-box h2{font-size:1rem;margin:0 0 8px;text-align:center}#sba-box p{font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;text-align:center}';
+  const CSS = '.sba-who{font-size:.8rem;font-weight:700;color:var(--muted,#6b7280);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}.sba-who:empty{display:none}#sba-box{text-align:left;margin:0 0 6px}#sba-box input[type=email],#sba-box input[type=password],#sba-box input[type=text]{width:100%;padding:11px 13px;border:1.5px solid var(--border,#d6dae4);border-radius:11px;font-size:1rem;font-family:inherit;margin:0 0 10px;box-sizing:border-box;background:#fff;color:#111}#sba-box button{width:100%;padding:11px;border:none;border-radius:11px;background:var(--gold,#27ae60);color:#fff;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit}#sba-box button.sba-sec{background:transparent;color:inherit;border:1.5px solid var(--border,#d6dae4);font-weight:700;margin-top:8px}#sba-box button:disabled{opacity:.6;cursor:wait}#sba-box .sba-rem{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 12px;cursor:pointer}#sba-box .sba-rem input{width:auto;margin:0}#sba-box .sba-a{display:block;text-align:center;font-size:.8rem;color:var(--muted,#6b7280);margin-top:12px;cursor:pointer;text-decoration:underline}#sba-box .sba-msg{min-height:1.2em;font-size:.82rem;margin:2px 0 8px;text-align:center}#sba-box .sba-msg.err{color:var(--red,#c0392b)}#sba-box .sba-msg.ok{color:var(--green,#1e8449)}#sba-box h2{font-size:1rem;margin:0 0 8px;text-align:center}#sba-box p{font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;text-align:center}';
   function msg(t, kind) { const m = $('sba-msg'); if (m) { m.className = 'sba-msg ' + (kind || ''); m.textContent = t || ''; } }
   function busy(on, label) { const b = $('sba-go'); if (b) { b.disabled = on; if (label) b.textContent = on ? label.on : label.off; } }
   let ui = { view: 'login', onOk: null, scope: null, legacy: [] };
@@ -3062,10 +3063,15 @@ const SBA = (() => {
     if (p) p.textContent = K ? "Saisissez votre adresse e-mail professionnelle : vous recevez un lien (valable 1 heure) pour définir votre mot de passe." : (P ? '12 caractères minimum. Vous l\'utiliserez ensuite avec votre e-mail.' : '');
     msg('');
   }
+  const ROLE = { owner: 'Propriétaire', franchise: 'Franchisé', collab: 'Collaboratrice', superviseur: 'Superviseur', directeur: 'Directeur' };
+  function showWho(r) {                                                          // « 👤 Camille D. » dans l'en-tête de la page
+    document.querySelectorAll('.sba-who').forEach(e => { e.textContent = r && r.nom ? '👤 ' + r.nom : ''; e.title = r ? (ROLE[r.role] || r.role) + ' · ' + r.email : ''; });
+  }
   async function enter() {                                                       // connexion réussie : droits relus dans la base, puis ouverture de la page
     const r = await rights(true);
     if (!r) { await logout(); return { ok: false, error: "Ce compte n'a aucun accès actif. Demandez à votre responsable de vous ajouter." }; }
     if (!(r.modules || []).includes(MODULE)) { await logout(); return { ok: false, error: MODULE === 'dashboard' ? "Ce compte n'a pas accès au dashboard." : "Ce compte n'a pas accès à la saisie." }; }
+    showWho(r);
     try { if (ui.scope) ui.scope(r); } catch (e) {}                              // périmètre de la personne appliqué AVANT que le moindre appel de données ne parte
     gateRes(); return { ok: true, rights: r };
   }
@@ -3160,7 +3166,8 @@ function sbTabOk(k) {                                                      // on
   return !!SB_RIGHTS && ((SB_RIGHTS.modules || []).includes('utilisateurs'));
 }
 // ── Onglet « Équipes » : les personnes de CETTE franchise, leurs accès (modules, restaurants, niveau) ──
-const EQ = { rows: [], journal: [], edit: null, loading: false, msg: ['', ''] };
+const EQ = { rows: [], journal: [], f218: null, edit: null, loading: false, msg: ['', ''] };
+const EQ_218 = { employe: 'Salarié', superviseur: 'Superviseur', lecteur: 'Lecteur', admin: 'Administrateur (DRH)' }, EQ_218_URL = 'https://matthieujacobmcd-beep.github.io/franchise-py-forfait/';
 const EQ_MODS = [['dashboard', 'Dashboard'], ['saisie', 'Saisie'], ['revue', 'Business Review'], ['planning', 'Planning EDG'], ['utilisateurs', 'Équipes (gestion des accès)']];
 const EQ_CAN = [['sim', 'Prévision CA et simulation'], ['budget', 'Budget & PNL'], ['valid', 'Circuit de validation'], ['edg', "Salaires de l'équipe de direction"]];
 const EQ_RANK = { owner: 3, franchise: 2, collab: 1, superviseur: 0, directeur: 0 };
@@ -3182,13 +3189,16 @@ async function renderEquipes() {
   if (!SB_RIGHTS || !sbTabOk('equipes')) { p.innerHTML = '<div class="hint">🔒 Réservé aux personnes qui gèrent les accès.</div>'; return; }
   p.innerHTML = '<div class="hint">⏳ Chargement des équipes…</div>';
   const fr = encodeURIComponent(CFG.auth.franchise);
-  const [a, b] = await Promise.all([eqCall('/rest/v1/droits?franchise=eq.' + fr + '&select=*&order=nom.asc'), eqCall('/rest/v1/droits_journal?franchise=eq.' + fr + '&select=*&order=quand.desc&limit=12')]);
+  const [a, b, c] = await Promise.all([eqCall('/rest/v1/droits?franchise=eq.' + fr + '&select=*&order=nom.asc'), eqCall('/rest/v1/droits_journal?franchise=eq.' + fr + '&select=*&order=quand.desc&limit=12'), eqCall('/rest/v1/rpc/acces_218_liste', 'POST', { f: CFG.auth.franchise })]);
   if (!a.ok) { p.innerHTML = `<div class="entry-banner err" style="display:block">Impossible de charger les équipes${a.j && a.j.message ? ' : ' + escH(a.j.message) : ''}.</div>`; return; }
-  EQ.rows = a.j || []; EQ.journal = (b.ok && b.j) || []; EQ.edit = null; eqPaint();
+  EQ.rows = a.j || []; EQ.journal = (b.ok && b.j) || []; EQ.edit = null;
+  EQ.f218 = c.ok && Array.isArray(c.j) ? Object.fromEntries(c.j.map(x => [String(x.email).toLowerCase(), x])) : null;     // null = lien avec le 218 jours pas encore installé côté base
+  eqPaint();
 }
 const eqLabel = k => (ACC_ROLE && ACC_ROLE[k]) || k;
 const eqResto = r => (r.restos || []).includes('*') ? 'Tous' : (r.restos || []).map(x => (RESTOS.find(q => q[0] === x) || (CFG.restos.map(c => [c.key, c.label]).find(q => q[0] === x)) || [x, x])[1]).join(', ') || '—';
 const eqState = r => !r.actif ? ['Désactivé', 'var(--red)'] : (r.user_id ? ['Actif', 'var(--green)'] : ['Invitation en attente', 'var(--gold)']);
+const eq218 = r => { if (!EQ.f218) return ['—', 'var(--muted)']; const x = EQ.f218[String(r.email).toLowerCase()]; return !x ? ['Pas de fiche', 'var(--muted)'] : [(x.actif ? 'Actif' : 'Désactivé') + ' · ' + (EQ_218[x.role] || x.role), x.actif ? 'var(--green)' : 'var(--red)']; };
 const eqWhen = s => { try { return new Date(s).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return s; } };
 function eqPaint() {
   const p = document.getElementById('panel'), can = eqRolesFor().length > 0, banner = SBA.mode() === 'both' ? '<div class="hint" style="margin-bottom:10px">ℹ️ Mode transition : les anciens mots de passe partagés fonctionnent encore. Ils seront supprimés quand chacun aura son compte.</div>' : '';
@@ -3198,6 +3208,7 @@ function eqPaint() {
     return `<tr><td style="${td}"><b>${escH(r.nom)}</b>${me ? ' <small style="color:var(--muted)">(vous)</small>' : ''}<br><span style="font-size:.76rem;color:var(--muted)">${escH(r.email)}</span></td>
       <td style="${td};font-size:.82rem">${escH(eqLabel(r.role))}<br><span style="font-size:.76rem;color:var(--muted)">${escH(eqResto(r))}</span></td>
       <td style="${td};font-size:.76rem;color:var(--muted)">${(r.modules || []).map(m => escH((EQ_MODS.find(x => x[0] === m) || [m, m])[1])).join(' · ') || '—'}</td>
+      <td style="${td};font-size:.78rem;font-weight:700;color:${eq218(r)[1]}">${escH(eq218(r)[0])}</td>
       <td style="${td};font-size:.8rem;font-weight:700;color:${st[1]}">${st[0]}</td>
       <td style="${td};text-align:right;white-space:nowrap">${low ? `<button class="btn-save" style="padding:5px 10px;font-size:.78rem" onclick="eqOpen('${r.id}')">Modifier</button>` : ''}</td></tr>`;
   }).join('');
@@ -3205,7 +3216,7 @@ function eqPaint() {
   p.innerHTML = `<div class="sim-note" style="margin-bottom:10px">Équipes de <b>${escH(CFG.title)}</b> : chaque personne a son propre accès (e-mail + mot de passe personnel). « Désactiver » coupe tout en moins d'une minute.</div>${banner}
     ${can ? '<div style="margin:0 0 12px"><button class="btn-save" onclick="eqOpen(\'\')">+ Ajouter une personne</button></div>' : ''}
     <div id="eqForm"></div>
-    <div class="sim-wrap"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr><th style="${th}">Personne</th><th style="${th}">Fonction · restaurants</th><th style="${th}">Accès</th><th style="${th}">Statut</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="5" style="${td};color:var(--muted)">Aucune personne pour le moment.</td></tr>`}</tbody></table></div>
+    <div class="sim-wrap"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr><th style="${th}">Personne</th><th style="${th}">Fonction · restaurants</th><th style="${th}">Accès</th><th style="${th}">218 jours</th><th style="${th}">Statut</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="6" style="${td};color:var(--muted)">Aucune personne pour le moment.</td></tr>`}</tbody></table></div>
     <div class="save-msg ${EQ.msg[0]}" id="eqMsg" style="margin-top:8px">${escH(EQ.msg[1])}</div>
     ${jr ? `<details class="sim-d" style="margin-top:12px"><summary>Journal des changements</summary><ul style="margin:8px 0 0 18px;font-size:.8rem;line-height:1.6">${jr}</ul></details>` : ''}`;
   if (EQ.edit !== null) eqForm();
@@ -3230,10 +3241,20 @@ function eqForm() {
     <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:12px">${eqMods().map(([k, n]) => `<label style="font-size:.84rem"><input type="checkbox" class="eqM" value="${k}" ${has(modules, k) ? 'checked' : ''}> ${escH(n)}</label>`).join('')}</div>
     <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Ce qu'elle peut enregistrer dans la saisie</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:12px">${EQ_CAN.map(([k, n]) => `<label style="font-size:.84rem"><input type="checkbox" class="eqC" value="${k}" ${has(cans, k) ? 'checked' : ''}> ${escH(n)}</label>`).join('')}</div>
+    ${eq218Block(e)}
     ${isNew ? '<label style="font-size:.84rem;display:block;margin-bottom:12px"><input type="checkbox" id="eqInv" checked> Envoyer l\'invitation par e-mail (lien pour choisir son mot de passe)</label>' : ''}
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-save" id="eqGo" onclick="eqSave()">Enregistrer</button>
       ${isNew ? '' : `<button class="btn-save" style="background:transparent;color:var(--text);border:1.5px solid var(--border)" onclick="eqResend()">Renvoyer l'invitation</button><button class="btn-save" style="background:transparent;color:var(--red);border:1.5px solid var(--red)" onclick="eqToggle()">${e.actif ? 'Désactiver (départ)' : 'Réactiver'}</button>`}
       <button class="btn-save" style="background:transparent;color:var(--text);border:1.5px solid var(--border)" onclick="EQ.edit=null;eqPaint()">Annuler</button></div></div>`;
+}
+function eq218Block(e) {                                                  // accès à l'application « Suivi du forfait 218 jours » (comptes et fiches gérés dans cette appli)
+  const lien = `<a href="${EQ_218_URL}" target="_blank" rel="noopener" style="color:var(--gold)">Ouvrir l'application 218 jours</a>`, ttl = '<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">Application 218 jours (suivi du forfait jours)</div>';
+  if (e.isNew) return `<div style="margin-bottom:12px">${ttl}<div style="font-size:.82rem;color:var(--muted)">Si la personne est au forfait jours, sa fiche se crée dans l'application 218 jours (${lien}) ; elle apparaîtra ici ensuite.</div></div>`;
+  if (!EQ.f218) return `<div style="margin-bottom:12px">${ttl}<div style="font-size:.82rem;color:var(--muted)">Lien avec le 218 jours pas encore activé.</div></div>`;
+  const x = EQ.f218[String(e.email).toLowerCase()];
+  if (!x) return `<div style="margin-bottom:12px">${ttl}<div style="font-size:.82rem;color:var(--muted)">Pas de fiche 218 jours pour cette adresse. La fiche se crée dans l'application 218 jours (${lien}).</div></div>`;
+  const adm = x.role === 'admin';
+  return `<div style="margin-bottom:12px">${ttl}<label style="font-size:.84rem"><input type="checkbox" id="eq218" ${x.actif ? 'checked' : ''} ${adm ? 'disabled' : ''}> Accès actif — fiche « ${escH(EQ_218[x.role] || x.role)} »</label>${adm ? '<div style="font-size:.78rem;color:var(--muted)">Fiche administrateur : à gérer dans l\'application 218 jours.</div>' : ''}</div>`;
 }
 function eqRoleChanged(k) {                                                // changer de fonction propose les droits habituels de cette fonction
   const d = EQ_DEF[k]; if (!d || !EQ.edit || !EQ.edit.isNew) return;
@@ -3259,6 +3280,11 @@ async function eqSave() {
   if (!r.ok) return eqSet(r.status === 409 ? 'Cette adresse a déjà un accès' : ((r.j && r.j.message) || 'Enregistrement refusé : vous ne pouvez pas accorder ce niveau').replace(/^droits : /, ''), 'err');
   let note = '';
   if (inv) { const s = await SBA.sendLink(o.email); note = s.ok ? ' Invitation envoyée par e-mail.' : ' Invitation non envoyée (' + s.error + ') : utilisez « Renvoyer l\'invitation ».'; }
+  const c218 = document.getElementById('eq218'), x218 = EQ.f218 && !e.isNew ? EQ.f218[String(e.email).toLowerCase()] : null;
+  if (c218 && x218 && !c218.disabled && c218.checked !== !!x218.actif) {
+    const r2 = await eqCall('/rest/v1/rpc/acces_218_set', 'POST', { f: CFG.auth.franchise, p_email: e.email, p_actif: c218.checked });
+    note += r2.ok ? ' Accès 218 jours ' + (c218.checked ? 'activé.' : 'désactivé.') : ' Accès 218 jours inchangé (' + (((r2.j && r2.j.message) || 'refusé').replace(/^218 jours : /, '')) + ').';
+  }
   await renderEquipes(); eqSet('✓ Enregistré.' + note, 'ok');
 }
 async function eqToggle() {
@@ -3266,7 +3292,13 @@ async function eqToggle() {
   if (e.actif && !confirm('Désactiver ' + e.nom + ' ? Son accès au dashboard, à la saisie et au planning est coupé en moins d\'une minute.')) return;
   const r = await eqCall('/rest/v1/droits?id=eq.' + e.id, 'PATCH', { actif: !e.actif }, { Prefer: 'return=representation' });
   if (!r.ok || (Array.isArray(r.j) && !r.j.length)) return eqSet(((r.j && r.j.message) || 'Modification refusée').replace(/^droits : /, ''), 'err');
-  await renderEquipes(); eqSet(e.actif ? '✓ ' + e.nom + ' est désactivé(e) : accès coupé.' : '✓ ' + e.nom + ' est réactivé(e).', 'ok');
+  let n218 = '';
+  const x218 = EQ.f218 && EQ.f218[String(e.email).toLowerCase()];
+  if (e.actif && x218 && x218.actif && x218.role !== 'admin') {                // un départ coupe aussi la fiche du 218 jours
+    const r2 = await eqCall('/rest/v1/rpc/acces_218_set', 'POST', { f: CFG.auth.franchise, p_email: e.email, p_actif: false });
+    n218 = r2.ok ? ' Accès 218 jours coupé aussi.' : ' Attention : accès 218 jours NON coupé (' + (((r2.j && r2.j.message) || 'refusé').replace(/^218 jours : /, '')) + ').';
+  }
+  await renderEquipes(); eqSet(e.actif ? '✓ ' + e.nom + ' est désactivé(e) : accès coupé.' + n218 : '✓ ' + e.nom + ' est réactivé(e).', n218.includes('NON') ? 'err' : 'ok');
 }
 async function eqResend() {
   const e = EQ.edit; if (!e) return; eqSet('Envoi…');
