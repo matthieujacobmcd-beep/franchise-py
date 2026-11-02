@@ -1986,6 +1986,11 @@ function expandAlerts() {
 }
 
 function openSection(cat) {
+  // Vue Franchise en année courante : un clic sur une tuile ouvre le Classement de la catégorie (retour aux tuiles : pastille 2026)
+  if (currentResto === 'FRANCHISE' && !restoSelection && !compareMode && !prevMode && !kpiViewMode && currentYear === YEAR_CUR && !currentSemester) {
+    const k0 = KPIs.find(k => k.cat === cat && kpiVisibleYear(k));
+    if (k0) { kpiViewSelected = k0.id; kpiViewYear = YEAR_CUR; setMode('kpiview'); return; }
+  }
   // Fermer toutes les autres, ouvrir celle-ci
   Object.keys(expandedSections).forEach(c => { expandedSections[c] = false; });
   expandedSections[cat] = true;
@@ -2561,6 +2566,9 @@ function calcAnnualComparable(kpiId, resto, year) {
   let sum = 0, count = 0;
   for (const m of months2026) {
     let v;
+    // N-1 : on ne garde que les mois où CE restaurant a des données N (sinon un restaurant dont la saisie s'arrête
+    // avant le mois partiel des autres, ex. Viviers au 31/10, se verrait comparé à novembre N-1 entier)
+    if (year === YEAR_PREV && DASHBOARD_DATA[YEAR_CUR]?.[kpiId]?.[m]?.[resto] == null) continue;
     if (year === YEAR_PREV && partialMonths.has(m)) {
       // Mois partiel → utiliser le comparable à date (existe pour tous les restos + franchise)
       const compVal = DASHBOARD_DATA[YEAR_PREV]?.[compKey]?.[m]?.[resto] ?? null;
@@ -3276,7 +3284,7 @@ function kvValue(kpi, r, year) {
     }
     return getData(year)[mid]?.[m]?.[r] ?? null;
   }
-  return (COMPARABLE_KPIS.has(kpi.id) && (year === YEAR_CUR || (year === YEAR_PREV && kpiViewYear === YEAR_CUR && ANNUAL_COMP_KPIS.has(kpi.id))) && (kpi.monthly || kpi.hasMonthly))
+  return (COMPARABLE_KPIS.has(kpi.id) && (year === YEAR_CUR || (year === YEAR_PREV && kpiViewYear === YEAR_CUR)) && (kpi.monthly || kpi.hasMonthly))
     ? calcAnnualComparable(kpi.id, r, year)
     : calcAnnual(kpi.id, r, year);
 }
@@ -9866,7 +9874,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261102-112750';
+const BUILD_VERSION = '20261102-131446';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
