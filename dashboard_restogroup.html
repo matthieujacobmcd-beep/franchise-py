@@ -8023,7 +8023,7 @@ function qhInitChart(canvas) {
       <label id="pcSubL">Type</label><select id="pcSub" onchange="pcSubChange()"></select>
       <input id="pcDetail" maxlength="120" autocomplete="off" style="margin-top:4px">
       <label id="pcRestoL">Restaurant(s)</label><div class="pc-restos" id="pcMRestos" onchange="pcCampWarn()"></div>
-      <div class="pc-row"><div><label>Début</label><input type="date" id="pcStart" onchange="pcCampWarn()"></div><div><label>Fin (facultatif)</label><input type="date" id="pcEnd" onchange="pcCampWarn()"></div><div><label>Heure (facultatif)</label><input id="pcTime" maxlength="30" placeholder="ex. 09:00 – 12:00"></div></div>
+      <div class="pc-row"><div><label>Début</label><input type="date" id="pcStart" onchange="pcCampWarn()"></div><div><label>Fin (facultatif)</label><input type="date" id="pcEnd" onchange="pcCampWarn()"></div><div><label>Heure (facultatif)</label><input id="pcTime" maxlength="30" placeholder="ex. 9h-12h ou 14h30"></div></div>
       <div class="pc-warn" id="pcWarn"></div>
       <label>Lieu (facultatif)</label><input id="pcPlace" maxlength="80" placeholder="ex. Salle de réunion Chambéry, Teams, Siège, restaurant de Belley…">
       <label>Note (champ libre)</label><textarea id="pcNote" maxlength="500" placeholder="Participants, ordre du jour, précisions…"></textarea>
@@ -8048,7 +8048,7 @@ const PC_TYPES = [                                          // catégories (coul
   { k: 'libre', l: 'Autre (champ libre)', c: '#64748b', i: '📌', subs: [] },
 ];
 const PC_ALIAS = { reunion_manager: ['reunion', 'Réunion MANAGERS'], reunion_directeur: ['reunion', 'Réunion DIRECTEURS'] };   // anciens types
-const PC_OTHER = '__autre__', PC_FR = 'FRANCHISE';          // PC_FR : événement pour toute la franchise (une seule ligne)
+const PC_OTHER = '__autre__', PC_FR = 'FRANCHISE', PC_NONE = 'SANS RESTAURANT';          // PC_FR : événement pour toute la franchise (une seule ligne)
 const PC_FERKEY = 'fpy_pcfer';                                  // afficher les jours fériés (préférence de l'appareil)
 const PC = { fer: (() => { try { return localStorage.getItem(PC_FERKEY) !== '0'; } catch (e) { return true; } })(), rows: [], adds: [], over: {}, dels: new Set(), resto: 'ALL', ym: null, types: new Set(PC_TYPES.map(t => t.k)), view: null, edit: null, mType: 'reunion', busy: false };
 const PC_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -8058,6 +8058,18 @@ const pcT = k => PC_TYPES.find(t => t.k === k) || PC_TYPES[PC_TYPES.length - 1];
 const pcFree = k => k === 'libre' || k === 'campagne';                  // catégories sans liste de types : on saisit un titre
 const pcNeed = t => t === 'campagne' ? 'Donne un nom à la campagne.' : pcFree(t) ? 'Donne un titre à l’événement.' : 'Précise le type.';
 const pcIso = d => d.toISOString().slice(0, 10);
+function pcHeure(v) {                                           // heure d'un événement au format français : « 9h », « 14h30 », « 9h-12h » (le Sheet peut renvoyer une vraie valeur d'heure : « 1899-12-30T13:21:39.000Z » ou un nombre)
+  if (v == null || v === '') return '';
+  const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; const h = Math.floor(m / 60), mi = m % 60; return h + 'h' + (mi ? String(mi).padStart(2, '0') : ''); };
+  if (typeof v === 'number') return v >= 0 && v < 1 ? hm(v * 1440) : String(v);
+  let s = String(v).trim(); let m = s.match(/^(\d{4})-\d{2}-\d{2}T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/);
+  if (m) {                                                      // valeur d'heure d'une cellule du Sheet : date de référence 1899, décalage d'avant 1911 (Paris : +0 h 09 min 21 s) à remettre
+    if (+m[1] < 1912) return hm((+m[2] * 3600 + +m[3] * 60 + +m[4] + 561) / 60);
+    try { const d = new Date(s); return hm(+d.toLocaleString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }) * 60 + +d.toLocaleString('fr-FR', { timeZone: 'Europe/Paris', minute: '2-digit' })); } catch (e) { return s; }
+  }
+  s = s.replace(/(\d{1,2})\s*(?::|[hH])(\d{2})?(?::\d{2})?/g, (x, h, mi) => (+h) + 'h' + (mi && mi !== '00' ? mi : ''));
+  return s.replace(/(\d+h(?:\d{2})?)\s*[-–—]\s*(?=\d)/g, '$1-').replace(/\s{2,}/g, ' ');
+}
 const pcFmt = iso => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const pcDow = iso => (new Date(iso + 'T00:00:00Z').getUTCDay() + 6) % 7;
 const _pcFer = {};                                              // jours fériés français : fixes + Pâques, Ascension, Pentecôte (même règle que le calendrier de prévision CA)
@@ -8076,7 +8088,7 @@ const pcFerMonth = ym => Object.entries(pcFeries(+ym.slice(0, 4))).filter(([d]) 
 const pcAdd = (iso, n) => pcIso(new Date(new Date(iso + 'T00:00:00Z').getTime() + n * 86400000));
 const pcTimes = t => { const m = [...String(t || '').matchAll(/(\d{1,2})\s*(?:h|H|:)\s*(\d{2})?/g)].map(x => [+x[1], +(x[2] || 0)]).filter(x => x[0] < 24 && x[1] < 60); return m.length ? { s: m[0], e: m[1] || null } : null; };
 function pcCalBuild(o) {                                          // o = { type, detail, periode, fin, heure, lieu, note, restos[] }
-  const t = pcT(o.type), main = o.type === 'formation' ? 'Formation' + (o.detail ? ' · ' + o.detail : '') : (o.detail || t.l), rs = (o.restos || []).filter(Boolean);
+  const t = pcT(o.type), main = o.type === 'formation' ? 'Formation' + (o.detail ? ' · ' + o.detail : '') : (o.detail || t.l), rs = (o.restos || []).filter(r => r && r !== PC_NONE);
   const names = rs.map(r => r === PC_FR ? 'Toute la franchise' : restoDisplay(r)), where = names.length === 1 ? names[0] : names.length > 1 ? names.length + ' restaurants' : '';
   const fr = (typeof FRANCHISE_CFG !== 'undefined' && FRANCHISE_CFG.title) || 'Franchise', tm = pcTimes(o.heure), d0 = o.periode, d1 = o.fin && o.fin >= d0 ? o.fin : d0, one = d0 === d1;
   const hh = a => String(a[0]).padStart(2, '0') + String(a[1]).padStart(2, '0') + '00', e0 = tm && one ? tm.s : null;
@@ -8124,7 +8136,7 @@ function pcNorm(r) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p) || !r.restaurant) return null;
   let type = String(r.type || 'libre'), detail = String(r.detail || ''); if (PC_ALIAS[type]) { if (!detail) detail = PC_ALIAS[type][1]; type = PC_ALIAS[type][0]; }
   if (!PC_TYPES.some(t => t.k === type)) type = 'libre';
-  return { id: String(r.id || ''), periode: p, fin: /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= p ? f : '', restaurant: String(r.restaurant), type, detail, heure: String(r.heure || ''), lieu: String(r.lieu || ''), note: String(r.note || ''), maj: String(r.maj || '') };
+  return { id: String(r.id || ''), periode: p, fin: /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= p ? f : '', restaurant: String(r.restaurant), type, detail, heure: pcHeure(r.heure), lieu: String(r.lieu || ''), note: String(r.note || ''), maj: String(r.maj || '') };
 }
 const pcSame = (a, b) => ['periode', 'fin', 'restaurant', 'type', 'detail', 'heure', 'lieu', 'note'].every(k => (a[k] || '') === (b[k] || ''));
 const PC_SEEN = 'fpy_pcseen2';                                  // { id d'événement : date de modification vue } : propre à l'appareil
@@ -8301,9 +8313,11 @@ function pcOpen(ev) {
   if (d.detail && !pcFree(ty)) subEl.value = inList ? d.detail : PC_OTHER;
   pcSubChange(); document.getElementById('pcDetail').value = d.detail && (pcFree(ty) || !inList) ? d.detail : '';
   const one = !!e, sel = d.restaurant ? [d.restaurant] : (PC.resto !== 'ALL' ? [PC.resto] : []);
-  document.getElementById('pcRestoL').textContent = one ? 'Restaurant' : 'Restaurant(s) — plusieurs possibles';
+  document.getElementById('pcRestoL').textContent = one ? 'Restaurant' : 'Restaurant(s) — plusieurs possibles, ou aucun';
   document.getElementById('pcMRestos').innerHTML = (one ? `<label><input type="radio" name="pcr" value="${PC_FR}" ${sel.includes(PC_FR) ? 'checked' : ''}> <b>Toute la franchise</b></label>` : `<label style="grid-column:1/-1"><input type="checkbox" id="pcFr" onchange="pcFrToggle(this.checked)"> <b>Toute la franchise</b> — un seul événement pour tous les restaurants</label>`) +
-    RESTOS.map(r => `<label><input type="${one ? 'radio' : 'checkbox'}" name="pcr" value="${pcEsc(r)}" ${sel.includes(r) ? 'checked' : ''}> ${pcEsc(restoDisplay(r))}</label>`).join('');
+    RESTOS.map(r => `<label><input type="${one ? 'radio' : 'checkbox'}" name="pcr" value="${pcEsc(r)}" ${sel.includes(r) ? 'checked' : ''}> ${pcEsc(restoDisplay(r))}</label>`).join('') +
+    (one ? `<label><input type="radio" name="pcr" value="${PC_NONE}" ${sel.includes(PC_NONE) ? 'checked' : ''}> <b>Aucun restaurant</b></label>` : '') +
+    `<div style="grid-column:1/-1;font-size:.7rem;color:var(--muted);line-height:1.4">Aucun restaurant coché = événement général : il reste dans le Plan de communication (« Tous les restaurants ») et n'apparaît dans aucun planning. Un événement n'apparaît dans le planning d'un restaurant que si ce restaurant (ou toute la franchise) est coché.</div>`;
   document.getElementById('pcStart').value = d.periode || pcIso(new Date()); document.getElementById('pcEnd').value = d.fin || '';
   document.getElementById('pcTime').value = d.heure || ''; document.getElementById('pcPlace').value = d.lieu || ''; document.getElementById('pcNote').value = d.note || '';
   document.getElementById('pcMsg').textContent = ''; document.getElementById('pcMsg').className = 'pc-msg';
@@ -8325,12 +8339,12 @@ async function pcPost(body) {
 async function pcSave() {
   if (PC.busy) return;
   const type = PC.mType, subSel = document.getElementById('pcSub').value, detail = (pcFree(type) || subSel === PC_OTHER ? document.getElementById('pcDetail').value : subSel).trim(), start = document.getElementById('pcStart').value, end = document.getElementById('pcEnd').value;
-  const fr = document.getElementById('pcFr'), restos = fr && fr.checked ? [PC_FR] : [...document.querySelectorAll('#pcMRestos input[name=pcr]:checked')].map(i => i.value);
-  if (!restos.length) return pcMsg('err', 'Choisis au moins un restaurant.');
+  const fr = document.getElementById('pcFr'); let restos = fr && fr.checked ? [PC_FR] : [...document.querySelectorAll('#pcMRestos input[name=pcr]:checked')].map(i => i.value);
+  if (!restos.length) restos = [PC_NONE];                       // aucun restaurant : événement général (hors plannings)
   if (!start) return pcMsg('err', 'Indique la date de début.');
   if (end && end < start) return pcMsg('err', 'La date de fin est avant le début.');
   if (!detail) return pcMsg('err', pcNeed(type));
-  const base = { periode: start, fin: end, type, detail, heure: document.getElementById('pcTime').value.trim(), lieu: document.getElementById('pcPlace').value.trim(), note: document.getElementById('pcNote').value.trim() };
+  const base = { periode: start, fin: end, type, detail, heure: pcHeure(document.getElementById('pcTime').value.trim()), lieu: document.getElementById('pcPlace').value.trim(), note: document.getElementById('pcNote').value.trim() };
   const baseId = PC.edit ? (PC.edit.ids ? PC.edit.ids[0] : PC.edit.id) : null, rows = restos.map(r => Object.assign({ restaurant: r }, base, baseId ? { id: baseId } : {}));
   PC.busy = true; document.getElementById('pcSaveBtn').disabled = true; pcMsg('', 'Enregistrement…');
   const j = await pcPost({ action: 'ev_save', rows });
@@ -10119,10 +10133,11 @@ function plgView(ws, pid) {                                                  // 
 }
 const plgRow = (ws, pid) => { if (plgD(ws).getUTCDay() !== 0) return plgView(ws, pid); const w = plgW(ws), r = w[pid]; return Array.isArray(r) ? r : (w[pid] = ['', '', '', '', '', '', '']); };
 const plgPeek = (ws, pid) => { if (plgD(ws).getUTCDay() !== 0) { const a = (plgRaw(plgSun(ws)) || {})[pid], b = (plgRaw(plgSun(plgAdd(ws, 6))) || {})[pid]; return Array.isArray(a) || Array.isArray(b) ? plgView(ws, pid) : null; } const r = (plgRaw(ws) || {})[pid]; return Array.isArray(r) ? r : null; };
+const plgHeure = v => (typeof pcHeure === 'function' ? pcHeure(v) : String(v == null ? '' : v));   // heure au format français (« 9h », « 14h30 », « 9h-12h »), comme le Plan de communication
 function plgEvList(ws, n) {                                                     // événements des n semaines affichées (1 par défaut) : ceux du Plan de communication (hors campagnes, déjà en bandeau) + les anciens événements propres au planning ; j = rang du jour depuis ws
   const L = 7 * (n || 1), out = [], we = plgAdd(ws, L - 1);
-  if (typeof pcAll === 'function') pcAll().filter(e => e.type !== 'campagne' && e.periode <= we && (e.fin || e.periode) >= ws && (e.restaurant === PLG.resto || e.restaurant === 'FRANCHISE')).sort((a, b) => (a.periode < b.periode ? -1 : 1)).forEach(e => { for (let j = 0; j < L; j++) { const d = plgAdd(ws, j); if (e.periode <= d && (e.fin || e.periode) >= d) out.push({ pc: e, j, e: { t: pcT(e.type).l, x: e.detail || pcT(e.type).l, h: e.heure || '' } }); } });
-  for (let j = 0; j < L; j++) { const date = plgAdd(ws, j), sun = plgSun(date), dow = plgD(date).getUTCDay(), w = plgRaw(sun); ((w && w._ev) || []).forEach((e, i) => { if (e.d === dow) out.push({ e, j, sun, i }); }); }
+  if (typeof pcAll === 'function') pcAll().filter(e => e.type !== 'campagne' && e.periode <= we && (e.fin || e.periode) >= ws && (e.restaurant === PLG.resto || e.restaurant === 'FRANCHISE')).sort((a, b) => (a.periode < b.periode ? -1 : 1)).forEach(e => { for (let j = 0; j < L; j++) { const d = plgAdd(ws, j); if (e.periode <= d && (e.fin || e.periode) >= d) out.push({ pc: e, j, e: { t: pcT(e.type).l, x: e.detail || pcT(e.type).l, h: plgHeure(e.heure) } }); } });
+  for (let j = 0; j < L; j++) { const date = plgAdd(ws, j), sun = plgSun(date), dow = plgD(date).getUTCDay(), w = plgRaw(sun); ((w && w._ev) || []).forEach((e, i) => { if (e.d === dow) out.push({ e: Object.assign({}, e, { h: plgHeure(e.h) }), j, sun, i }); }); }
   return out;
 }
 const plgEvSig = ws => JSON.stringify(plgEvList(ws, PLG.nw).map(x => [x.pc ? x.pc.id : 'l', x.j, x.e.x, x.e.h]));
@@ -10353,7 +10368,7 @@ function plgEvForm(can) {
 const plgEvSave = async rows => { if (typeof pcPost !== 'function') return { ok: false, error: 'Plan de communication indisponible' }; const j = await pcPost({ action: 'ev_save', rows }); if (j.ok) { rows.forEach((r, i) => { const e = pcNorm(Object.assign({}, r, { id: (j.ids || [])[i] || r.id })); if (e) PC.adds.push(e); }); try { const sm = pcSeen(); if (sm) { rows.forEach((r, i) => { const id = (j.ids || [])[i] || r.id; if (id) sm[id] = '*'; }); pcSeenSave(); } } catch (e) {} } return j; };
 async function plgAddEv() {
   const x = document.getElementById('plgEx').value.trim(); if (!x) { document.getElementById('plgEx').focus(); return; }
-  const date = plgAdd(PLG.ws, +document.getElementById('plgEd').value), type = document.getElementById('plgEt').value, heure = document.getElementById('plgEh').value || '', b = document.getElementById('plgEvBtn');
+  const date = plgAdd(PLG.ws, +document.getElementById('plgEd').value), type = document.getElementById('plgEt').value, heure = plgHeure(document.getElementById('plgEh').value || ''), b = document.getElementById('plgEvBtn');
   if (b) b.disabled = true; plgMsg('Enregistrement de l\'événement…', '');
   const j = await plgEvSave([{ restaurant: PLG.resto, periode: date, fin: '', type, detail: x.slice(0, 60), heure, lieu: '', note: '' }]);
   if (!j.ok) { if (b) b.disabled = false; plgMsg('Événement non enregistré : ' + (j.error || 'refusé') + (/action inconnue|mot de passe/.test(j.error || '') ? ' — l\'Apps Script doit être mis à jour / reconnecte-toi.' : ''), 'err'); return; }
@@ -10371,7 +10386,7 @@ async function plgDelEv(k) {
   }
   plgW(x.sun)._ev.splice(x.i, 1); PLG.dirty = true; PLG.dk.add(x.sun); plgRender();
 }
-const plgOldRow = (sun, e) => ({ restaurant: PLG.resto, periode: plgAdd(sun, e.d), fin: '', type: PLG_EVK[e.t] || 'libre', detail: String(e.x || '').slice(0, 60), heure: e.h || '', lieu: '', note: '' });
+const plgOldRow = (sun, e) => ({ restaurant: PLG.resto, periode: plgAdd(sun, e.d), fin: '', type: PLG_EVK[e.t] || 'libre', detail: String(e.x || '').slice(0, 60), heure: plgHeure(e.h), lieu: '', note: '' });
 async function plgPubEv(k) {                                                    // un ancien événement du planning → Plan de communication (puis retiré du planning)
   const x = plgEvList(PLG.ws, PLG.nw)[k]; if (!x || x.pc) return;
   plgMsg('Publication dans le Plan de communication…', ''); const j = await plgEvSave([plgOldRow(x.sun, x.e)]);
@@ -11344,7 +11359,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261105-205940';
+const BUILD_VERSION = '20261105-210519';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
