@@ -442,6 +442,7 @@ function dashScope(r) {                                              // personne
 function dashEnter(r) {
   SB_DASH = r; try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (e) {}
   if (typeof plgOnLogin === 'function') plgOnLogin(r);
+  if (typeof rvOnLogin === 'function') rvOnLogin(r);
   try { SBA.note(); } catch (e) {}
   document.getElementById('app').style.display = 'block';
   renderTabs(); renderMain();
@@ -5846,8 +5847,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         continue;
       }
       const v = RG.map(([, k]) => lastVisit[s] ? numOrNull(lastVisit[s].r[k]) : null);
-      const alim = lastVisit[s] ? numOrNull(lastVisit[s].r.securite_alimentaire) : null;
-      const storeDiff = alim != null || RG.some(([K], i) => !same(v[i], (bDet[K] || {})[s] ?? null));
+      const storeDiff = RG.some(([K], i) => !same(v[i], (bDet[K] || {})[s] ?? null));
       if (!storeDiff) {
         RG.forEach(([K]) => { if ((bDet[K] || {})[s] != null) det[K][s] = bDet[K][s]; });
         if (bTot[s] != null) det.TOTAL[s] = bTot[s];
@@ -5856,7 +5856,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
       rgDiff = true;
       RG.forEach(([K], i) => { if (v[i] != null) det[K][s] = v[i]; });
       const sc = numOrNull(lastVisit[s].r.score);       // score global saisi (ponctuel) sinon moyenne
-      const m = sc != null ? sc : mean([...v, alim]); if (m != null) det.TOTAL[s] = m;
+      const m = sc != null ? sc : mean(v); if (m != null) det.TOTAL[s] = m;       // la sécurité alimentaire (Validée / Invalidée) ne compte pas dans la moyenne
     }
     if (!rgDiff && B26.rgrv_detail) { Y26.rgrv_detail = clone(B26.rgrv_detail); Y26.rgrv_total = clone(B26.rgrv_total); }
     else {
@@ -6298,7 +6298,7 @@ function weekNav(dir, reset) {
 }
 function setWeekMode(m) {
   if (weekMode === m) return;
-  weekMode = m; weekOffset = 0; weekOpenKpi = null;
+  weekMode = m; weekOffset = 0;                                  // le détail de la tuile ouverte (CA, TAC'S…) reste ouvert : on passe seulement de la vue Jour à Semaine ou Mois
   renderWeekStrip();
   if (typeof renderAutoSummary === 'function') renderAutoSummary();
 }
@@ -7774,7 +7774,7 @@ function exPonctuelSheet(kpis, sub) {
     header = ['Restaurant', 'Date', 'Type', 'Score', 'Qualité', 'Service', 'Propreté', 'Gestion de quart', 'Sécurité / Prévention', 'Sécurité alimentaire', 'Commentaire'];
     rows.forEach((x, i) => { const st = Object.assign({}, base, i % 2 ? { fill: { fgColor: { rgb: 'F7F8FA' } } } : {}), n = k => (x[k] === '' || x[k] == null) ? null : Number(x[k]);
       body.push([xc(exName(x.restaurant), exRestoStyle(x.restaurant)), xc(exSerial(x.periode), st, 'dd/mm/yyyy'), xc(nom(x.type), Object.assign({}, st, { font: { sz: 10, bold: true } })), xc(n('score'), st, '0.0%'),
-        ...['qualite', 'service', 'proprete', 'gestion_quart', 'securite_prevention', 'securite_alimentaire'].map(k => xc(n(k), st, '0.0%')), xc(x.commentaire || '', st)]); });
+        ...['qualite', 'service', 'proprete', 'gestion_quart', 'securite_prevention', 'securite_alimentaire'].map(k => (k === 'securite_alimentaire' && x[k] !== '' && x[k] != null && isNaN(Number(x[k]))) ? xc(String(x[k]), st) : xc(n(k), st, '0.0%')), xc(x.commentaire || '', st)]); });
     widths = [20, 12, 24, 10, 10, 10, 10, 14, 16, 16, 40];
   } else {
     header = ['Restaurant', 'Année', 'Type', 'Note retenue', 'Règle', 'Nombre de visites'];
@@ -9656,7 +9656,17 @@ function rvAuthed() {
   try { const k = sessionStorage.getItem('fpy_rv'); if (/^[0-9a-f]{64}$/.test(k || '')) { RV.key = k; return true; } } catch (e) {}
   return false;
 }
-function loadRevue() { if (!rvAuthed()) return rvLock(); rvOpen(); }
+// Droits : avec un compte individuel, la pastille « Business Review » n'est visible que si le module « revue » est accordé à la personne (comme « Planning EDG » avec « planning ») ; connexion historique (mot de passe partagé) : inchangé, le verrou franchisé reste demandé.
+window.RV_DENIED = false;
+function rvOnLogin(r) {
+  window.RV_DENIED = !!r && !(r.modules || []).includes('revue');
+  document.querySelectorAll('.espace-pill[data-esp="revue"]').forEach(b => { b.style.display = window.RV_DENIED ? 'none' : ''; });
+  if (window.RV_DENIED && typeof currentEspace !== 'undefined' && currentEspace === 'revue' && typeof switchEspace === 'function') switchEspace('pilotage');
+}
+function loadRevue() {
+  if (window.RV_DENIED) { rvCard().innerHTML = '<div class="rv-lock"><b style="font-size:1rem">Accès non autorisé</b><p>Ce compte n\'a pas accès à la Business Review.</p></div>'; return; }
+  if (!rvAuthed()) return rvLock(); rvOpen();
+}
 function rvLock(err) {
   RV.frame = null; clearInterval(RV.timer);
   rvCard().innerHTML = '<div class="rv-lock"><b style="font-size:1rem">Espace réservé au franchisé</b><p>Saisissez le mot de passe franchisé pour ouvrir la Business Review.</p>' +
@@ -11379,7 +11389,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261106-114736';
+const BUILD_VERSION = '20261109-084541';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
