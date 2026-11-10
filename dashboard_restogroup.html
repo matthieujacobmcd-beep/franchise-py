@@ -437,7 +437,7 @@ const SBA = (() => {
 // Les droits viennent de la base (poste + écarts de la personne, fonction mes_droits : champ « acces »). Une personne sans « acces » (base pas encore migrée) garde le fonctionnement d'avant.
 const ACC_CAT = [
   ['Page de saisie', [['q', 'Quotidien', 'tab:quotidien'], ['h', 'Hebdomadaire', 'tab:hebdomadaire'], ['m', 'Mensuel', 'tab:mensuel'], ['p', 'Ponctuel (visites et audits)', 'tab:ponctuel'], ['pv', 'Prévisionnel', 'tab:previsionnel'], ['pca', 'Prévision CA', 'tab:prevca'], ['bud', 'Budget et PNL', 'tab:budget'], ['val', 'Validation du prévisionnel', 'tab:valid'], ['prix', 'Prix franchise', 'tab:prix|esp:prix'], ['pb', 'Point Business', 'tab:pb|esp:pb'], ['doc', 'Documents', 'tab:documents']]],
-  ['Dashboard', [['pil', 'Pilotage opérationnel', 'esp:pilotage'], ['perf', 'Performance', 'esp:performance'], ['itv', 'Interventions', 'esp:interventions'], ['form', 'Formation', 'esp:formation'], ['mkt', 'Marketing', 'esp:marketing'], ['com', 'Plan de communication', 'esp:plancom'], ['plan', 'Planning EDG', 'esp:planning'], ['act', 'Actualité restaurant', 'esp:actualite'], ['tps', 'Suivi temps de travail', 'esp:ext-pointage'], ['rev', 'Business Review', 'esp:revue']]],
+  ['Dashboard', [['pil', 'Pilotage opérationnel', 'esp:pilotage'], ['perf', 'Performance', 'esp:performance'], ['itv', 'Interventions', 'esp:interventions'], ['form', 'Formation', 'esp:formation'], ['mkt', 'Marketing', 'esp:marketing'], ['com', 'Plan de communication', 'esp:plancom'], ['plan', 'Planning EDG', 'esp:planning'], ['act', 'Actualité restaurant', 'esp:actualite'], ['tps', 'Suivi temps de travail', 'tab:tps|esp:ext-pointage'], ['rev', 'Business Review', 'esp:revue']]],
   ['Administration', [['eq', 'Équipes et accès', 'tab:equipes'], ['sal', 'Salaires par poste', ''], ['ban', 'Bannières', '']]]];
 const accMax = k => k === 'pb' ? 3 : 2;
 const accLevelName = (k, v) => v === 0 ? 'Aucun accès' : (k === 'pb' ? ['', 'Consultation', 'Réponse du directeur', 'Rédaction'][v] : (v === 1 ? 'Consultation' : 'Modification'));
@@ -449,6 +449,18 @@ function tileModules(a) {                                                       
   return [any(['pil', 'perf', 'itv', 'form', 'mkt', 'com', 'act', 'tps']) && 'dashboard', any(['q', 'h', 'm', 'p', 'pv', 'pca', 'bud', 'val', 'doc']) && 'saisie', n('rev') >= 1 && 'revue', n('plan') >= 1 && 'planning', n('eq') >= 1 && 'utilisateurs'].filter(Boolean);
 }
 function tileCan(a) { const n = k => +((a || {})[k]) || 0; return [n('pca') >= 2 && 'sim', (n('bud') >= 2 || n('pv') >= 2) && 'budget', n('val') >= 2 && 'valid', n('sal') >= 2 && 'edg'].filter(Boolean); }
+
+// ══ Application « Suivi du temps de travail (218 jours) » intégrée dans la page ══
+// L'application s'affiche dans un cadre (?embed=1) et reçoit le jeton d'accès de la page par postMessage (même origine) : plus de mot de passe à retaper.
+// Seule la page gère la session (renouvellement, déconnexion) : le cadre ne la renouvelle pas, pour ne jamais déconnecter la page par erreur.
+const FJ = { frame: null, org: '', timer: null };
+async function fjSend() { try { const t = await SBA.token(); if (t && FJ.frame && FJ.frame.contentWindow) FJ.frame.contentWindow.postMessage({ type: 'forfait-session', access_token: t }, FJ.org); } catch (e) {} }
+window.addEventListener('message', e => { if (!FJ.frame || e.origin !== FJ.org || e.source !== FJ.frame.contentWindow) return; const m = e.data || {}; if (m.type === 'forfait-ready' || m.type === 'forfait-need-token') fjSend(); });
+function fjMount(box, url) {
+  if (!box) return; const u = new URL(url); FJ.org = u.origin; u.searchParams.set('embed', '1');
+  box.innerHTML = '<iframe src="' + u.href + '" title="Suivi du temps de travail" style="width:100%;height:min(82vh,1100px);border:0;border-radius:12px;background:#fff" allow="clipboard-write"></iframe>';
+  FJ.frame = box.querySelector('iframe'); clearInterval(FJ.timer); FJ.timer = setInterval(fjSend, 8 * 60 * 1000);       // jeton renouvelé par la page, renvoyé au cadre toutes les 8 minutes
+}
 
 let SB_SCOPE = false, SB_DASH = null;
 function dashScope(r) {                                              // personne limitée à certains restaurants : onglets, adaptateur de données et vue de départ
@@ -1477,7 +1489,7 @@ window.addEventListener('DOMContentLoaded', () => {
   <button class="espace-pill" data-esp="prix" style="--e-color:#b45309;--e-bg:rgba(180,83,9,.14)" onclick="switchEspace('prix')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg></span>Prix franchise</button>
   <button class="espace-pill" data-esp="pb" style="--e-color:#0d9488;--e-bg:rgba(13,148,136,.14)" onclick="switchEspace('pb')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><path d="M8 6H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2"/><path d="M9 14l2 2 4-4"/></svg></span>Point Business</button>
   <button class="espace-pill" data-esp="actualite" style="--e-color:#db2777;--e-bg:rgba(219,39,119,.14)" onclick="switchEspace('actualite')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/></svg></span>Actualité Restaurant</button>
-  <button class="espace-pill" data-esp="ext-pointage" style="--e-color:#4f46e5;--e-bg:rgba(79,70,229,.14)" onclick="window.open('https://matthieujacobmcd-beep.github.io/franchise-py-forfait/','_blank','noopener')" title="Suivi du temps de travail (forfait jours) — s'ouvre dans un nouvel onglet"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Suivi Temps Travail</button>
+  <button class="espace-pill" data-esp="ext-pointage" style="--e-color:#4f46e5;--e-bg:rgba(79,70,229,.14)" onclick="switchEspace('ext-pointage')" title="Suivi du temps de travail (forfait jours)"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Suivi Temps Travail</button>
   <button class="espace-pill" data-esp="revue" style="--e-color:#475569;--e-bg:rgba(71,85,105,.14)" onclick="switchEspace('revue')" title="Business Review : espace réservé au franchisé"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Business Review</button>
   <button class="espace-pill" id="pillPlanning" data-esp="planning" style="display:none;--e-color:#0e7490;--e-bg:rgba(14,116,144,.14)" onclick="switchEspace('planning')" title="Planning de l'équipe de gestion (EDG)"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h3M13 14h3M8 18h3"/></svg></span>Planning EDG</button>
 </div>
@@ -11242,6 +11254,8 @@ function pbdRender() {
 }
 </script>
 
+<!-- ════════ ESPACE : Suivi Temps Travail (application intégrée) ════════ -->
+<div id="espace-ext-pointage" style="display:none"><div class="main"><div class="esp-page-head"><div class="esp-page-title">Suivi Temps Travail</div><div style="font-size:.78rem;color:var(--muted)">Application de suivi du forfait jours, intégrée : tu es connecté(e) automatiquement avec ton compte. <a href="https://matthieujacobmcd-beep.github.io/franchise-py-forfait/" target="_blank" rel="noopener">Ouvrir dans un nouvel onglet</a></div></div><div id="fjBox-pointage"></div></div></div>
 <!-- ════════ FAQ / AIDE ════════ -->
 <style>
 #faqModal { display:none; position:fixed; inset:0; z-index:10000; background:rgba(15,17,23,.55); align-items:flex-start; justify-content:center; padding:5vh 14px; overflow-y:auto; }
@@ -11687,7 +11701,7 @@ body.dark-mode .search-kpi-pick .skp.on { color:#fff; }
 let currentEspace = 'pilotage';
 function switchEspace(name) {
   currentEspace = name;
-  ['pilotage','interventions','formation','marketing','actualite','performance','plancom','planning','revue','prix','pb'].forEach(e => {
+  ['pilotage','interventions','formation','marketing','actualite','performance','plancom','planning','revue','prix','pb','ext-pointage'].forEach(e => {
     const el = document.getElementById('espace-' + e);
     if (el) el.style.display = (e === name) ? '' : 'none';
   });
@@ -11697,7 +11711,7 @@ function switchEspace(name) {
   const bE = document.getElementById('btnExporter'); if (bE) bE.style.display = (name === 'pilotage' || name === 'performance') ? '' : 'none';
   const bI = document.getElementById('btnIndices'); if (bI) bI.style.display = (name === 'pilotage') ? '' : 'none';
   // Libellé de l'en-tête selon l'espace
-  const LBL = { pb:'Point Business', prix:'Prix franchise', pilotage:'Pilotage Opérationnel', interventions:'Interventions', formation:'Formation', marketing:'Marketing', actualite:'Actualité Restaurant', performance:'Performance', plancom:'Plan de communication', planning:'Planning EDG', revue:'Business Review' };
+  const LBL = { 'ext-pointage':"Suivi Temps Travail", pb:'Point Business', prix:'Prix franchise', pilotage:'Pilotage Opérationnel', interventions:'Interventions', formation:'Formation', marketing:'Marketing', actualite:'Actualité Restaurant', performance:'Performance', plancom:'Plan de communication', planning:'Planning EDG', revue:'Business Review' };
   const lblEl = document.getElementById('espaceLabel');
   if (lblEl) lblEl.textContent = LBL[name] || '';
   // La date « Données au… » ne concerne que le Pilotage
@@ -11711,6 +11725,7 @@ function switchEspace(name) {
   if (name === 'performance') loadPerformance();
   if (name === 'prix') loadPrixDash();
   if (name === 'pb') loadPbDash();
+  if (name === 'ext-pointage') fjMount(document.getElementById('fjBox-pointage'), "https://matthieujacobmcd-beep.github.io/franchise-py-forfait/");
   if (name === 'plancom') loadPlanCom();
   if (name === 'planning') loadPlanning();
   if (name === 'revue') loadRevue();
@@ -11721,7 +11736,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261110-104155';
+const BUILD_VERSION = '20261110-113616';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
