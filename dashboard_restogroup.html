@@ -3598,7 +3598,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = PRIMES;
 // Résultats collectifs calculés depuis les données de l'appli, primes par personne (barème et règles du classeur « PRIMES 2026 »),
 // saisie des primes individuelles, des objectifs OEPE/R2P par restaurant, de l'organigramme (personnes, postes, présence), export Excel.
 // Moteur : PRIMES (primes_engine.js, testé contre le classeur). Données : tables Supabase primes_* (droits : tuile « prim », restaurants de la personne).
-const PRM = { on: false, lvl: 0, sem: 1, annee: 2026, state: 'idle', err: '', personnes: [], org: [], indiv: [], obj: [], reg: { bareme: null, seuils: null, perso: [] }, draft: null, cu: null, lk: null, ed: null, msg: '', busy: false };
+const PRM = { on: false, lvl: 0, sem: 1, annee: 2026, state: 'idle', err: '', personnes: [], org: [], indiv: [], obj: [], sel: null, regOpen: false, reg: { bareme: null, seuils: null, perso: [] }, draft: null, cu: null, lk: null, ed: null, msg: '', busy: false };
 const prEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const prEur = v => (Math.round((+v || 0) * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' €';
 const prPct = (v, d) => v == null ? '—' : (v * 100).toLocaleString('fr-FR', { minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 1 : d }) + ' %';
@@ -3686,17 +3686,37 @@ function prRender() {
     const C = prCalc(sem);
     h += '<div id="prmMsg" class="prm-msg">' + prEsc(PRM.msg) + '</div>';
     if (C.prov) h += '<div class="prm-card prm-warn"><b>Résultats provisoires</b> : le semestre n\'est pas terminé. Le mois en cours n\'est pas compté ; les montants peuvent encore évoluer.</div>';
-    h += prHtmlColl(C, sem) + prHtmlRestos(C, sem);
-    if (PRM.lvl >= 2) h += prHtmlObj(C) + prHtmlCond() + prHtmlCustom(C) + prHtmlPers();
+    if (!PRM.sel && prRestos().length === 1) PRM.sel = prRestos()[0];
+    if (PRM.sel && !prRestos().includes(PRM.sel)) PRM.sel = null;
+    h += prHtmlTuiles(C, sem) + prHtmlColl(C, sem);
+    if (PRM.sel) { h += prHtmlRestos(C, sem); if (PRM.lvl >= 2) h += prHtmlObj(C) + prHtmlPers(); }
+    else if (PRM.lvl >= 2) h += '<details class="prm-det" ' + (PRM.regOpen ? 'open' : '') + ' ontoggle="PRM.regOpen=this.open"><summary>Réglages : objectifs, conditions, primes personnalisées, personnes</summary>' + prHtmlObj(C) + prHtmlCond() + prHtmlCustom(C) + prHtmlPers() + '</details>';
     h += '<div class="prm-foot">Règles : présence jusqu\'à la fin du semestre, prorata du temps de travail et de présence, paliers ÷ 1,5 et ÷ 2,25 (OPH, CA, PAC), prélèvement et audit ≥ 97 % sur la moyenne du trimestre, OEPE et R2P sous l\'objectif du restaurant. Les primes RH, formation, marketing, PEP et évaluation ne sont pas encore calculées (comme dans le classeur).</div>';
   }
   box.innerHTML = h + '</div>' + (PRM.ed ? prHtmlEd() : '') + (PRM.cu ? prHtmlCu() : '') + (PRM.lk ? prHtmlLk() : '');
 }
 function prSetSem(n) { PRM.sem = n; prRender(); }
+function prPick(r) { PRM.sel = r || null; prRender(); const e = document.getElementById('primesWrap'); if (e) e.scrollIntoView({ block: 'start' }); }
+const prVis = () => PRM.sel ? [PRM.sel] : prRestos();
+const PR_RCOL = { 'CHAMBERY': '#92650a', 'AIX LES BAINS': '#15803d', 'BELLEY': '#1565c0', 'ST ALBAN': '#c2185b', 'LES ABRETS': '#00695c', 'PDB': '#e65100', 'FRANCIN': '#7c3aed', 'VIVIERS': '#dc2626' };
+function prMini(lib, st, titre) { return '<span class="prm-mini s-' + st + '" title="' + prEsc(titre) + '">' + lib + '</span>'; }
+function prStPal(x) { return x == null ? 'na' : x === 1 ? 'ok' : x === 0 ? 'ko' : 'mid'; }
+function prStQ(a) { const d = (a || []).filter(v => v === 'OUI' || v === 'NON'); if (!d.length) return 'na'; const n = d.filter(v => v === 'OUI').length; return n === d.length ? 'ok' : n === 0 ? 'ko' : 'mid'; }
+function prHtmlTuiles(C, sem) {                                      // une tuile par restaurant : total à verser, personnes payées, état des 7 indicateurs collectifs
+  let tg = 0, np = 0; const T = prRestos().map(r => {
+    const rows = C.lignes[r] || [], tot = rows.reduce((a, l) => a + l.total, 0), c = C.coll[r], pal = c ? PRIMES.paliersCollectifs(c, C.CF.seuils) : null; tg += tot; np += rows.length;
+    const chips = c ? prMini('Prél', prStQ(c.prel), 'Prélèvement : ' + c.prel.map(v => v || '—').join(' / ')) + prMini('Audit', prStQ(c.audit), 'Audit : ' + c.audit.map(v => v || '—').join(' / ')) + prMini('OEPE', c.oepe === 'OUI' ? 'ok' : c.oepe === 'NON' ? 'ko' : 'na', 'OEPE : ' + (c.oepe || 'pas de donnée')) + prMini('R2P', c.r2p === 'OUI' ? 'ok' : c.r2p === 'NON' ? 'ko' : 'na', 'R2P : ' + (c.r2p || 'pas de donnée')) +
+      prMini('OPH', prStPal(pal.oph), 'OPH ' + (c.oph == null ? '—' : c.oph.toFixed(1))) + prMini('CA', prStPal(pal.ca), 'CA vs N-1 ' + prPct(c.ca, 2)) + prMini('PAC', prStPal(pal.pac), 'PAC ' + (c.pac == null ? '—' : (c.pac * 100).toFixed(2) + ' pt')) : '';
+    return '<button type="button" class="prm-tile' + (PRM.sel === r ? ' on' : '') + '" style="--tc:' + (PR_RCOL[r] || '#64748b') + '" onclick="prPick(\'' + r + '\')"><div class="prm-tn"><i></i>' + prEsc(prRestoLib(r)) + '</div><div class="prm-tv">' + prEur(tot) + '</div><div class="prm-ts">' + rows.length + ' personne' + (rows.length > 1 ? 's' : '') + ' payée' + (rows.length > 1 ? 's' : '') + '</div><div class="prm-minis">' + chips + '</div></button>';
+  });
+  const all = prRestos().length > 1 ? '<button type="button" class="prm-tile all' + (PRM.sel ? '' : ' on') + '" onclick="prPick(null)"><div class="prm-tn"><i></i>Tous les restaurants</div><div class="prm-tv">' + prEur(tg) + '</div><div class="prm-ts">à verser en ' + (sem === 0 ? 'juillet' : 'janvier') + ' · ' + np + ' personnes</div><div class="prm-minis"><span class="prm-sub">Vue d\'ensemble et réglages</span></div></button>' : '';
+  return '<div class="prm-tiles">' + all + T.join('') + '</div><div class="prm-leg"><span class="prm-mini s-ok">atteint</span> <span class="prm-mini s-mid">palier réduit</span> <span class="prm-mini s-ko">non atteint</span> <span class="prm-mini s-na">pas de donnée</span> · cliquez une tuile pour voir le détail du restaurant</div>';
+}
 
 function prHtmlColl(C, sem) {
+  if (!PRM.sel) { /* vue d'ensemble : tableau comparatif */ }
   let h = '<div class="prm-card"><div class="prm-ct">Résultats collectifs · ' + (sem === 0 ? '1er' : '2e') + ' semestre</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Prélèvement T' + (sem * 2 + 1) + '</th><th>T' + (sem * 2 + 2) + '</th><th>Audit T' + (sem * 2 + 1) + '</th><th>T' + (sem * 2 + 2) + '</th><th>OEPE</th><th>R2P</th><th>OPH</th><th>CA vs N-1</th><th>PAC (écart)</th></tr></thead><tbody>';
-  prRestos().forEach(r => {
+  prVis().forEach(r => {
     const c = C.coll[r]; if (!c) return; const pal = PRIMES.paliersCollectifs(c, C.CF.seuils), d = c.detail || {}, o = C.obj[r] || {};
     const sec = (m, ob) => m == null ? '<span class="prm-sub">pas de donnée</span>' : '<span class="prm-sub">moy. ' + Math.round(m) + ' s / obj. ' + (ob == null ? '—' : Math.round(ob)) + '</span>';
     h += '<tr><td class="prm-r">' + prEsc(prRestoLib(r)) + '</td><td>' + prChip(c.prel[0]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[0], 1) + '</span></td><td>' + prChip(c.prel[1]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[1], 1) + '</span></td>' +
@@ -3711,7 +3731,7 @@ function prPersPostes(pid) { return new Set(PRM.org.filter(o => o.personne_id ==
 function prSel(opts, val, onch) { const v = +val || 0; const l = opts.includes(v) ? opts : [...opts, v].sort((a, b) => b - a); return '<select class="prm-in" onchange="' + onch + '">' + l.map(x => '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + x + ' €</option>').join('') + '</select>'; }
 function prHtmlRestos(C, sem) {
   const ed = PRM.lvl >= 2, P = new Map(PRM.personnes.map(p => [p.id, p])); let h = '', tg = 0;
-  prRestos().forEach(r => {
+  prVis().forEach(r => {
     const rows = C.lignes[r] || []; if (!rows.length && !ed) return; const tot = rows.reduce((a, l) => a + l.total, 0); tg += tot;
     h += '<div class="prm-card"><div class="prm-ct">' + prEsc(prRestoLib(r)) + '<span class="prm-tot">' + prEur(tot) + '</span></div><div class="prm-scroll"><table class="prm-tb prm-pp"><thead><tr><th>Nom</th><th>Poste</th><th>Présence</th><th>Prél.</th><th>Audit</th><th>OEPE</th><th>R2P</th><th>OPH</th><th>CFV</th><th>Focus</th><th>Certif.</th><th>CA</th><th>PAC</th><th>Fixe</th>' + C.CF.perso.map(x => '<th>' + prEsc(x.nom) + '</th>').join('') + '<th>Total</th></tr></thead><tbody>';
     rows.forEach(l => {
@@ -3728,13 +3748,13 @@ function prHtmlRestos(C, sem) {
     if (!rows.length) h += '<tr><td colspan="' + (15 + C.CF.perso.length) + '" class="prm-sub">Aucune personne payée ce semestre dans ce restaurant.</td></tr>';
     h += '</tbody></table></div></div>';
   });
-  return '<div class="prm-card prm-big"><span>Total à verser · ' + (sem === 0 ? 'juillet' : 'janvier') + '</span><b>' + prEur(tg) + '</b></div>' + h;
+  return h;
 }
 
 // ── Objectifs OEPE / R2P par restaurant ──
 function prHtmlObj(C) {
   let h = '<div class="prm-card"><div class="prm-ct">Objectifs OEPE et R2P par restaurant <span class="prm-sub">secondes · plus bas = mieux · saisie propre à chaque restaurant</span></div><div class="prm-objs">';
-  prRestos().forEach(r => {
+  prVis().forEach(r => {
     const v = (s, k) => { const o = PRM.obj.find(x => x.restaurant === r && x.semestre === s); return o && o[k] != null ? +o[k] : ''; };
     const inp = (s, k) => '<input class="prm-in" type="number" min="1" step="1" style="width:70px" value="' + v(s, k) + '" onchange="prObj(\'' + r + '\',' + s + ',\'' + k + '\',this.value)">';
     h += '<div class="prm-obj"><div class="prm-r">' + prEsc(prRestoLib(r)) + '</div><table class="prm-tb"><thead><tr><th></th><th>OEPE</th><th>R2P</th></tr></thead><tbody><tr><td>1er sem.</td><td>' + inp(1, 'oepe') + '</td><td>' + inp(1, 'r2p') + '</td></tr><tr><td>2e sem.</td><td>' + inp(2, 'oepe') + '</td><td>' + inp(2, 'r2p') + '</td></tr></tbody></table></div>';
@@ -3760,7 +3780,7 @@ async function prIndiv(pid, ind, per, val) {
 // ── Personnes et présence (organigramme) ──
 function prHtmlPers() {
   let h = '<div class="prm-card"><div class="prm-ct">Personnes et présence <span><button class="prm-btn" onclick="prLink()" title="Retrouve les profils d\'accès existants (même prénom et même initiale) et les relie aux fiches">Rapprocher avec les accès existants</button> <button class="prm-btn" onclick="prEdit(null)">+ Ajouter une personne</button></span></div><div class="prm-sub" style="margin-bottom:8px">Un manager, un responsable de zone ou une hôtesse principale sans compte se crée ici ; son accès à l\'application se choisit ensuite dans <b>Équipes</b> (« Sans accès à l\'application » puis « Donner un accès… »). Les mois à 0 % comptent dans la moyenne de présence (arrivée en cours de semestre, absence longue) ; un mois vide n\'est pas compté.</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Nom</th><th>Poste(s)</th><th>Présence ' + PRM.annee + '</th><th></th></tr></thead><tbody>';
-  PRM.personnes.forEach(p => {
+  PRM.personnes.filter(p => !PRM.sel || p.restaurant === PRM.sel).forEach(p => {
     const rows = PRM.org.filter(o => o.personne_id === p.id), ps = [...new Set(rows.map(o => prPosteLib(o.poste)))].join(' + ') || '—';
     const mois = new Set(rows.map(o => o.mois)), pres = PR_MOIS_C.map((m, i) => '<span class="prm-mo' + (mois.has(i + 1) ? ' on' : '') + '" title="' + m + '">' + m.charAt(0) + '</span>').join('');
     h += '<tr' + (p.actif === false ? ' style="opacity:.5"' : '') + '><td>' + prEsc(prRestoLib(p.restaurant)) + '</td><td class="prm-n">' + prEsc(p.nom) + (p.email ? ' <span class="prm-sub">· compte lié</span>' : '') + '</td><td>' + prEsc(ps) + '</td><td>' + pres + '</td><td><button class="prm-btn" onclick="prEdit(\'' + p.id + '\')">Modifier</button></td></tr>';
@@ -12012,6 +12032,24 @@ span.prm-sub { display: inline; margin-left: 4px; }
 .prm-form label { display: flex; flex-direction: column; gap: 3px; font-size: .68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .prm-form input, .prm-form select { font: 600 .82rem var(--font); border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 9px; background: var(--card); color: var(--text); text-transform: none; letter-spacing: 0; }
 .prm-chk { flex-direction: row !important; align-items: center; gap: 8px !important; text-transform: none !important; }
+.prm-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.prm-tile { text-align: left; font-family: var(--font); background: var(--card); color: var(--text); border: 1.5px solid var(--border); border-left: 5px solid var(--tc, var(--gold)); border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.prm-tile:hover { box-shadow: 0 4px 14px rgba(0,0,0,.12); transform: translateY(-1px); }
+.prm-tile.on { border-color: var(--tc, var(--gold)); box-shadow: 0 0 0 2px var(--tc, var(--gold)) inset; }
+.prm-tile.all { --tc: var(--gold); background: var(--card2); }
+.prm-tn { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: .88rem; }
+.prm-tn i { width: 10px; height: 10px; border-radius: 50%; background: var(--tc); display: inline-block; }
+.prm-tv { font-size: 1.35rem; font-weight: 800; color: var(--text); margin: 6px 0 0; }
+.prm-ts { font-size: .68rem; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+.prm-minis { display: flex; flex-wrap: wrap; gap: 4px; }
+.prm-mini { display: inline-block; font-size: .62rem; font-weight: 800; padding: 2px 7px; border-radius: 20px; }
+.prm-mini.s-ok { background: rgba(30,132,73,.16); color: var(--green); }
+.prm-mini.s-mid { background: rgba(245,158,11,.18); color: #b45309; }
+.prm-mini.s-ko { background: rgba(192,57,43,.15); color: var(--red); }
+.prm-mini.s-na { background: var(--card2); color: var(--muted); }
+.prm-leg { font-size: .68rem; color: var(--muted); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prm-det { margin-bottom: 14px; }
+.prm-det > summary { cursor: pointer; font-weight: 800; font-size: .9rem; color: var(--text); padding: 10px 14px; background: var(--card); border: 1.5px solid var(--border); border-radius: 12px; margin-bottom: 12px; }
 .prm-conds { margin-top: 12px; display: grid; gap: 8px; font-size: .8rem; color: var(--text); }
 .prm-conds b { font-weight: 800; }
 .prm-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 14px; }
@@ -12497,7 +12535,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261113-103713';
+const BUILD_VERSION = '20261113-104647';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
