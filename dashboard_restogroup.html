@@ -2774,6 +2774,15 @@ function calcSemester(kpiId, resto, year, sem) {
 }
 // Ce KPI est-il découpable au semestre ? (a un mensuel avec des données pour l'année)
 function kpiHasSemester(kpiId, year, sem) { return calcSemester(kpiId, 'FRANCHISE', year, sem) != null; }
+// Prévisionnel vs réel : le mois en cours n'est réel que jusqu'à son dernier jour saisi (propre à chaque restaurant). Les MONTANTS (€) du budget sont ramenés aux jours écoulés ; les ratios (%) ne changent pas.
+function prevPartialDay(m, r) { const p = ((DASHBOARD_DATA.meta || {}).partial_by_resto || {})[r]; return p && p.month === m ? p.day : 0; }
+function prevAtDate(prevSrc, kpi, m, r) {
+  const v = (prevSrc[m] || {})[r]; if (v == null) return null;
+  if (!(kpi.fmt === 'euros' || kpi.fmt === 'nb')) return v;
+  const nd = new Date(2026, MONTHS.indexOf(m) + 1, 0).getDate(), f = rr => { const d = prevPartialDay(m, rr); return d ? Math.min(1, d / nd) : 1; };
+  if (r === 'FRANCHISE') { let t = 0, n = 0; RESTOS.forEach(rr => { const x = (prevSrc[m] || {})[rr]; if (x != null) { t += x * f(rr); n++; } }); return n ? t : v; }
+  return v * f(r);
+}
 // Mois d'un semestre effectivement remplis pour une année (pour comparer « à date »)
 function semesterMonthsFilled(kpiId, year, sem) {
   const kpi = KPIs.find(k => k.id === kpiId);
@@ -3707,7 +3716,7 @@ function prHtmlRecap(CS) {                                          // total ann
   const r = PRM.sel, P = new Map(PRM.personnes.map(p => [p.id, p])), M = new Map();
   CS.forEach(x => (x.C.lignes[r] || []).forEach(l => { const o = M.get(l.nom) || { s: [0, 0], postes: new Set() }; o.s[x.sem] += l.total; o.postes.add(l.poste); M.set(l.nom, o); }));
   const L = [...M.entries()].sort((a, b) => (P.get(a[0]) || { ordre: 0 }).ordre - (P.get(b[0]) || { ordre: 0 }).ordre), t = [0, 1].map(i => L.reduce((a, [, o]) => a + o.s[i], 0));
-  return '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + ' · total annuel par personne</span><span class="prm-tot">' + prEur(t[0] + t[1]) + '</span></div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Nom</th><th>1er semestre (juillet)</th><th>2e semestre (janvier)</th><th>Année</th></tr></thead><tbody>' +
+  return '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + ' · total annuel par personne</span><span class="prm-tot">' + prEur(t[0] + t[1]) + '</span></div><div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Nom</th><th>1er semestre (juillet)</th><th>2e semestre (janvier)</th><th>Année</th></tr></thead><tbody>' +
     L.map(([id, o]) => '<tr><td class="prm-n">' + prEsc((P.get(id) || { nom: '?' }).nom) + '</td><td>' + prEur(o.s[0]) + '</td><td>' + prEur(o.s[1]) + '</td><td class="prm-b">' + prEur(o.s[0] + o.s[1]) + '</td></tr>').join('') +
     '<tr><td class="prm-n">Total</td><td class="prm-b">' + prEur(t[0]) + '</td><td class="prm-b">' + prEur(t[1]) + '</td><td class="prm-b">' + prEur(t[0] + t[1]) + '</td></tr></tbody></table></div></div>';
 }
@@ -3734,16 +3743,18 @@ function prHtmlTuiles(CS) {                                          // une tuil
   return '<div class="prm-tiles">' + all + T.join('') + sys + '</div><div class="prm-leg"><span class="prm-mini s-ok">atteint</span> <span class="prm-mini s-mid">palier réduit</span> <span class="prm-mini s-ko">non atteint</span> <span class="prm-mini s-na">pas de donnée</span> · cliquez une tuile pour voir le détail du restaurant</div>';
 }
 
-function prHtmlColl(C, sem) {
-  if (!PRM.sel) { /* vue d'ensemble : tableau comparatif */ }
-  let h = '<div class="prm-card"><div class="prm-ct">Résultats collectifs · ' + (sem === 0 ? '1er' : '2e') + ' semestre</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Prélèvement T' + (sem * 2 + 1) + '</th><th>T' + (sem * 2 + 2) + '</th><th>Audit T' + (sem * 2 + 1) + '</th><th>T' + (sem * 2 + 2) + '</th><th>OEPE</th><th>R2P</th><th>OPH</th><th>CA vs N-1</th><th>PAC (écart)</th></tr></thead><tbody>';
+const prN = v => { const n = Math.round((+v || 0) * 100) / 100; return n === 0 ? '<span class="z">0</span>' : n.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); };
+function prHtmlColl(C, sem) {                                        // résultats collectifs : mêmes blocs que la feuille COLLECTIVES du classeur (sécurité alimentaire · QSP · financier)
+  const q1 = sem * 2 + 1, q2 = sem * 2 + 2;
+  let h = '<div class="prm-card"><div class="prm-ct">Résultats collectifs · ' + (sem === 0 ? '1er' : '2e') + ' semestre</div><div class="prm-scroll"><table class="prm-xl prm-co"><thead><tr><th rowspan="2" class="t-l">Restaurant</th><th colspan="4" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="2" class="g-fin">Financier</th></tr>' +
+    '<tr><th class="g-sa">Prélèvement T' + q1 + '</th><th class="g-sa">T' + q2 + '</th><th class="g-sa">Audit T' + q1 + '</th><th class="g-sa">T' + q2 + '</th><th class="g-qsp">OEPE</th><th class="g-qsp">R2P</th><th class="g-qsp">OPH</th><th class="g-fin">CA vs N-1</th><th class="g-fin">PAC (écart)</th></tr></thead><tbody>';
   prVis().forEach(r => {
     const c = C.coll[r]; if (!c) return; const pal = PRIMES.paliersCollectifs(c, C.CF.seuils), d = c.detail || {}, o = C.obj[r] || {};
     const sec = (m, ob) => m == null ? '<span class="prm-sub">pas de donnée</span>' : '<span class="prm-sub">moy. ' + Math.round(m) + ' s / obj. ' + (ob == null ? '—' : Math.round(ob)) + '</span>';
-    h += '<tr><td class="prm-r">' + prEsc(prRestoLib(r)) + '</td><td>' + prChip(c.prel[0]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[0], 1) + '</span></td><td>' + prChip(c.prel[1]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[1], 1) + '</span></td>' +
-      '<td>' + prChip(c.audit[0]) + '<span class="prm-sub">' + prPct(d.audit && d.audit[0], 1) + '</span></td><td>' + prChip(c.audit[1]) + '<span class="prm-sub">' + prPct(d.audit && d.audit[1], 1) + '</span></td>' +
-      '<td>' + prChip(c.oepe) + sec(d.oepe, o.oepe) + '</td><td>' + prChip(c.r2p) + sec(d.r2p, o.r2p) + '</td>' +
-      '<td>' + prPal(pal.oph) + '<span class="prm-sub">' + (c.oph == null ? '—' : c.oph.toFixed(1)) + '</span></td><td>' + prPal(pal.ca) + '<span class="prm-sub">' + prPct(c.ca, 2) + '</span></td><td>' + prPal(pal.pac) + '<span class="prm-sub">' + (c.pac == null ? '—' : (c.pac * 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' pt') + '</span></td></tr>';
+    h += '<tr><td class="t-l prm-r">' + prEsc(prRestoLib(r)) + '</td><td class="c">' + prChip(c.prel[0]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[0], 1) + '</span></td><td class="c">' + prChip(c.prel[1]) + '<span class="prm-sub">' + prPct(d.prel && d.prel[1], 1) + '</span></td>' +
+      '<td class="c">' + prChip(c.audit[0]) + '<span class="prm-sub">' + prPct(d.audit && d.audit[0], 1) + '</span></td><td class="c">' + prChip(c.audit[1]) + '<span class="prm-sub">' + prPct(d.audit && d.audit[1], 1) + '</span></td>' +
+      '<td class="c">' + prChip(c.oepe) + sec(d.oepe, o.oepe) + '</td><td class="c">' + prChip(c.r2p) + sec(d.r2p, o.r2p) + '</td>' +
+      '<td class="c">' + prPal(pal.oph) + '<span class="prm-sub">' + (c.oph == null ? '—' : c.oph.toFixed(1)) + '</span></td><td class="c">' + prPal(pal.ca) + '<span class="prm-sub">' + prPct(c.ca, 2) + '</span></td><td class="c">' + prPal(pal.pac) + '<span class="prm-sub">' + (c.pac == null ? '—' : (c.pac * 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' pt') + '</span></td></tr>';
   });
   return h + '</tbody></table></div></div>';
 }
@@ -3755,24 +3766,29 @@ function prListeIndiv(ind, ps, CF) {                                 // montants
 }
 function prPersPostes(pid) { return new Set(PRM.org.filter(o => o.personne_id === pid).map(o => o.poste)); }
 function prSel(opts, val, onch) { const v = +val || 0; const l = opts.includes(v) ? opts : [...opts, v].sort((a, b) => b - a); return '<select class="prm-in" onchange="' + onch + '">' + l.map(x => '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + x + ' €</option>').join('') + '</select>'; }
-function prHtmlRestos(C, sem, annuel) {
-  const ed = PRM.lvl >= 2, P = new Map(PRM.personnes.map(p => [p.id, p])); let h = '', tg = 0;
+function prHtmlRestos(C, sem, annuel) {                              // une table par restaurant, mêmes colonnes et mêmes blocs que la feuille de la société dans le classeur
+  const ed = PRM.lvl >= 2, P = new Map(PRM.personnes.map(p => [p.id, p])), np = C.CF.perso.length; let h = '';
   prVis().forEach(r => {
-    const rows = C.lignes[r] || []; if (!rows.length && !ed) return; const tot = rows.reduce((a, l) => a + l.total, 0); tg += tot;
-    h += '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + (annuel ? ' · ' + (sem === 0 ? '1er semestre · versement juillet' : '2e semestre · versement janvier') : '') + '</span><span class="prm-tot">' + prEur(tot) + '</span></div><div class="prm-scroll"><table class="prm-tb prm-pp"><thead><tr><th>Nom</th><th>Poste</th><th>Présence</th><th>Prél.</th><th>Audit</th><th>OEPE</th><th>R2P</th><th>OPH</th><th>CFV</th><th>Focus</th><th>Certif.</th><th>CA</th><th>PAC</th><th>Fixe</th>' + C.CF.perso.map(x => '<th>' + prEsc(x.nom) + '</th>').join('') + '<th>Total</th></tr></thead><tbody>';
+    const rows = C.lignes[r] || []; if (!rows.length && !ed) return; const tot = rows.reduce((a, l) => a + l.total, 0);
+    const S = k => rows.reduce((a, l) => a + (+l[k] || 0), 0), SC = id => rows.reduce((a, l) => a + (+((l.custom || {})[id]) || 0), 0);
+    h += '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + (annuel ? ' · ' + (sem === 0 ? '1er semestre · versement juillet' : '2e semestre · versement janvier') : '') + '</span><span class="prm-tot">' + prEur(tot) + '</span></div><div class="prm-scroll"><table class="prm-xl prm-pp"><thead>' +
+      '<tr><th rowspan="2" class="t-l">Poste</th><th rowspan="2" class="t-l">Nom</th><th rowspan="2">Présence</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th><th rowspan="2" class="g-fx">Fixe</th>' + (np ? '<th colspan="' + np + '" class="g-pe">Primes personnalisées</th>' : '') + '<th rowspan="2" class="g-tot">Total prime brut</th></tr>' +
+      '<tr><th class="g-sa">Prélèvement</th><th class="g-sa">Audit</th><th class="g-qsp">OEPE</th><th class="g-qsp">R2P</th><th class="g-qsp">OPH</th><th class="g-perf">CFV</th><th class="g-perf">Focus</th><th class="g-perf">Certif.</th><th class="g-fin">CA</th><th class="g-fin">PAC</th>' + C.CF.perso.map(x => '<th class="g-pe">' + prEsc(x.nom) + '</th>').join('') + '</tr></thead><tbody>';
     rows.forEach(l => {
       const p = P.get(l.nom) || { nom: '?' }, ps = prPersPostes(l.nom), tr = sem === 0 ? ['T1', 'T2'] : ['T3', 'T4'], per = 'S' + (sem + 1), iv = C.indiv[l.nom] || { cfv: [0, 0], focus: [0, 0], certif: 0 };
       const indivOk = ['directeur', 'adjoint', 'assistant', 'manager'].some(x => ps.has(x)), rzOk = ps.has('rz'), fixOk = ps.has('adm') || ps.has('hotesse');
-      const lst = ind => prListeIndiv(ind, ps, C.CF);
-      const q = (ind, i) => ed ? prSel(lst(ind), iv[ind][i], "prIndiv('" + l.nom + "','" + ind + "','" + tr[i] + "',this.value)") : prEur(iv[ind][i]);
-      h += '<tr><td class="prm-n">' + prEsc(p.nom) + '</td><td>' + prEsc(prPosteLib(l.poste === 'fixe' ? [...ps].find(x => x === 'adm' || x === 'hotesse') || 'adm' : l.poste)) + '</td><td>' + (l.coef == null ? '<span class="prm-sub">absent fin de semestre</span>' : Math.round(l.coef * 100) + ' %') + '</td>' +
-        '<td>' + prEur(l.prel) + '</td><td>' + prEur(l.audit) + '</td><td>' + prEur(l.oepe) + '</td><td>' + prEur(l.r2p) + '</td><td>' + prEur(l.oph) + '</td>' +
-        '<td>' + (indivOk ? q('cfv', 0) + q('cfv', 1) : '—') + '</td><td>' + (indivOk ? q('focus', 0) + q('focus', 1) : '—') + '</td>' +
-        '<td>' + (rzOk ? (ed ? prSel(lst('certif'), iv.certif, "prIndiv('" + l.nom + "','certif','" + per + "',this.value)") : prEur(iv.certif)) : '—') + '</td>' +
-        '<td>' + prEur(l.ca) + '</td><td>' + prEur(l.pac) + '</td><td>' + (fixOk ? (ed ? '<input class="prm-in" type="number" min="0" step="10" style="width:72px" value="' + (C.fixes[l.nom] || 0) + '" onchange="prIndiv(\'' + l.nom + '\',\'fixe\',\'' + per + '\',this.value)">' : prEur(C.fixes[l.nom] || 0)) : '—') + '</td>' +
-        C.CF.perso.map(x => '<td>' + prEur((l.custom || {})[x.id]) + '</td>').join('') + '<td class="prm-b">' + prEur(l.total) + '</td></tr>';
+      const lst = ind => prListeIndiv(ind, ps, C.CF), none = '<td class="n x"></td>';
+      const q = (ind, i) => prSel(lst(ind), iv[ind][i], "prIndiv('" + l.nom + "','" + ind + "','" + tr[i] + "',this.value)");
+      h += '<tr><td class="t-l">' + prEsc(prPosteLib(l.poste === 'fixe' ? [...ps].find(x => x === 'adm' || x === 'hotesse') || 'adm' : l.poste)) + '</td><td class="t-l prm-n">' + prEsc(p.nom) + '</td><td class="n">' + (l.coef == null ? '<span class="prm-sub">absent fin de sem.</span>' : Math.round(l.coef * 100) + ' %') + '</td>' +
+        '<td class="n">' + prN(l.prel) + '</td><td class="n">' + prN(l.audit) + '</td><td class="n">' + prN(l.oepe) + '</td><td class="n">' + prN(l.r2p) + '</td><td class="n">' + prN(l.oph) + '</td>' +
+        (indivOk ? '<td class="n">' + (ed ? q('cfv', 0) + q('cfv', 1) : prN(l.cfv)) + '</td><td class="n">' + (ed ? q('focus', 0) + q('focus', 1) : prN(l.focus)) + '</td>' : none + none) +
+        (rzOk ? '<td class="n">' + (ed ? prSel(lst('certif'), iv.certif, "prIndiv('" + l.nom + "','certif','" + per + "',this.value)") : prN(l.certif)) + '</td>' : none) +
+        '<td class="n">' + prN(l.ca) + '</td><td class="n">' + prN(l.pac) + '</td>' +
+        (fixOk ? '<td class="n">' + (ed ? '<input class="prm-in" type="number" min="0" step="10" style="width:72px" value="' + (C.fixes[l.nom] || 0) + '" onchange="prIndiv(\'' + l.nom + '\',\'fixe\',\'' + per + '\',this.value)">' : prN(C.fixes[l.nom] || 0)) + '</td>' : none) +
+        C.CF.perso.map(x => '<td class="n">' + prN((l.custom || {})[x.id]) + '</td>').join('') + '<td class="n t-tot">' + prN(l.total) + '</td></tr>';
     });
-    if (!rows.length) h += '<tr><td colspan="' + (15 + C.CF.perso.length) + '" class="prm-sub">Aucune personne payée ce semestre dans ce restaurant.</td></tr>';
+    if (!rows.length) h += '<tr><td colspan="' + (14 + np) + '" class="prm-sub">Aucune personne payée ce semestre dans ce restaurant.</td></tr>';
+    else h += '</tbody><tfoot><tr><td colspan="3" class="t-l">Total ' + prEsc(prRestoLib(r)) + '</td><td class="n">' + prN(S('prel')) + '</td><td class="n">' + prN(S('audit')) + '</td><td class="n">' + prN(S('oepe')) + '</td><td class="n">' + prN(S('r2p')) + '</td><td class="n">' + prN(S('oph')) + '</td><td class="n">' + prN(S('cfv')) + '</td><td class="n">' + prN(S('focus')) + '</td><td class="n">' + prN(S('certif')) + '</td><td class="n">' + prN(S('ca')) + '</td><td class="n">' + prN(S('pac')) + '</td><td class="n">' + prN(S('fixe')) + '</td>' + C.CF.perso.map(x => '<td class="n">' + prN(SC(x.id)) + '</td>').join('') + '<td class="n t-tot">' + prN(tot) + '</td></tr></tfoot><tbody>';
     h += '</tbody></table></div></div>';
   });
   return h;
@@ -3905,8 +3921,8 @@ function prHtmlCond() {
   const d = prDraft(), S = d.seuils, B = d.bareme, f = v => v == null ? '' : +(+v).toFixed(4), pc = v => +(v * 100).toFixed(3);
   const n = (k, i, v, w) => '<input class="prm-in" type="number" step="any" style="width:' + (w || 64) + 'px" value="' + v + '" onchange="prSeuil(\'' + k + '\',' + (i == null ? 'null' : i) + ',this.value)">';
   let h = '<div class="prm-card"><div class="prm-ct">Conditions des primes <span class="prm-sub">montants et seuils, valables pour tous les restaurants · les résultats reprennent toujours les données de l\'application</span></div>' +
-    '<div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Poste (€)</th>' + PRIMES.INDICATEURS.map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>' +
-    PR_POSTES_SEL.map(([k, lib]) => '<tr><td class="prm-n">' + prEsc(lib) + '</td>' + PRIMES.INDICATEURS.map((_, i) => '<td><input class="prm-in" type="number" min="0" step="any" style="width:70px" value="' + f((B[k] || [])[i] || 0) + '" onchange="prBar(\'' + k + '\',' + i + ',this.value)"></td>').join('') + '</tr>').join('') + '</tbody></table></div>' +
+    '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th rowspan="2" class="t-l">Poste (€)</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th></tr><tr>' + PRIMES.INDICATEURS.map((x, i) => '<th class="' + (i < 2 ? 'g-sa' : i < 5 ? 'g-qsp' : i < 8 ? 'g-perf' : 'g-fin') + '">' + x + '</th>').join('') + '</tr></thead><tbody>' +
+    PR_POSTES_SEL.map(([k, lib]) => '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td>' + PRIMES.INDICATEURS.map((_, i) => '<td class="n"><input class="prm-in" type="number" min="0" step="any" style="width:70px" value="' + f((B[k] || [])[i] || 0) + '" onchange="prBar(\'' + k + '\',' + i + ',this.value)"></td>').join('') + '</tr>').join('') + '</tbody></table></div>' +
     '<div class="prm-conds"><div><b>Prélèvement et audit</b> : au moins ' + n('prel', null, pc(S.prel)) + ' % (moyenne du trimestre) · audit ' + n('audit', null, pc(S.audit)) + ' %</div>' +
     '<div><b>OPH</b> : montant plein sous ' + n('oph', 0, f(S.oph[0])) + ' · ÷ ' + n('div', 0, f(S.div[0]), 48) + ' sous ' + n('oph', 1, f(S.oph[1])) + ' · ÷ ' + n('div', 1, f(S.div[1]), 48) + ' sous ' + n('oph', 2, f(S.oph[2])) + ' · sinon rien</div>' +
     '<div><b>CA vs N-1</b> : plein à partir de ' + n('ca', 0, pc(S.ca[0])) + ' % · ÷ 1er palier à partir de ' + n('ca', 1, pc(S.ca[1])) + ' % · ÷ 2e palier au-dessus de ' + n('ca', 2, pc(S.ca[2])) + ' %</div>' +
@@ -4065,7 +4081,7 @@ function prHtmlPossibles() {
   const CF = prCfg(); let h = '<div class="prm-card"><div class="prm-ct">Montants possibles selon le résultat <span class="prm-sub">sur l\'année : versement en juillet (1er semestre) et en janvier (2e semestre) · calculés à partir des montants ci-dessus</span></div><div class="prm-poss">';
   PR_POSTES_SEL.forEach(([k, lib]) => {
     const P = prPossibles(k, CF); if (!P.rows.length) return;
-    h += '<div class="prm-pc"><div class="prm-r">' + prEsc(lib) + ' <span class="prm-tot">' + prEur(P.max) + '</span></div><div class="prm-sub" style="margin-bottom:4px">maximum annuel des primes calculées</div><table class="prm-tb"><thead><tr><th>Indicateur</th><th>Plein</th><th>Palier 2</th><th>Palier 3</th></tr></thead><tbody>' +
+    h += '<div class="prm-pc"><div class="prm-r">' + prEsc(lib) + ' <span class="prm-tot">' + prEur(P.max) + '</span></div><div class="prm-sub" style="margin-bottom:4px">maximum annuel des primes calculées</div><table class="prm-xl"><thead><tr><th class="t-l">Indicateur</th><th class="g-tot">Plein</th><th>Palier 2</th><th>Palier 3</th></tr></thead><tbody>' +
       P.rows.map(r => '<tr><td>' + prEsc(r[0]) + '<span class="prm-sub">' + prEsc(r[4]) + '</span></td><td class="prm-b">' + prEur(r[1]) + '</td><td>' + (r[2] == null ? '—' : prEur(r[2])) + '</td><td>' + (r[3] == null ? '—' : prEur(r[3])) + '</td></tr>').join('') + '</tbody></table></div>';
   });
   return h + '</div><div class="prm-sub" style="margin-top:8px">Les primes RH, formation, marketing, PEP et évaluation de la feuille du classeur ne sont pas encore calculées : elles ne figurent pas dans ces maximums.</div></div>';
@@ -4651,7 +4667,7 @@ function renderMain() {
         const months = MONTHS.filter(m => prevSrc[m]?.[r] != null && realSrc?.[m]?.[r] != null);
         let vPrev = 0, vReal = 0, count = 0;
         for (const m of months) {
-          vPrev += prevSrc[m][r];
+          vPrev += prevAtDate(prevSrc, kpi, m, r);
           vReal += realSrc[m][r];
           count++;
         }
@@ -5372,7 +5388,7 @@ function populateDetail() {
     for (const m of monthsP) {
       html += `<tr><td>${m}</td>`;
       for (const r of restosP) {
-        const vp = prevSrc[m]?.[r] ?? null;
+        const vp = prevAtDate(prevSrc, kpi, m, r);
         const vr = getData(YEAR_CUR)[kpi.hasMonthly||kpi.id]?.[m]?.[r] ?? null;
         const d  = calcDelta(vp, vr, kpi.fmt);
         html += `<td style="color:#b8860b">${fmt(vp,kpi.fmt)}</td><td>${fmt(vr,kpi.fmt)}</td><td>${fmtDelta(d,kpi.fmt,kpi.id,vp)}</td>`;
@@ -5891,7 +5907,7 @@ function initChart() {
     restos.forEach((r, i) => {
       datasets.push({
         label: `${restoDisplay(r)} Prévisionnel`,
-        data: months.map(m => prevSrc[m]?.[r] ?? null),
+        data: months.map(m => prevAtDate(prevSrc, kpi, m, r)),
         borderColor: '#d4a017',
         backgroundColor: 'transparent',
         borderDash: [5,3], tension: 0.3, pointRadius: 3, borderWidth: 2, spanGaps: true,
@@ -6928,6 +6944,10 @@ body.dark-mode .wk-label { color: #b794f4; }
 .wk-value { font-size: 1.22rem; font-weight: 800; color: var(--text); }
 .wk-delta { font-size: .72rem; font-weight: 700; margin-top: 3px; }
 .wk-delta span { color: var(--muted); font-weight: 400; }
+.wk-chute { font-size: .7rem; margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--border); color: var(--text); }
+.wk-chute b { font-weight: 800; }
+.wk-chute span { color: var(--muted); }
+.wk-chute .wk-up { color: #16a34a; } .wk-chute .wk-down { color: #dc2626; }
 .wk-up { color: #16a34a; } .wk-down { color: #dc2626; }
 .week-detail { margin-top: 12px; background: var(--card); border-radius: 12px; padding: 14px; border: 1px solid var(--border); }
 .week-detail-title { font-size: .8rem; font-weight: 800; margin-bottom: 10px; color: var(--text); }
@@ -7138,6 +7158,22 @@ function renderDayDetail(box, k) {
     <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Restaurant</th><th>${WEEK.days[0].slice(8, 10)}/${WEEK.days[0].slice(5, 7)}/${WEEK.yearCur}</th><th>${WEEK.label_n1} (jour équivalent)</th>
       <th class="delta">Δ</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div></div>`;
 }
+
+// « Chute » du mois (vue Mois, mois en cours) : réalisé à date + prévision journalière des jours restants, comparée au mois complet N-1 (jours équivalents)
+function weekChuteHtml(r) {
+  if (weekMode !== 'm' || !WEEK.partial || !DASHBOARD_DATA.prevjour || !WEEK.kpis || !WEEK.kpis.ca_total) return '';
+  const rs = r === 'FRANCHISE' ? RESTOS : [r], K = WEEK.kpis.ca_total, ld = (DASHBOARD_DATA.meta || {}).last_day_by_resto || {};
+  let real = 0, rest = 0, nRest = 0, nPrev = 0, n1 = 0;
+  for (const rr of rs) WEEK.days.forEach((d, i) => {
+    const v = K.cur[rr][i];
+    if (v != null) real += v;
+    else if (!ld[rr] || d > ld[rr]) { nRest++; const p = ((DASHBOARD_DATA.prevjour || {})[rr] || {})[d]; if (p && p.total != null) { rest += p.total; nPrev++; } }      // jour à venir : on prend la prévision journalière saisie
+    const e = _wkVal(WEEK.days_eq[i], rr, 'ca'); if (e != null) n1 += e;
+  });
+  if (!nPrev) return '';
+  const chute = real + rest, d = n1 ? (chute / n1 - 1) * 100 : null, manque = nRest - nPrev;
+  return `<div class="wk-chute" title="Réalisé à date + prévision journalière des jours restants (CA net total)">Chute du mois <b>${fmt(chute, 'euros')}</b>${d == null ? '' : ` <span class="${d >= 0 ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%</span> <span>vs N-1</span>`}${manque > 0 ? ` <span>· ${manque} j sans prévision</span>` : ''}</div>`;
+}
 let weekOpenKpi = null;
 let weekResto = 'FRANCHISE';
 let weekChartInst = null;
@@ -7246,6 +7282,7 @@ function renderWeekStrip() {
       <div class="wk-value">${fmt(v, k.fmt)}</div>
       ${k.amt ? `<div style="font-size:.78rem;font-weight:700;color:var(--muted);margin-top:-2px">${fmt(weekAgg(k.amt, 'cur', r), 'euros')}</div>` : ''}
       ${d == null ? '' : `<div class="wk-delta ${good ? 'wk-up' : 'wk-down'}">${d >= 0 ? '▲ +' : '▼ '}${Math.abs(d).toFixed(1)}%${dabsStr} <span>vs ${WEEK.yearN1}</span></div>`}
+      ${k.id === 'ca_total' ? weekChuteHtml(r) : ''}
     </div>`;
   }
   h += `</div>${renderWeekMissing(r)}${renderWeekComments(r)}<div id="weekDetail"></div></div>`;
@@ -12120,6 +12157,28 @@ span.prm-sub { display: inline; margin-left: 4px; }
 .prm-leg { font-size: .68rem; color: var(--muted); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .prm-det { margin-bottom: 14px; }
 .prm-det > summary { cursor: pointer; font-weight: 800; font-size: .9rem; color: var(--text); padding: 10px 14px; background: var(--card); border: 1.5px solid var(--border); border-radius: 12px; margin-bottom: 12px; }
+.prm { --pg: #c3c9d6; }
+body.dark-mode .prm { --pg: #3b4259; }
+.prm-xl { border-collapse: collapse; width: 100%; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.prm-xl th, .prm-xl td { border: 1px solid var(--pg); padding: 5px 9px; white-space: nowrap; color: var(--text); }
+.prm-xl thead th { text-align: center; vertical-align: middle; font-weight: 800; font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; background: var(--card2); }
+.prm-xl thead .t-l, .prm-xl tbody .t-l, .prm-xl tfoot .t-l { text-align: left; }
+.prm-xl thead .g-sa { background: rgba(250,204,21,.40); }
+.prm-xl thead .g-qsp { background: rgba(59,130,246,.30); }
+.prm-xl thead .g-perf { background: rgba(34,197,94,.30); }
+.prm-xl thead .g-fin { background: rgba(236,72,153,.26); }
+.prm-xl thead .g-fx { background: rgba(148,163,184,.38); }
+.prm-xl thead .g-pe { background: rgba(139,92,246,.30); }
+.prm-xl thead .g-tot { background: rgba(245,158,11,.50); }
+.prm-xl tbody td.n, .prm-xl tfoot td.n { text-align: right; }
+.prm-xl td.c { text-align: center; }
+.prm-xl tbody tr:nth-child(even) td { background: rgba(148,163,184,.09); }
+.prm-xl tbody tr:hover td { background: rgba(250,204,21,.13); }
+.prm-xl td .z { color: var(--muted); opacity: .55; }
+.prm-xl td.t-tot { font-weight: 800; background: rgba(245,158,11,.16) !important; }
+.prm-xl tfoot td { font-weight: 800; background: rgba(245,158,11,.24); border-top: 2px solid var(--text); }
+.prm-xl td .prm-sub { display: block; text-align: center; }
+.prm-xl td.n .prm-in { margin: 0 2px; padding: 2px 3px; font-size: .72rem; }
 .prm-tile.sys { --tc: #475569; }
 .prm-tile .prm-minis { margin-top: 2px; }
 .prm-sl { font-size: .6rem; font-weight: 800; color: var(--muted); width: 17px; align-self: center; }
@@ -12611,7 +12670,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261113-121710';
+const BUILD_VERSION = '20261114-123908';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
