@@ -3404,25 +3404,33 @@ const PRIMES = (() => {
   const POSTES = { directeur: 'Directeur', adjoint: 'Directeur adjoint', assistant: 'Assistant de direction', manager: 'Manager', rz: 'Responsable de zone', adm: 'ADM (assistant administratif)', hotesse: 'Hôtesse principale' };
   // Barème 2026 (€) par poste : prélèvement et audit = par trimestre ; autres = par semestre. Ordre : prél, audit, oepe, r2p, oph, cfv, focus, certif, ca, pac
   const BAREME_2026 = {
-    directeur: [100, 100, 200, 200, 200, 0, 0, 0, 950, 2500],
-    adjoint: [75, 75, 150, 150, 150, 0, 0, 0, 400, 1300],
-    assistant: [50, 50, 125, 125, 125, 100, 200, 0, 300, 675],
-    manager: [50, 50, 125, 125, 125, 100, 200, 0, 200, 475],
-    rz: [50, 50, 100, 100, 100, 0, 0, 200, 0, 0],
-    adm: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],            // pas de barème dans le classeur (prime fixe saisie à la main) : réglable dans l'appli
-    hotesse: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    directeur: [100, 100, 200, 200, 200, 0, 0, 0, 950, 2500, 500, 500, 500, 500, 0],
+    adjoint: [75, 75, 150, 150, 150, 0, 0, 0, 400, 1300, 200, 200, 200, 200, 0],
+    assistant: [50, 50, 125, 125, 125, 100, 200, 0, 300, 675, 0, 0, 0, 0, 400],
+    manager: [50, 50, 125, 125, 125, 100, 200, 0, 200, 475, 0, 0, 0, 0, 400],
+    rz: [50, 50, 100, 100, 100, 0, 0, 200, 0, 0, 0, 0, 0, 0, 400],
+    adm: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],            // pas de barème dans le classeur (prime fixe saisie à la main) : réglable dans l'appli
+    hotesse: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   };
-  const INDICATEURS = ['Prélèvement (par trim.)', 'Audit (par trim.)', 'OEPE', 'R2P', 'OPH', 'CFV (par trim.)', 'Focus (par trim.)', 'Certification', 'CA', 'PAC'];
+  const INDICATEURS = ['Prélèvement (par trim.)', 'Audit (par trim.)', 'OEPE', 'R2P', 'OPH', 'CFV (par trim.)', 'Focus (par trim.)', 'Certification', 'CA', 'PAC', 'RH', 'Formation', 'Marketing', 'PEP', 'Évaluation'];
+  const DOMAINES_AUDIT = ['rh', 'formation', 'marketing', 'pep'], EVAL_NOMS = ['Exceptionnel', 'Significatif', 'Conforme', 'Insuffisant'];
   // Conditions (seuils) du classeur : prélèvement et audit ≥ 97 % ; OPH < 30 / < 40 / < 50 ; CA ≥ 4 % / ≥ 2 % / > 0 ; PAC ≥ 1 pt / ≥ 0,5 pt / > 0 ; paliers ÷ 1,5 puis ÷ 2,25
-  const SEUILS_2026 = { prel: 0.97, audit: 0.97, oph: [30, 40, 50], ca: [0.04, 0.02, 0], pac: [0.01, 0.005, 0], div: [1.5, 2.25] };
+  const SEUILS_2026 = { prel: 0.97, audit: 0.97, oph: [30, 40, 50], ca: [0.04, 0.02, 0], pac: [0.01, 0.005, 0], div: [1.5, 2.25], auditDom: [96, 93, 90], evalPct: [100, 67.5, 45, 0] };
   // Critères d'application (feuille SYSTÈME DE PRIME) : valeurs par défaut = fonctionnement du classeur
   const CRITERES_2026 = { finSemestre: true, proTempsContrat: true, proIndividuelles: false, arretProrata: 1, arretMax: 3, probatoire: 0 };
   // PPV (prime de partage de la valeur) : levier qui fait bouger le montant des primes par restaurant et par poste.
   //  mode « montant » : € par personne (temps plein, présence complète), proratisé si pro ; mode « pct » : % des primes calculées de la personne (poste de sa ligne affichée)
   //  montants : { tous: { poste: valeur }, RESTAURANT: { poste: valeur } } — la valeur d'un restaurant remplace celle de « tous » (vide = « tous »)
-  const PPV_2026 = { actif: false, mode: 'montant', pro: true, periode: 'both', plafond: 3000, montants: {} };
+  const PPV_2026 = { actif: false, mode: 'montant', sens: '+', pro: true, periode: 'both', plafond: 3000, montants: {} };
   const ppvMontant = (ppv, resto, poste) => { const m = (ppv && ppv.montants) || {}, v = (m[resto] || {})[poste]; return (v !== undefined && v !== null && v !== '') ? (+v || 0) : (+((m.tous || {})[poste]) || 0); };
   const seuilsDe = x => { const s = Object.assign({}, SEUILS_2026, x || {}); s.criteres = Object.assign({}, CRITERES_2026, (x && x.criteres) || {}); s.ppv = Object.assign({}, PPV_2026, (x && x.ppv) || {}); return s; };
+  // Audits RH / Formation / Marketing / PEP (versés en janvier) : score d'audit saisi par restaurant → palier (≥ 96 % plein, ≥ 93 % palier 2, ≥ 90 % palier 3 ; paliers = montant ÷ 1,5 et ÷ 2,25 arrondis à 10)
+  function montantAudit(base, score, sx) {
+    const S = seuilsDe(sx), d = S.div, t = S.auditDom, v = +score; if (!isFinite(v) || score === null || score === '' || !(base > 0)) return 0;
+    return v >= t[0] ? base : v >= t[1] ? xround(base / d[0], -1) : v >= t[2] ? xround(base / d[1], -1) : 0;
+  }
+  // Évaluation de performance (annuelle, versée en janvier) : palier saisi par personne (0 exceptionnel · 1 significatif · 2 conforme · 3 insuffisant) → part du montant de base
+  const montantEval = (base, idx, sx) => { const f = seuilsDe(sx).evalPct[+idx]; return (f === undefined || !(base > 0)) ? 0 : xround(base * f / 100, 0); };
   // Primes individuelles (CFV, Focus, certification) : le montant de base du poste est le palier le plus haut ; les autres paliers en sont des fractions (arrondies à l'unité inférieure : 100 → 100 / 87 / 75 / 62 / 50 ; 200 → 200 / 175 / 150 / 125 / 100)
   const FRAC_INDIV = [1, 0.875, 0.75, 0.625, 0.5];
   const montantsIndiv = base => (+base > 0) ? FRAC_INDIV.map(f => Math.floor(+base * f + 1e-9)).concat([0]) : null;
@@ -3544,19 +3552,20 @@ const PRIMES = (() => {
   // slots : [{label, noms:[12], contrats:[12]}] (17 lignes comme l'organigramme) ; sem : 0 (janv-juin) ou 1 (juil-déc)
   // indiv : { NOM : {cfv:[q1,q2], focus:[q1,q2], certif:x} } pour ce semestre ; fixes : { NOM : montant } (ADM / hôtesse, saisie manuelle) ; bareme : barème par poste
   // seuils : conditions réglées dans l'appli ; customs : [{id, montants:{poste:€}, pcts:[pct du/des période(s) du semestre, 0 à 1, null = pas de donnée]}] (primes personnalisées de ce restaurant)
-  function calculSemestre(slots, sem, res, indiv, fixes, bareme, seuils, customs, resto) {
+  function calculSemestre(slots, sem, res, indiv, fixes, bareme, seuils, customs, resto, audits) {
     const SX = seuilsDe(seuils), pal = paliersCollectifs(res, seuils), bar = bareme || BAREME_2026, cu = customs || [], cr = SX.criteres, pv = SX.ppv, pvOn = !!pv.actif && (pv.periode === 'both' || (pv.periode === 'S1' && sem === 0) || (pv.periode === 'S2' && sem === 1));
     const lignes = slots.map((s, k) => {
       const noms = sem === 0 ? s.noms.slice(0, 6) : s.noms.slice(6, 12); let cs = (sem === 0 ? s.contrats.slice(0, 6) : s.contrats.slice(6, 12));
       const ar = (s.arrets || []).slice(sem * 6, sem * 6 + 6);
       if (cr.probatoire > 0 && s.poste !== 'adjoint' && s.debut != null && s.id && slots.some(o => o !== s && o.id === s.id && o.debut != null && o.debut < s.debut)) cs = cs.map((v, i) => (isNum(v) && sem * 6 + i + 1 >= s.debut && sem * 6 + i + 1 < s.debut + cr.probatoire) ? 0 : v);      // évolution de poste : la nouvelle fonction ne compte qu'après la période probatoire
       const nom = noms[5] || '', cc = coefCrit(cs, ar, cr), c = (cc.supprime ? null : cc.c), poste = s.poste ? (s.poste === 'adm' || s.poste === 'hotesse' ? 'fixe' : s.poste) : posteDe(s.label);
-      let comp = { prel: 0, audit: 0, oepe: 0, r2p: 0, oph: 0, ca: 0, pac: 0, custom: {}, ppv: 0 };
-      if (nom && pvOn && pv.mode !== 'pct') { const mt = ppvMontant(pv, resto, poste); comp.ppv = pv.pro === false ? mt : (c === null ? 0 : xround(mt * c, 2)); }
+      let comp = { prel: 0, audit: 0, oepe: 0, r2p: 0, oph: 0, ca: 0, pac: 0, custom: {}, ppv: 0, aud: [0, 0, 0, 0] };
+      if (nom && pvOn && pv.mode !== 'pct') { const mt = ppvMontant(pv, resto, poste) * (pv.sens === '-' ? -1 : 1); comp.ppv = pv.pro === false ? mt : (c === null ? 0 : xround(mt * c, 2)); }
+      if (nom && sem === 1 && audits) comp.aud = DOMAINES_AUDIT.map((dm, i) => c === null ? 0 : xround(montantAudit((bar[poste] || [])[10 + i], audits[dm], seuils) * c, 0));      // audits RH, formation, marketing, PEP : versés en janvier
       if (nom) {
         const m = montantsPoste(bar[poste], pal, seuils);
         const f = (v, arrondi) => (c === null || v === null) ? 0 : (arrondi ? xround(v * c, 0) : v * c);
-        comp = { prel: f(m.prel), audit: f(m.audit), oepe: f(m.oepe), r2p: f(m.r2p), oph: f(m.oph), ca: f(m.ca, true), pac: f(m.pac, true), custom: {}, ppv: comp.ppv };
+        comp = { prel: f(m.prel), audit: f(m.audit), oepe: f(m.oepe), r2p: f(m.r2p), oph: f(m.oph), ca: f(m.ca, true), pac: f(m.pac, true), custom: {}, ppv: comp.ppv, aud: comp.aud };
         cu.forEach(x => { const mt = +((x.montants || {})[poste]) || 0, somme = (x.pcts || []).reduce((a, v) => a + (isNum(v) ? v : 0), 0); comp.custom[x.id] = (c === null || !mt) ? 0 : xround(mt * somme * c, 0); });
         if (c !== null && m.oph !== null) comp.oph = m.oph * c;            // l'arrondi de l'OPH porte sur le montant du palier, avant présence
       }
@@ -3571,15 +3580,18 @@ const PRIMES = (() => {
     return lignes.map((l, i) => {
       if (!affiche[i]) return { ...l, affiche: false };
       const tot = cle => lignes.filter(o => o.nom === l.nom).reduce((a, o) => a + o.comp[cle], 0);
-      const r = { prel: tot('prel'), audit: tot('audit'), oepe: tot('oepe'), r2p: tot('r2p'), oph: tot('oph'), ca: tot('ca'), pac: tot('pac'), custom: {}, ppv: 0 };
+      const r = { prel: tot('prel'), audit: tot('audit'), oepe: tot('oepe'), r2p: tot('r2p'), oph: tot('oph'), ca: tot('ca'), pac: tot('pac'), custom: {}, ppv: 0, aud: [0, 1, 2, 3].map(i => lignes.filter(o => o.nom === l.nom).reduce((a, o) => a + (o.comp.aud ? o.comp.aud[i] : 0), 0)), eval: 0 };
       cu.forEach(x => { r.custom[x.id] = lignes.filter(o => o.nom === l.nom).reduce((a, o) => a + ((o.comp.custom || {})[x.id] || 0), 0); });
       const fi = l.coefInd == null ? 0 : l.coefInd;                                   // primes individuelles : non proratisées (sauf option) ; 0 si absent en fin de semestre
       r.cfv = dansNonRz(l.nom) ? xround(sm(ind(l.nom, 'cfv')) * fi, 2) : 0;
       r.focus = dansNonRz(l.nom) ? xround(sm(ind(l.nom, 'focus')) * fi, 2) : 0;
       r.certif = dansRz(l.nom) ? xround((+ind(l.nom, 'certif') || 0) * fi, 2) : 0;
       r.fixe = (fixes && fixes[l.nom]) || 0;
-      const avantPpv = r.prel + r.audit + r.oepe + r.r2p + r.oph + r.cfv + r.focus + r.certif + r.ca + r.pac + r.fixe + Object.values(r.custom).reduce((a, v) => a + v, 0);
-      r.ppv = (pvOn && pv.mode === 'pct') ? xround(avantPpv * ppvMontant(pv, resto, l.poste) / 100, 2) : tot('ppv');
+      const ev = indiv && indiv[l.nom] ? indiv[l.nom].eval : null;                       // évaluation de performance : palier saisi, non proratisée (sauf option), 2e semestre
+      if (sem === 1 && ev !== null && ev !== undefined && ev !== '') r.eval = xround(montantEval(Math.max(0, ...lignes.filter(o => o.nom === l.nom).map(o => (bar[o.poste] || [])[14] || 0)), ev, seuils) * fi, 0);
+      const avantPpv = r.prel + r.audit + r.oepe + r.r2p + r.oph + r.cfv + r.focus + r.certif + r.ca + r.pac + r.fixe + Object.values(r.custom).reduce((a, v) => a + v, 0) + r.aud.reduce((a, v) => a + v, 0) + r.eval;
+      r.ppv = (pvOn && pv.mode === 'pct') ? xround(avantPpv * ppvMontant(pv, resto, l.poste) * (pv.sens === '-' ? -1 : 1) / 100, 2) : tot('ppv');
+      if (avantPpv + r.ppv < 0) r.ppv = -avantPpv;                                           // une prime ne devient jamais négative
       r.total = avantPpv + r.ppv;
       return { ...l, affiche: true, ...r };
     });
@@ -3627,7 +3639,7 @@ const PRIMES = (() => {
     return out;
   }
 
-  return { ppvMontant, PPV_2026, coefCrit, CRITERES_2026, montantsIndiv, FRAC_INDIV, resultatCustom, SEUILS_2026, INDICATEURS, seuilsDe, slotsDepuis, ORDRE_POSTES, LIBELLES, resultatsCollectifs, MOIS, SOCIETES, POSTES, BAREME_2026, PALIERS_INDIV, posteDe, xround, coef, dernierMois, seuil97, sousObjectif, moy, paliersCollectifs, montantsPoste, calculSemestre };
+  return { montantAudit, montantEval, DOMAINES_AUDIT, EVAL_NOMS, ppvMontant, PPV_2026, coefCrit, CRITERES_2026, montantsIndiv, FRAC_INDIV, resultatCustom, SEUILS_2026, INDICATEURS, seuilsDe, slotsDepuis, ORDRE_POSTES, LIBELLES, resultatsCollectifs, MOIS, SOCIETES, POSTES, BAREME_2026, PALIERS_INDIV, posteDe, xround, coef, dernierMois, seuil97, sousObjectif, moy, paliersCollectifs, montantsPoste, calculSemestre };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = PRIMES;
 
@@ -3635,7 +3647,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = PRIMES;
 // Résultats collectifs calculés depuis les données de l'appli, primes par personne (barème et règles du classeur « PRIMES 2026 »),
 // saisie des primes individuelles, des objectifs OEPE/R2P par restaurant, de l'organigramme (personnes, postes, présence), export Excel.
 // Moteur : PRIMES (primes_engine.js, testé contre le classeur). Données : tables Supabase primes_* (droits : tuile « prim », restaurants de la personne).
-const PRM = { on: false, lvl: 0, sem: 0, annee: 2026, state: 'idle', err: '', personnes: [], org: [], indiv: [], obj: [], sel: null, sys: false, regOpen: false, reg: { bareme: null, seuils: null, perso: [] }, draft: null, cu: null, lk: null, ed: null, msg: '', busy: false };
+const PRM = { on: false, lvl: 0, sem: 0, annee: 2026, state: 'idle', err: '', personnes: [], org: [], indiv: [], obj: [], aud: [], hasAud: false, sel: null, sys: false, regOpen: false, reg: { bareme: null, seuils: null, perso: [] }, draft: null, cu: null, lk: null, ed: null, msg: '', busy: false };
 const prEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const prEur = v => (Math.round((+v || 0) * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' €';
 const prPct = (v, d) => v == null ? '—' : (v * 100).toLocaleString('fr-FR', { minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 1 : d }) + ' %';
@@ -3673,7 +3685,8 @@ async function prLoad() {
     const f = prFr(), a = PRM.annee;
     const [p, o, i, ob, rg] = await Promise.all([prAll('/rest/v1/primes_personnes?select=*&franchise=eq.' + f + '&order=restaurant,ordre,nom'), prAll('/rest/v1/primes_organigramme?select=*&annee=eq.' + a + '&order=personne_id,mois'),
       prAll('/rest/v1/primes_indiv?select=*&annee=eq.' + a), prAll('/rest/v1/primes_objectifs?select=*&franchise=eq.' + f + '&annee=eq.' + a), prAll('/rest/v1/primes_reglages?select=*&franchise=eq.' + f + '&annee=eq.' + a)]);
-    PRM.personnes = p; PRM.org = o; PRM.hasArret = o.length > 0 && Object.prototype.hasOwnProperty.call(o[0], 'arret'); PRM.indiv = i; PRM.obj = ob; PRM.reg = { bareme: null, seuils: null, perso: [] }; rg.forEach(x => { PRM.reg[x.cle] = x.valeur; }); if (!Array.isArray(PRM.reg.perso)) PRM.reg.perso = []; PRM.draft = null; PRM.state = 'ok';
+    PRM.personnes = p; PRM.org = o; PRM.hasArret = o.length > 0 && Object.prototype.hasOwnProperty.call(o[0], 'arret'); PRM.indiv = i; PRM.obj = ob; PRM.reg = { bareme: null, seuils: null, perso: [] }; rg.forEach(x => { PRM.reg[x.cle] = x.valeur; });
+    try { PRM.aud = await prAll('/rest/v1/primes_audits?select=*&franchise=eq.' + f + '&annee=eq.' + a); PRM.hasAud = true; } catch (e) { PRM.aud = []; PRM.hasAud = false; } if (!Array.isArray(PRM.reg.perso)) PRM.reg.perso = []; PRM.draft = null; PRM.state = 'ok';
   } catch (e) { PRM.state = 'err'; PRM.err = String(e.message || e); }
   prRender();
 }
@@ -3686,21 +3699,23 @@ const prMsg = (t, ko) => { PRM.msg = t ? (ko ? '✗ ' : '✓ ') + t : ''; const 
 
 // ── Calcul (les deux semestres) ──
 function prRestos() { const vis = new Set(PRM.personnes.map(p => p.restaurant)); return PRIMES.SOCIETES.map(s => s[1]).filter(r => (typeof RESTOS === 'undefined' || RESTOS.includes(r)) && (vis.has(r) || PRM.lvl >= 1)); }
-function prCfg() { const r = PRM.reg || {}; return { bareme: Object.assign({}, PRIMES.BAREME_2026, r.bareme || {}), seuils: PRIMES.seuilsDe(r.seuils), perso: (r.perso || []).filter(x => x.actif !== false) }; }
+function prCfg() { const r = PRM.reg || {}, B = {}; Object.keys(PRIMES.BAREME_2026).forEach(k => { const u = (r.bareme || {})[k] || []; B[k] = PRIMES.BAREME_2026[k].map((v, i) => (u[i] !== undefined && u[i] !== null) ? u[i] : v); }); return { bareme: B, seuils: PRIMES.seuilsDe(r.seuils), perso: (r.perso || []).filter(x => x.actif !== false) }; }
+function prAudRest(r) { const o = {}; PRM.aud.filter(x => x.restaurant === r).forEach(x => { o[x.domaine] = x.score == null ? null : +x.score; }); return o; }
 function prCalc(semIdx) {
   const CF = prCfg(), D = (typeof DASHBOARD_DATA !== 'undefined') ? DASHBOARD_DATA : {}, obj = {};
   PRM.obj.filter(o => o.semestre === semIdx + 1).forEach(o => { obj[o.restaurant] = { oepe: o.oepe == null ? null : +o.oepe, r2p: o.r2p == null ? null : +o.r2p }; });
   const coll = PRIMES.resultatsCollectifs(D, D.ponctuel || [], obj, semIdx, PRM.annee, CF.seuils);
   const per = 'S' + (semIdx + 1), tr = semIdx === 0 ? ['T1', 'T2'] : ['T3', 'T4'], indiv = {}, fixes = {};
   PRM.indiv.forEach(i => {
-    const o = indiv[i.personne_id] || (indiv[i.personne_id] = { cfv: [0, 0], focus: [0, 0], certif: 0 });
+    const o = indiv[i.personne_id] || (indiv[i.personne_id] = { cfv: [0, 0], focus: [0, 0], certif: 0, eval: null });
+    if (i.indic === 'eval' && i.periode === 'S2' && i.score != null) o.eval = Math.round(+i.score);
     if ((i.indic === 'cfv' || i.indic === 'focus') && tr.includes(i.periode)) o[i.indic][tr.indexOf(i.periode)] = +i.montant;
     if (i.indic === 'certif' && i.periode === per) o.certif = +i.montant;
     if (i.indic === 'fixe' && i.periode === per) fixes[i.personne_id] = +i.montant;
   });
   const lignes = {}, cust = {};
   prRestos().forEach(r => { const slots = PRIMES.slotsDepuis(PRM.personnes, PRM.org, r, PRM.annee); cust[r] = CF.perso.map(def => ({ id: def.id, montants: def.montants || {}, pcts: PRIMES.resultatCustom(D, def, r, semIdx, PRM.annee) }));
-    lignes[r] = PRIMES.calculSemestre(slots, semIdx, coll[r] || { prel: [], audit: [] }, indiv, fixes, CF.bareme, CF.seuils, cust[r], r).filter(l => l.affiche); });
+    lignes[r] = PRIMES.calculSemestre(slots, semIdx, coll[r] || { prel: [], audit: [] }, indiv, fixes, CF.bareme, CF.seuils, cust[r], r, semIdx === 1 ? prAudRest(r) : undefined).filter(l => l.affiche); });
   const M = ((D[String(PRM.annee)] || {}).ca_total) || {}, fin = PRIMES.MOIS[semIdx * 6 + 5];
   const prov = !prRestos().every(r => typeof (M[fin] || {})[r] === 'number' && M[fin][r] > 0) || !!Object.values(coll).some(c => c.detail && c.detail.moisPartiel === semIdx * 6 + 5);
   const provC = Object.values(cust).some(a => a.some(c => c.pcts.some(v => v === null)));
@@ -3731,10 +3746,10 @@ function prRender() {
     if (PRM.sys) h += prHtmlSys(C);
     else {
       CS.forEach(x => { h += prHtmlColl(x.C, x.sem); });
-      if (PRM.sel) { if (annuel) h += prHtmlRecap(CS); CS.forEach(x => { h += prHtmlRestos(x.C, x.sem, annuel); }); if (PRM.lvl >= 2) h += prHtmlPers(); }
+      if (PRM.sel) { if (annuel) h += prHtmlRecap(CS); CS.forEach(x => { h += prHtmlRestos(x.C, x.sem, annuel); }); h += prHtmlAud(C); if (PRM.lvl >= 2) h += prHtmlPers(); }
       else if (PRM.lvl >= 2) h += '<details class="prm-det" ' + (PRM.regOpen ? 'open' : '') + ' ontoggle="PRM.regOpen=this.open"><summary>Personnes et présence</summary>' + prHtmlPers() + '</details>';
     }
-    h += '<div class="prm-foot">Règles : présence jusqu\'à la fin du semestre, prorata du temps de travail et de présence, paliers ÷ 1,5 et ÷ 2,25 (OPH, CA, PAC), prélèvement et audit ≥ 97 % sur la moyenne du trimestre, OEPE et R2P sous l\'objectif du restaurant. Les primes RH, formation, marketing, PEP et évaluation ne sont pas encore calculées (comme dans le classeur).</div>';
+    h += '<div class="prm-foot">Règles : présence jusqu\'à la fin du semestre, prorata du temps de travail et de présence, paliers ÷ 1,5 et ÷ 2,25 (OPH, CA, PAC), prélèvement et audit ≥ 97 % sur la moyenne du trimestre, OEPE et R2P sous l\'objectif du restaurant. Audits RH, formation, marketing, PEP : score saisi par restaurant ; évaluation : palier saisi par personne (janvier).</div>';
   }
   box.innerHTML = h + '</div>' + (PRM.ed ? prHtmlEd() : '') + (PRM.cu ? prHtmlCu() : '') + (PRM.lk ? prHtmlLk() : '');
 }
@@ -3790,13 +3805,13 @@ function prListeIndiv(ind, ps, CF) {                                 // montants
 function prPersPostes(pid) { return new Set(PRM.org.filter(o => o.personne_id === pid).map(o => o.poste)); }
 function prSel(opts, val, onch) { const v = +val || 0; const l = opts.includes(v) ? opts : [...opts, v].sort((a, b) => b - a); return '<select class="prm-in" onchange="' + onch + '">' + l.map(x => '<option value="' + x + '"' + (x === v ? ' selected' : '') + '>' + x + ' €</option>').join('') + '</select>'; }
 function prHtmlRestos(C, sem, annuel) {                              // une table par restaurant, mêmes colonnes et mêmes blocs que la feuille de la société dans le classeur
-  const ed = PRM.lvl >= 2, P = new Map(PRM.personnes.map(p => [p.id, p])), np = C.CF.perso.length, pvO = !!C.CF.seuils.ppv.actif, pl = +C.CF.seuils.ppv.plafond || 0; let h = '';
+  const ed = PRM.lvl >= 2, P = new Map(PRM.personnes.map(p => [p.id, p])), np = C.CF.perso.length, pvO = !!C.CF.seuils.ppv.actif, pl = +C.CF.seuils.ppv.plafond || 0, s2 = sem === 1; let h = '';
   prVis().forEach(r => {
     const rows = C.lignes[r] || []; if (!rows.length && !ed) return; const tot = rows.reduce((a, l) => a + l.total, 0);
     const S = k => rows.reduce((a, l) => a + (+l[k] || 0), 0), SC = id => rows.reduce((a, l) => a + (+((l.custom || {})[id]) || 0), 0);
     h += '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + (annuel ? ' · ' + (sem === 0 ? '1er semestre · versement juillet' : '2e semestre · versement janvier') : '') + '</span><span class="prm-tot">' + prEur(tot) + '</span></div><div class="prm-scroll"><table class="prm-xl prm-pp"><thead>' +
-      '<tr><th rowspan="2" class="t-l">Poste</th><th rowspan="2" class="t-l">Nom</th><th rowspan="2">Présence</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th><th rowspan="2" class="g-fx">Fixe</th>' + (pvO ? '<th rowspan="2" class="g-ppv">PPV</th>' : '') + (np ? '<th colspan="' + np + '" class="g-pe">Primes personnalisées</th>' : '') + '<th rowspan="2" class="g-tot">Total prime brut</th></tr>' +
-      '<tr><th class="g-sa">Prélèvement</th><th class="g-sa">Audit</th><th class="g-qsp">OEPE</th><th class="g-qsp">R2P</th><th class="g-qsp">OPH</th><th class="g-perf">CFV</th><th class="g-perf">Focus</th><th class="g-perf">Certif.</th><th class="g-fin">CA</th><th class="g-fin">PAC</th>' + C.CF.perso.map(x => '<th class="g-pe">' + prEsc(x.nom) + '</th>').join('') + '</tr></thead><tbody>';
+      '<tr><th rowspan="2" class="t-l">Poste</th><th rowspan="2" class="t-l">Nom</th><th rowspan="2">Présence</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th>' + (s2 ? '<th colspan="4" class="g-au">Audit (janvier)</th><th rowspan="2" class="g-ev">Évaluation</th>' : '') + '<th rowspan="2" class="g-fx">Fixe</th>' + (pvO ? '<th rowspan="2" class="g-ppv">PPV</th>' : '') + (np ? '<th colspan="' + np + '" class="g-pe">Primes personnalisées</th>' : '') + '<th rowspan="2" class="g-tot">Total prime brut</th></tr>' +
+      '<tr><th class="g-sa">Prélèvement</th><th class="g-sa">Audit</th><th class="g-qsp">OEPE</th><th class="g-qsp">R2P</th><th class="g-qsp">OPH</th><th class="g-perf">CFV</th><th class="g-perf">Focus</th><th class="g-perf">Certif.</th><th class="g-fin">CA</th><th class="g-fin">PAC</th>' + (s2 ? '<th class="g-au">RH</th><th class="g-au">Formation</th><th class="g-au">Marketing</th><th class="g-au">PEP</th>' : '') + C.CF.perso.map(x => '<th class="g-pe">' + prEsc(x.nom) + '</th>').join('') + '</tr></thead><tbody>';
     rows.forEach(l => {
       const p = P.get(l.nom) || { nom: '?' }, ps = prPersPostes(l.nom), tr = sem === 0 ? ['T1', 'T2'] : ['T3', 'T4'], per = 'S' + (sem + 1), iv = C.indiv[l.nom] || { cfv: [0, 0], focus: [0, 0], certif: 0 };
       const indivOk = ['directeur', 'adjoint', 'assistant', 'manager'].some(x => ps.has(x)), rzOk = ps.has('rz'), fixOk = ps.has('adm') || ps.has('hotesse');
@@ -3807,12 +3822,16 @@ function prHtmlRestos(C, sem, annuel) {                              // une tabl
         (indivOk ? '<td class="n">' + (ed ? q('cfv', 0) + q('cfv', 1) : prN(l.cfv)) + '</td><td class="n">' + (ed ? q('focus', 0) + q('focus', 1) : prN(l.focus)) + '</td>' : none + none) +
         (rzOk ? '<td class="n">' + (ed ? prSel(lst('certif'), iv.certif, "prIndiv('" + l.nom + "','certif','" + per + "',this.value)") : prN(l.certif)) + '</td>' : none) +
         '<td class="n">' + prN(l.ca) + '</td><td class="n">' + prN(l.pac) + '</td>' +
+        (s2 ? (l.aud || [0, 0, 0, 0]).map(v => '<td class="n">' + prN(v) + '</td>').join('') + (() => {                       // évaluation de performance : palier saisi par personne
+          const base = Math.max(0, ...[...ps].map(k => (C.CF.bareme[k] || [])[14] || 0)); if (!(base > 0)) return none;
+          if (!ed) return '<td class="n">' + prN(l.eval) + '</td>';
+          return '<td class="n"><select class="prm-in" onchange="prEval(\'' + l.nom + '\',this.value)"><option value="">—</option>' + PRIMES.EVAL_NOMS.map((nm, i) => '<option value="' + i + '"' + (iv.eval === i ? ' selected' : '') + '>' + nm + ' (' + PRIMES.montantEval(base, i, C.CF.seuils) + ' €)</option>').join('') + '</select></td>'; })() : '') +
         (fixOk ? '<td class="n">' + (ed ? '<input class="prm-in" type="number" min="0" step="10" style="width:72px" value="' + (C.fixes[l.nom] || 0) + '" onchange="prIndiv(\'' + l.nom + '\',\'fixe\',\'' + per + '\',this.value)">' : prN(C.fixes[l.nom] || 0)) + '</td>' : none) +
         (pvO ? (() => { const an = (PRM.ppvAn || {})[l.nom] || 0, over = pl > 0 && an > pl; return '<td class="n' + (over ? ' prm-over' : '') + '"' + (over ? ' title="PPV de l\'année : ' + prEur(an) + ', au-dessus du plafond de ' + prEur(pl) + '"' : '') + '>' + prN(l.ppv) + '</td>'; })() : '') +
         C.CF.perso.map(x => '<td class="n">' + prN((l.custom || {})[x.id]) + '</td>').join('') + '<td class="n t-tot">' + prN(l.total) + '</td></tr>';
     });
-    if (!rows.length) h += '<tr><td colspan="' + (14 + np + (pvO ? 1 : 0)) + '" class="prm-sub">Aucune personne payée ce semestre dans ce restaurant.</td></tr>';
-    else h += '</tbody><tfoot><tr><td colspan="3" class="t-l">Total ' + prEsc(prRestoLib(r)) + '</td><td class="n">' + prN(S('prel')) + '</td><td class="n">' + prN(S('audit')) + '</td><td class="n">' + prN(S('oepe')) + '</td><td class="n">' + prN(S('r2p')) + '</td><td class="n">' + prN(S('oph')) + '</td><td class="n">' + prN(S('cfv')) + '</td><td class="n">' + prN(S('focus')) + '</td><td class="n">' + prN(S('certif')) + '</td><td class="n">' + prN(S('ca')) + '</td><td class="n">' + prN(S('pac')) + '</td><td class="n">' + prN(S('fixe')) + '</td>' + (pvO ? '<td class="n">' + prN(S('ppv')) + '</td>' : '') + C.CF.perso.map(x => '<td class="n">' + prN(SC(x.id)) + '</td>').join('') + '<td class="n t-tot">' + prN(tot) + '</td></tr></tfoot><tbody>';
+    if (!rows.length) h += '<tr><td colspan="' + (14 + np + (pvO ? 1 : 0) + (s2 ? 5 : 0)) + '" class="prm-sub">Aucune personne payée ce semestre dans ce restaurant.</td></tr>';
+    else h += '</tbody><tfoot><tr><td colspan="3" class="t-l">Total ' + prEsc(prRestoLib(r)) + '</td><td class="n">' + prN(S('prel')) + '</td><td class="n">' + prN(S('audit')) + '</td><td class="n">' + prN(S('oepe')) + '</td><td class="n">' + prN(S('r2p')) + '</td><td class="n">' + prN(S('oph')) + '</td><td class="n">' + prN(S('cfv')) + '</td><td class="n">' + prN(S('focus')) + '</td><td class="n">' + prN(S('certif')) + '</td><td class="n">' + prN(S('ca')) + '</td><td class="n">' + prN(S('pac')) + '</td>' + (s2 ? [0, 1, 2, 3].map(i => '<td class="n">' + prN(rows.reduce((a, l) => a + ((l.aud || [])[i] || 0), 0)) + '</td>').join('') + '<td class="n">' + prN(S('eval')) + '</td>' : '') + '<td class="n">' + prN(S('fixe')) + '</td>' + (pvO ? '<td class="n">' + prN(S('ppv')) + '</td>' : '') + C.CF.perso.map(x => '<td class="n">' + prN(SC(x.id)) + '</td>').join('') + '<td class="n t-tot">' + prN(tot) + '</td></tr></tfoot><tbody>';
     h += '</tbody></table></div></div>';
   });
   return h;
@@ -3911,7 +3930,7 @@ async function prExport() {
     X.utils.book_append_sheet(wb, ws, name.slice(0, 31)); return ws; };
   const B = prCfg().bareme, pl = { directeur: 'DIRECTEUR', adjoint: 'DIRECTEUR ADJOINT', assistant: 'ASSISTANT DE DIRECTION', manager: 'MANAGER', rz: 'RESPONSABLE DE ZONE', adm: 'ASSISTANT ADMINISTRATIF (ADM)', hotesse: 'HÔTESSE PRINCIPALE' };
   {
-    const CF = prCfg(), rows = [['SYSTÈME DE PRIME ' + PRM.annee + ' (référence des montants et des objectifs)'], [], ['POSTE', 'PRÉLÈVEMENT (par trim.)', 'AUDIT (par trim.)', 'OEPE', 'R2P', 'OPH', 'CFV (par trim.)', 'FOCUS (par trim.)', 'CERTIF', 'CA', 'PAC', 'MAXIMUM ANNUEL (calculé)']], hd = [2];
+    const CF = prCfg(), rows = [['SYSTÈME DE PRIME ' + PRM.annee + ' (référence des montants et des objectifs)'], [], ['POSTE', 'PRÉLÈVEMENT (par trim.)', 'AUDIT (par trim.)', 'OEPE', 'R2P', 'OPH', 'CFV (par trim.)', 'FOCUS (par trim.)', 'CERTIF', 'CA', 'PAC', 'RH', 'FORMATION', 'MARKETING', 'PEP', 'ÉVALUATION', 'MAXIMUM ANNUEL (calculé)']], hd = [2];
     Object.keys(pl).forEach(k => rows.push([pl[k]].concat(B[k], [prPossibles(k, CF).max])));
     rows.push([], ['Versement : juillet (1er semestre), janvier (2e semestre). Prélèvement et audit ≥ ' + (CF.seuils.prel * 100) + ' % (moyenne du trimestre). OEPE / R2P : moyenne du semestre sous l\'objectif du restaurant.'], [], ['MONTANTS POSSIBLES SELON LE RÉSULTAT'], []);
     Object.keys(pl).forEach(k => { const P = prPossibles(k, CF); if (!P.rows.length) return; hd.push(rows.length); rows.push([pl[k], 'Plein', 'Palier 2', 'Palier 3', 'Condition']); P.rows.forEach(r => rows.push([r[0], r[1], r[2] == null ? '' : r[2], r[3] == null ? '' : r[3], r[4]])); rows.push([]); });
@@ -3927,7 +3946,7 @@ async function prExport() {
       hd.push(rows.length); rows.push(['RESTAURANT'].concat(Object.keys(pl).map(k => pl[k])));
       [['tous', 'Tous les restaurants']].concat(prRestos().map(r => [r, prRestoLib(r)])).forEach(([key, lib]) => rows.push([lib].concat(Object.keys(pl).map(k => { const v = ((PV.montants || {})[key] || {})[k]; return v === undefined ? '' : v; }))));
     }
-    add('SYSTÈME DE PRIME', rows, [30, 16, 16, 16, 60, 10, 14, 14, 10, 10, 10, 18], hd);
+    add('SYSTÈME DE PRIME', rows, [30, 16, 16, 16, 60, 10, 14, 14, 10, 10, 10, 10, 10, 10, 10, 12, 18], hd);
   }
   const co = [['RÉSULTATS COLLECTIFS']]; const coH = [];
   [0, 1].forEach(s => { co.push([], [s === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE']); coH.push(co.length); co.push(['RESTAURANT', 'PRÉLÈVEMENT T' + (s * 2 + 1), 'PRÉLÈVEMENT T' + (s * 2 + 2), 'AUDIT T' + (s * 2 + 1), 'AUDIT T' + (s * 2 + 2), 'OEPE moy. (s)', 'OEPE objectif', 'OEPE', 'R2P moy. (s)', 'R2P objectif', 'R2P', 'OPH', 'CA vs N-1', 'PAC (écart)']);
@@ -3940,12 +3959,15 @@ async function prExport() {
   const g = (pid, ind, per) => { const x = PRM.indiv.find(i => i.personne_id === pid && i.indic === ind && i.periode === per); return x ? +x.montant : 0; };
   PRM.personnes.forEach(p => iv.push([prRestoLib(p.restaurant), p.nom, g(p.id, 'cfv', 'T1'), g(p.id, 'cfv', 'T2'), g(p.id, 'focus', 'T1'), g(p.id, 'focus', 'T2'), g(p.id, 'certif', 'S1'), g(p.id, 'fixe', 'S1'), g(p.id, 'cfv', 'T3'), g(p.id, 'cfv', 'T4'), g(p.id, 'focus', 'T3'), g(p.id, 'focus', 'T4'), g(p.id, 'certif', 'S2'), g(p.id, 'fixe', 'S2')]));
   add('INDIVIDUELLES', iv, [16, 22, 9, 9, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9], [2]);
+  const au = [['AUDITS RH / FORMATION / MARKETING / PEP ' + PRM.annee + ' (score en %)'], [], ['RESTAURANT', 'RH', 'FORMATION', 'MARKETING', 'PEP']];
+  prRestos().forEach(r => { const A = prAudRest(r); au.push([prRestoLib(r)].concat(PRIMES.DOMAINES_AUDIT.map(dm => A[dm] == null ? '' : A[dm]))); });
+  add('AUDITS', au, [18, 10, 12, 12, 10], [2]);
   PRIMES.SOCIETES.forEach(([feuille, r]) => {
     if (!prRestos().includes(r)) return; const rows = [[feuille + ' · ' + prRestoLib(r)]], hd = [], tt = [];
-    [0, 1].forEach(s => { rows.push([], [s === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE']); hd.push(rows.length); rows.push(['POSTE', 'NOM', 'PRÉSENCE', 'PRÉLÈVEMENT', 'AUDIT', 'OEPE', 'R2P', 'OPH', 'CFV', 'FOCUS', 'CERTIF', 'CA', 'PAC', 'FIXE'].concat(prCfg().seuils.ppv.actif ? ['PPV'] : [], prCfg().perso.map(x => x.nom.toUpperCase()), ['TOTAL PRIME BRUT']));
-      const L = AC[s].lignes[r] || []; L.forEach(l => rows.push([prPosteLib(l.poste === 'fixe' ? ([...prPersPostes(l.nom)].find(x => x === 'adm' || x === 'hotesse') || 'adm') : l.poste), (P.get(l.nom) || {}).nom, l.coef == null ? '' : Math.round(l.coef * 10000) / 10000, l.prel, l.audit, l.oepe, l.r2p, Math.round(l.oph * 100) / 100, l.cfv, l.focus, l.certif, l.ca, l.pac, l.fixe].concat(prCfg().seuils.ppv.actif ? [l.ppv || 0] : [], prCfg().perso.map(x => (l.custom || {})[x.id] || 0), [Math.round(l.total * 100) / 100])));
-      tt.push(rows.length); rows.push(['TOTAL'].concat(new Array(13 + prCfg().perso.length + (prCfg().seuils.ppv.actif ? 1 : 0)).fill(''), [Math.round(L.reduce((a, l) => a + l.total, 0) * 100) / 100])); });
-    add(feuille, rows, [26, 22, 10, 12, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10].concat(prCfg().seuils.ppv.actif ? [10] : [], prCfg().perso.map(() => 14), [16]), hd, tt);
+    [0, 1].forEach(s => { rows.push([], [s === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE']); hd.push(rows.length); rows.push(['POSTE', 'NOM', 'PRÉSENCE', 'PRÉLÈVEMENT', 'AUDIT', 'OEPE', 'R2P', 'OPH', 'CFV', 'FOCUS', 'CERTIF', 'CA', 'PAC', 'RH', 'FORMATION', 'MARKETING', 'PEP', 'ÉVALUATION', 'FIXE'].concat(prCfg().seuils.ppv.actif ? ['PPV'] : [], prCfg().perso.map(x => x.nom.toUpperCase()), ['TOTAL PRIME BRUT']));
+      const L = AC[s].lignes[r] || []; L.forEach(l => rows.push([prPosteLib(l.poste === 'fixe' ? ([...prPersPostes(l.nom)].find(x => x === 'adm' || x === 'hotesse') || 'adm') : l.poste), (P.get(l.nom) || {}).nom, l.coef == null ? '' : Math.round(l.coef * 10000) / 10000, l.prel, l.audit, l.oepe, l.r2p, Math.round(l.oph * 100) / 100, l.cfv, l.focus, l.certif, l.ca, l.pac].concat(l.aud || [0, 0, 0, 0], [l.eval || 0, l.fixe], prCfg().seuils.ppv.actif ? [l.ppv || 0] : [], prCfg().perso.map(x => (l.custom || {})[x.id] || 0), [Math.round(l.total * 100) / 100])));
+      tt.push(rows.length); rows.push(['TOTAL'].concat(new Array(18 + prCfg().perso.length + (prCfg().seuils.ppv.actif ? 1 : 0)).fill(''), [Math.round(L.reduce((a, l) => a + l.total, 0) * 100) / 100])); });
+    add(feuille, rows, [26, 22, 10, 12, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 12, 10].concat(prCfg().seuils.ppv.actif ? [10] : [], prCfg().perso.map(() => 14), [16]), hd, tt);
   });
   X.writeFile(wb, 'Primes_EDG_' + PRM.annee + '.xlsx'); prMsg('Fichier Excel généré.');
 }
@@ -3956,20 +3978,22 @@ function prHtmlCond() {
   const d = prDraft(), S = d.seuils, B = d.bareme, f = v => v == null ? '' : +(+v).toFixed(4), pc = v => +(v * 100).toFixed(3);
   const n = (k, i, v, w) => '<input class="prm-in" type="number" step="any" style="width:' + (w || 64) + 'px" value="' + v + '" onchange="prSeuil(\'' + k + '\',' + (i == null ? 'null' : i) + ',this.value)">';
   let h = '<div class="prm-card"><div class="prm-ct">Conditions des primes <span class="prm-sub">montants et seuils, valables pour tous les restaurants · les résultats reprennent toujours les données de l\'application</span></div>' +
-    '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th rowspan="2" class="t-l">Poste (€)</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th></tr><tr>' + PRIMES.INDICATEURS.map((x, i) => '<th class="' + (i < 2 ? 'g-sa' : i < 5 ? 'g-qsp' : i < 8 ? 'g-perf' : 'g-fin') + '">' + x + '</th>').join('') + '</tr></thead><tbody>' +
+    '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th rowspan="2" class="t-l">Poste (€)</th><th colspan="2" class="g-sa">Sécurité alimentaire</th><th colspan="3" class="g-qsp">QSP</th><th colspan="3" class="g-perf">Performance</th><th colspan="2" class="g-fin">Financier</th><th colspan="4" class="g-au">Audit (janvier)</th><th class="g-ev">Évaluation</th></tr><tr>' + PRIMES.INDICATEURS.map((x, i) => '<th class="' + (i < 2 ? 'g-sa' : i < 5 ? 'g-qsp' : i < 8 ? 'g-perf' : i < 10 ? 'g-fin' : i < 14 ? 'g-au' : 'g-ev') + '">' + x + '</th>').join('') + '</tr></thead><tbody>' +
     PR_POSTES_SEL.map(([k, lib]) => '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td>' + PRIMES.INDICATEURS.map((_, i) => '<td class="n"><input class="prm-in" type="number" min="0" step="any" style="width:70px" value="' + f((B[k] || [])[i] || 0) + '" onchange="prBar(\'' + k + '\',' + i + ',this.value)"></td>').join('') + '</tr>').join('') + '</tbody></table></div>' +
     '<div class="prm-conds"><div><b>Prélèvement et audit</b> : au moins ' + n('prel', null, pc(S.prel)) + ' % (moyenne du trimestre) · audit ' + n('audit', null, pc(S.audit)) + ' %</div>' +
     '<div><b>OPH</b> : montant plein sous ' + n('oph', 0, f(S.oph[0])) + ' · ÷ ' + n('div', 0, f(S.div[0]), 48) + ' sous ' + n('oph', 1, f(S.oph[1])) + ' · ÷ ' + n('div', 1, f(S.div[1]), 48) + ' sous ' + n('oph', 2, f(S.oph[2])) + ' · sinon rien</div>' +
     '<div><b>CA vs N-1</b> : plein à partir de ' + n('ca', 0, pc(S.ca[0])) + ' % · ÷ 1er palier à partir de ' + n('ca', 1, pc(S.ca[1])) + ' % · ÷ 2e palier au-dessus de ' + n('ca', 2, pc(S.ca[2])) + ' %</div>' +
     '<div><b>PAC (écart en points)</b> : plein à partir de ' + n('pac', 0, pc(S.pac[0])) + ' pt · ÷ 1er palier à partir de ' + n('pac', 1, pc(S.pac[1])) + ' pt · ÷ 2e palier au-dessus de ' + n('pac', 2, pc(S.pac[2])) + ' pt</div>' +
+    '<div><b>Audits RH, formation, marketing, PEP</b> (score d\'audit du restaurant, versé en janvier) : plein à partir de ' + n('auditDom', 0, f(S.auditDom[0])) + ' % · ÷ 1er palier à partir de ' + n('auditDom', 1, f(S.auditDom[1])) + ' % · ÷ 2e palier à partir de ' + n('auditDom', 2, f(S.auditDom[2])) + ' %</div>' +
+    '<div><b>Évaluation de performance</b> (part du montant de base) : exceptionnel ' + n('evalPct', 0, f(S.evalPct[0])) + ' % · significatif ' + n('evalPct', 1, f(S.evalPct[1])) + ' % · conforme ' + n('evalPct', 2, f(S.evalPct[2])) + ' % · insuffisant ' + n('evalPct', 3, f(S.evalPct[3])) + ' %</div>' +
     '<div class="prm-sub">OEPE et R2P : sous l\'objectif de chaque restaurant (zone « Objectifs » ci-dessus). Prélèvement et audit : montant par trimestre ; CFV et Focus : par trimestre ; autres : par semestre.</div></div>' +
     '<div class="prm-actions"><span class="prm-sub">Après enregistrement, tous les montants sont recalculés.</span><button class="prm-btn" onclick="prResetCond()">Rétablir les valeurs du classeur</button><button class="prm-btn pri" onclick="prSaveCond()">Enregistrer les conditions</button></div></div>';
   return h;
 }
-function prBar(k, i, v) { const d = prDraft(); d.bareme[k] = (d.bareme[k] || new Array(10).fill(0)).slice(); d.bareme[k][i] = Math.max(0, +String(v).replace(',', '.') || 0); d.dirty = true; }
+function prBar(k, i, v) { const d = prDraft(); d.bareme[k] = (d.bareme[k] || new Array(15).fill(0)).slice(); d.bareme[k][i] = Math.max(0, +String(v).replace(',', '.') || 0); d.dirty = true; }
 function prSeuil(k, i, v) {
   const d = prDraft(), x = +String(v).replace(',', '.'); if (!isFinite(x)) return;
-  if (k === 'prel' || k === 'audit') d.seuils[k] = x / 100; else if (k === 'oph' || k === 'div') { d.seuils[k] = d.seuils[k].slice(); d.seuils[k][i] = x; } else { d.seuils[k] = d.seuils[k].slice(); d.seuils[k][i] = x / 100; }
+  if (k === 'prel' || k === 'audit') d.seuils[k] = x / 100; else if (k === 'oph' || k === 'div' || k === 'auditDom' || k === 'evalPct') { d.seuils[k] = d.seuils[k].slice(); d.seuils[k][i] = x; } else { d.seuils[k] = d.seuils[k].slice(); d.seuils[k][i] = x / 100; }
   d.dirty = true;
 }
 async function prSaveCond() {
@@ -4109,7 +4133,9 @@ function prPossibles(k, CF) {                                         // lignes 
   [['cfv', 5, 'CFV (par trimestre)'], ['focus', 6, 'Focus (par trimestre)'], ['certif', 7, 'Certification (par semestre)']].forEach(([c, i, lib]) => { const m = PRIMES.montantsIndiv(b[i]); if (m) r.push([lib, m[0], m[1], m[2], 'Selon le score saisi : ' + m.slice(0, 5).join(' · ') + ' €']); });
   if (b[8] > 0) r.push(['CA vs N-1 (par semestre)', b[8], rd(b[8] / d[0]), rd(b[8] / d[1]), '≥ ' + pc(S.ca[0]) + ' · ≥ ' + pc(S.ca[1]) + ' · > ' + pc(S.ca[2])]);
   if (b[9] > 0) r.push(['PAC (par semestre)', b[9], rd(b[9] / d[0], -1), rd(b[9] / d[1], -1), 'Écart en points ≥ ' + pt(S.pac[0]) + ' · ≥ ' + pt(S.pac[1]) + ' · > ' + pt(S.pac[2])]);
-  const max = (b[0] || 0) * 4 + (b[1] || 0) * 4 + (b[2] || 0) * 2 + (b[3] || 0) * 2 + (b[4] || 0) * 2 + (b[5] || 0) * 4 + (b[6] || 0) * 4 + (b[7] || 0) * 2 + (b[8] || 0) * 2 + (b[9] || 0) * 2;
+  ['RH', 'Formation', 'Marketing', 'PEP'].forEach((lib, i) => { const x = b[10 + i]; if (x > 0) r.push(['Audit ' + lib + ' (janvier)', x, rd(x / d[0], -1), rd(x / d[1], -1), 'Score d\'audit ≥ ' + S.auditDom[0] + ' % · ≥ ' + S.auditDom[1] + ' % · ≥ ' + S.auditDom[2] + ' %']); });
+  if (b[14] > 0) r.push(['Évaluation de performance (janvier)', PRIMES.montantEval(b[14], 0, S), PRIMES.montantEval(b[14], 1, S), PRIMES.montantEval(b[14], 2, S), 'Exceptionnel · significatif · conforme (insuffisant : ' + PRIMES.montantEval(b[14], 3, S) + ' €)']);
+  const max = (b[0] || 0) * 4 + (b[1] || 0) * 4 + (b[2] || 0) * 2 + (b[3] || 0) * 2 + (b[4] || 0) * 2 + (b[5] || 0) * 4 + (b[6] || 0) * 4 + (b[7] || 0) * 2 + (b[8] || 0) * 2 + (b[9] || 0) * 2 + (b[10] || 0) + (b[11] || 0) + (b[12] || 0) + (b[13] || 0) + (b[14] || 0);
   return { rows: r, max };
 }
 function prHtmlPossibles() {
@@ -4119,7 +4145,7 @@ function prHtmlPossibles() {
     h += '<div class="prm-pc"><div class="prm-r">' + prEsc(lib) + ' <span class="prm-tot">' + prEur(P.max) + '</span></div><div class="prm-sub" style="margin-bottom:4px">maximum annuel des primes calculées</div><table class="prm-xl"><thead><tr><th class="t-l">Indicateur</th><th class="g-tot">Plein</th><th>Palier 2</th><th>Palier 3</th></tr></thead><tbody>' +
       P.rows.map(r => '<tr><td>' + prEsc(r[0]) + '<span class="prm-sub">' + prEsc(r[4]) + '</span></td><td class="prm-b">' + prEur(r[1]) + '</td><td>' + (r[2] == null ? '—' : prEur(r[2])) + '</td><td>' + (r[3] == null ? '—' : prEur(r[3])) + '</td></tr>').join('') + '</tbody></table></div>';
   });
-  return h + '</div><div class="prm-sub" style="margin-top:8px">Les primes RH, formation, marketing, PEP et évaluation de la feuille du classeur ne sont pas encore calculées : elles ne figurent pas dans ces maximums.</div></div>';
+  return h + '</div><div class="prm-sub" style="margin-top:8px">Les audits RH, formation, marketing, PEP et l\'évaluation sont versés en janvier : leurs résultats se saisissent par restaurant (audits) et par personne (évaluation).</div></div>';
 }
 function prHtmlSys(C) {
   const ro = PRM.lvl < 2;
@@ -4166,12 +4192,12 @@ function prHtmlCriteres() {
 // ── PPV (prime de partage de la valeur) : un levier de montant par restaurant et par poste, ajouté au total des primes ──
 function prPpv(k, v) {
   const d = prDraft(), pv = (d.seuils.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {}));
-  pv[k] = (typeof v === 'boolean' || k === 'mode' || k === 'periode') ? v : Math.max(0, +String(v).replace(',', '.') || 0); d.dirty = true;
-  if (k === 'actif' || k === 'mode') prRender();
+  pv[k] = (typeof v === 'boolean' || k === 'mode' || k === 'periode' || k === 'sens') ? v : Math.max(0, +String(v).replace(',', '.') || 0); d.dirty = true;
+  if (k === 'actif' || k === 'mode' || k === 'sens') prRender();
 }
 function prPpvM(key, poste, v) {
   const d = prDraft(), pv = (d.seuils.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {})), M = (pv.montants = JSON.parse(JSON.stringify(pv.montants || {})));
-  M[key] = M[key] || {}; if (String(v).trim() === '') delete M[key][poste]; else M[key][poste] = Math.max(0, +String(v).replace(',', '.') || 0);
+  M[key] = M[key] || {}; if (String(v).trim() === '') delete M[key][poste]; else M[key][poste] = +String(v).replace(',', '.') || 0;
   if (!Object.keys(M[key]).length) delete M[key]; d.dirty = true;
 }
 function prHtmlPpv() {
@@ -4186,14 +4212,53 @@ function prHtmlPpv() {
   return '<div class="prm-card"><div class="prm-ct">PPV · prime de partage de la valeur <span class="prm-sub">levier pour faire varier le montant des primes par restaurant et par poste · s\'ajoute au total de chaque personne</span></div>' +
     '<div class="prm-form"><label class="prm-chk"><input class="prm-in" type="checkbox" ' + (pv.actif ? 'checked' : '') + ' onchange="prPpv(\'actif\',this.checked)"> PPV activée</label>' +
     '<label>Mode de calcul<select class="prm-in" onchange="prPpv(\'mode\',this.value)">' + o('montant', 'Montant en € par personne', pv.mode) + o('pct', '% des primes calculées de la personne', pv.mode) + '</select></label>' +
+    '<label>Effet sur les primes<select class="prm-in" onchange="prPpv(\'sens\',this.value)">' + o('+', 'Additionner (la PPV s\'ajoute)', pv.sens) + o('-', 'Soustraire (la PPV est retranchée)', pv.sens) + '</select></label>' +
     '<label>Versée<select class="prm-in" onchange="prPpv(\'periode\',this.value)">' + o('both', 'aux deux semestres (juillet et janvier)', pv.periode) + o('S1', 'au 1er semestre seulement (juillet)', pv.periode) + o('S2', 'au 2e semestre seulement (janvier)', pv.periode) + '</select></label>' +
     '<label class="prm-chk"><input class="prm-in" type="checkbox" ' + (pv.pro !== false ? 'checked' : '') + ' onchange="prPpv(\'pro\',this.checked)"> Proratisée selon la présence et le temps de travail</label>' +
     '<label>Plafond annuel par personne (€)<input class="prm-in" type="number" min="0" step="100" value="' + pv.plafond + '" onchange="prPpv(\'plafond\',this.value)"></label></div>' +
-    '<div class="prm-sub" style="margin:10px 0 4px">' + (pct ? 'Pourcentage des primes calculées' : 'Montant par personne à temps plein, présence complète') + ' (' + u + ') — une case vide reprend la valeur de la ligne « Tous les restaurants ». Les valeurs ne sont pas converties quand on change de mode : ressaisissez-les.</div>' +
+    '<div class="prm-sub" style="margin:10px 0 4px">' + (pct ? 'Pourcentage des primes calculées' : 'Montant par personne à temps plein, présence complète') + ' (' + u + ') ' + (pv.sens === '-' ? '— retranché du total de chaque personne (jamais en dessous de 0)' : '— ajouté au total de chaque personne') + ' ; une valeur négative inverse l\'effet — une case vide reprend la valeur de la ligne « Tous les restaurants ». Les valeurs ne sont pas converties quand on change de mode : ressaisissez-les.</div>' +
     '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Restaurant</th>' + PR_POSTES_SEL.map(([k, lib]) => '<th class="g-ppv">' + prEsc(lib.split(' (')[0]) + ' (' + u + ')</th>').join('') + '</tr></thead><tbody>' +
-    rows.map(([key, lib]) => '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td>' + PR_POSTES_SEL.map(([k]) => { const v = (M[key] || {})[k], t = (M.tous || {})[k]; return '<td class="n"><input class="prm-in" type="number" min="0" step="any" style="width:76px" value="' + (v === undefined ? '' : v) + '"' + (key !== 'tous' && t ? ' placeholder="' + t + '"' : '') + ' onchange="prPpvM(\'' + key + '\',\'' + k + '\',this.value)"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>' +
+    rows.map(([key, lib]) => '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td>' + PR_POSTES_SEL.map(([k]) => { const v = (M[key] || {})[k], t = (M.tous || {})[k]; return '<td class="n"><input class="prm-in" type="number" step="any" style="width:76px" value="' + (v === undefined ? '' : v) + '"' + (key !== 'tous' && t ? ' placeholder="' + t + '"' : '') + ' onchange="prPpvM(\'' + key + '\',\'' + k + '\',this.value)"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>' +
     '<div class="prm-sub" style="margin-top:8px">Repère légal à vérifier avec votre expert-comptable : la PPV est facultative, exonérée dans la limite de 3 000 € par bénéficiaire et par an (6 000 € avec un accord d\'intéressement), sous condition de rémunération ; le plafond ci-dessus sert d\'alerte (valeur modifiable) et n\'écrête pas les montants.</div>' + sim +
     '<div class="prm-actions"><span class="prm-sub">Après enregistrement, tous les montants et l\'export Excel sont recalculés.</span><button class="prm-btn pri" onclick="prSaveCond()">Enregistrer la PPV</button></div></div>';
+}
+
+
+// ── Audits RH / Formation / Marketing / PEP (par restaurant, versés en janvier) et évaluation de performance (par personne) ──
+const PR_DOM_LIB = { rh: 'RH', formation: 'Formation', marketing: 'Marketing', pep: 'PEP' };
+function prHtmlAud(C) {
+  const r = PRM.sel; if (!r) return ''; const CF = C.CF, ed = PRM.lvl >= 2 && PRM.hasAud, A = prAudRest(r), t = CF.seuils.auditDom;
+  const pal = v => (v == null || v === '') ? '<span class="prm-chip na">pas de score</span>' : v >= t[0] ? '<span class="prm-chip ok">plein</span>' : v >= t[1] ? '<span class="prm-chip mid">palier 2</span>' : v >= t[2] ? '<span class="prm-chip mid">palier 3</span>' : '<span class="prm-chip ko">non atteint</span>';
+  let h = '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + ' · audits RH, formation, marketing, PEP</span><span class="prm-sub">score d\'audit du restaurant (%) · versement en janvier (2e semestre)</span></div>';
+  if (!PRM.hasAud) h += '<div class="prm-sub" style="color:var(--red);margin-bottom:8px">La saisie des audits n\'est pas encore activée dans la base : les cases sont en lecture seule.</div>';
+  h += '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Audit</th><th>Score (%)</th><th>Palier</th><th class="t-l">Montant par poste</th></tr></thead><tbody>' +
+    PRIMES.DOMAINES_AUDIT.map((dm, i) => {
+      const v = A[dm], parPoste = PR_POSTES_SEL.map(([k, lib]) => { const b = (CF.bareme[k] || [])[10 + i] || 0; return b > 0 ? prEsc(lib.split(' (')[0]) + ' ' + PRIMES.montantAudit(b, v, CF.seuils) + ' €' : ''; }).filter(Boolean).join(' · ');
+      return '<tr><td class="t-l prm-n">' + PR_DOM_LIB[dm] + '</td><td class="n"><input class="prm-in" type="number" min="0" max="100" step="0.1" style="width:80px" ' + (ed ? '' : 'disabled ') + 'value="' + (v == null ? '' : v) + '" onchange="prAud(\'' + dm + '\',this.value)"></td><td class="c">' + pal(v) + '</td><td class="t-l">' + (parPoste || '<span class="prm-sub">aucun montant réglé</span>') + '</td></tr>';
+    }).join('') + '</tbody></table></div><div class="prm-sub" style="margin-top:6px">Paliers : plein à partir de ' + t[0] + ' %, 2e palier à partir de ' + t[1] + ' %, 3e palier à partir de ' + t[2] + ' % (réglables dans « Système de prime »). Montants par poste : voir la grille des montants.</div></div>';
+  return h;
+}
+async function prAud(dom, val) {
+  const r = PRM.sel, f = prFr();
+  try {
+    if (String(val).trim() === '') { await prDel('primes_audits', 'franchise=eq.' + f + '&restaurant=eq.' + encodeURIComponent(r) + '&annee=eq.' + PRM.annee + '&domaine=eq.' + dom); PRM.aud = PRM.aud.filter(x => !(x.restaurant === r && x.domaine === dom)); }
+    else {
+      const row = { franchise: f, restaurant: r, annee: PRM.annee, domaine: dom, score: Math.min(100, Math.max(0, +String(val).replace(',', '.') || 0)) };
+      const out = await prSave('primes_audits', [row], 'franchise,restaurant,annee,domaine'), i = PRM.aud.findIndex(x => x.restaurant === r && x.domaine === dom); if (i >= 0) PRM.aud[i] = out[0] || row; else PRM.aud.push(out[0] || row);
+    }
+    prRender(); prMsg('Audit enregistré : montants recalculés.');
+  } catch (e) { prMsg('Enregistrement impossible : ' + e.message, true); }
+}
+async function prEval(pid, v) {
+  const f = prFr();
+  try {
+    if (v === '') { await prDel('primes_indiv', 'personne_id=eq.' + pid + '&annee=eq.' + PRM.annee + '&periode=eq.S2&indic=eq.eval'); PRM.indiv = PRM.indiv.filter(x => !(x.personne_id === pid && x.indic === 'eval' && x.periode === 'S2')); }
+    else {
+      const idx = +v, row = { personne_id: pid, annee: PRM.annee, periode: 'S2', indic: 'eval', montant: 0, score: idx };
+      const out = await prSave('primes_indiv', [row], 'personne_id,annee,periode,indic'), i = PRM.indiv.findIndex(x => x.personne_id === pid && x.periode === 'S2' && x.indic === 'eval'); if (i >= 0) PRM.indiv[i] = out[0] || row; else PRM.indiv.push(out[0] || row);
+    }
+    prRender(); prMsg('Évaluation enregistrée.');
+  } catch (e) { prMsg('Enregistrement impossible : ' + e.message + (/check|violat/i.test(e.message) ? ' (la saisie des évaluations n\'est pas encore activée dans la base)' : ''), true); }
 }
 
 function setMode(val) {
@@ -12291,6 +12356,8 @@ body.dark-mode .prm { --pg: #3b4259; }
 .prm-crp { min-width: 250px; }
 .prm-sw { display: flex; align-items: center; gap: 6px; font-size: .76rem; margin: 2px 0; white-space: normal; }
 .prm-xl thead .g-ppv { background: rgba(16,185,129,.30); }
+.prm-xl thead .g-au { background: rgba(249,115,22,.30); }
+.prm-xl thead .g-ev { background: rgba(14,165,233,.30); }
 .prm-over { color: var(--red); font-weight: 800; }
 .prm-tile.sys { --tc: #475569; }
 .prm-tile .prm-minis { margin-top: 2px; }
@@ -12788,7 +12855,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261114-194443';
+const BUILD_VERSION = '20261114-210619';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
