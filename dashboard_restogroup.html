@@ -476,8 +476,8 @@ const ACC_CAT = [
   ['Dashboard', [['pil', 'Pilotage opérationnel', 'esp:pilotage'], ['perf', 'Performance', 'esp:performance'], ['itv', 'Interventions', 'esp:interventions'], ['form', 'Formation', 'esp:formation'], ['mkt', 'Marketing', 'esp:marketing'], ['com', 'Plan de communication', 'esp:plancom'], ['plan', 'Planning EDG', 'esp:planning'], ['act', 'Actualité restaurant', 'esp:actualite'], ['tps', 'Suivi temps de travail', 'tab:tps|esp:ext-pointage'], ['rev', 'Business Review', 'esp:revue'], ['prim', 'Primes (Pilotage)', ''], ['ffoc', 'Évaluations : Focus', ''], ['fcfv', 'Évaluations : CFV (VSC)', ''], ['fcer', 'Évaluations : Certification', '']]],
   ['Administration', [['eq', 'Équipes et accès', 'tab:equipes'], ['sal', 'Salaires par poste', ''], ['ban', 'Bannières', '']]]];
 { const _c = (typeof FRANCHISE_CFG !== 'undefined' ? FRANCHISE_CFG : (typeof CFG !== 'undefined' ? CFG : {})); if (!((_c.modules || {}).primes === 'on')) ACC_CAT.forEach(g => { g[1] = g[1].filter(t => !['prim', 'ffoc', 'fcfv', 'fcer'].includes(t[0])); }); }   // la tuile « Primes » n'existe que pour les franchises dont la config l'active
-const accMax = k => k === 'pb' ? 3 : 2;   // toutes les tuiles : aucun / consultation / modification (Point Business : 4 niveaux ; « Suivi du temps de travail » : le niveau ne règle que la visibilité, les droits d'écriture sont ceux de l'application forfait jours)
-const accLevelName = (k, v) => v === 0 ? 'Aucun accès' : (k === 'pb' ? ['', 'Consultation', 'Réponse du directeur', 'Rédaction'][v] : (v === 1 ? 'Consultation' : (['ffoc', 'fcfv', 'fcer'].includes(k) ? 'Réalisation' : 'Modification')));
+const accMax = k => (k === 'pb' || k === 'ffoc' || k === 'fcfv' || k === 'fcer') ? 3 : 2;   // toutes les tuiles : aucun / consultation / modification (Point Business : 4 niveaux ; « Suivi du temps de travail » : le niveau ne règle que la visibilité, les droits d'écriture sont ceux de l'application forfait jours)
+const accLevelName = (k, v) => v === 0 ? 'Aucun accès' : (k === 'pb' ? ['', 'Consultation', 'Réponse du directeur', 'Rédaction'][v] : (v === 1 ? 'Consultation' : (['ffoc', 'fcfv', 'fcer'].includes(k) ? ['', 'Consultation', 'Réalisation', 'Réalisation et critères'][v] : 'Modification')));
 const accLvl = (r, k) => (r && r.acces && typeof r.acces === 'object') ? (+r.acces[k] || 0) : null;           // null = anciens droits (pas de tuiles)
 const accTabLvl = (r, tab) => { const t = ACC_CAT.flatMap(g => g[1]).find(x => (x[2] || '').split('|').includes('tab:' + tab)); return t ? accLvl(r, t[0]) : null; };
 const accEspLvl = (r, esp) => { const t = ACC_CAT.flatMap(g => g[1]).find(x => (x[2] || '').split('|').includes('esp:' + esp)); return t ? accLvl(r, t[0]) : null; };
@@ -4323,42 +4323,46 @@ const FRM_DEFS = {
 // ══ Formulaires d'évaluation (Focus, CFV/VSC, Certification) : moteur de calcul (sans interface) ══
 // Reproduit les classeurs « FOCUS VIERGE 2027 », « VSC VIERGE 2027 » et « CERTIFICATION RZ EN POSTE » : mêmes critères, mêmes coefficients, mêmes paliers.
 //  · Focus et CFV : score = points des « OUI » ÷ points possibles ; au CFV, un critère « S/O » (sans objet) donne ses points (la feuille VSC les ajoute au total).
-//  · Certification : pourcentage par bloc = « OUI » ÷ critères évalués (hors « S/O »), puis moyenne des blocs.
+//  · Certification : pourcentage par bloc = points des « OUI » ÷ points des critères évalués (hors « S/O »), puis moyenne des blocs (points = 1 par critère dans le classeur).
 //  · Palier (0 = plein … 4 = dernier palier payé, 5 = aucune prime) : seuils du classeur (Focus et CFV : ≥ 97 / 92 / 88 %, > 83 %, ≥ 80 % ; certification : ≥ 98 / 95 / 90 / 85 / 80 %).
-// Le montant en euros ne vient PAS d'ici : il se déduit du palier et du barème du poste (onglet Primes).
+// Les critères (texte, points, blocs) et les seuils sont modifiables dans l'appli : chaque fonction accepte une définition D (par défaut : celle du classeur) et,
+// pour une évaluation précise, des points modifiés { idCritère : points }. Le montant en euros ne vient PAS d'ici : il se déduit du palier et du barème du poste (onglet Primes).
 // Prérequis : FRM_DEFS (patches/formulaires_defs.js, généré depuis les classeurs).
 const FORMS = (() => {
   const DEFS = FRM_DEFS, ORDRE = ['focus', 'cfv', 'certif'];
   const LIB_PALIER = ['100 %', '87,5 %', '75 %', '62,5 %', '50 %', '0 %'];
   const FRAC = [1, 0.875, 0.75, 0.625, 0.5, 0];
-  const items = f => DEFS[f].blocs.flatMap(b => b.groupes.flatMap(g => g.items));
-  const reponseOk = (f, v) => v === 'OUI' || v === 'NON' || (v === 'SO' && DEFS[f].so);
+  const def = (f, D) => D || DEFS[f];
+  const items = (f, D) => def(f, D).blocs.flatMap(b => b.groupes.flatMap(g => g.items));
+  const reponseOk = (f, v, D) => v === 'OUI' || v === 'NON' || (v === 'SO' && def(f, D).so);
+  // points d'un critère pour une évaluation : points modifiés sur la fiche (si renseignés), sinon points du modèle
+  const coef = (i, pts) => { const v = pts && pts[i.id]; return (v !== undefined && v !== null && v !== '' && isFinite(+v) && +v >= 0) ? +v : +i.coef; };
   // Calcul d'un formulaire à partir des réponses { idCritère : 'OUI' | 'NON' | 'SO' }. Un critère sans réponse n'est pas compté (calcul provisoire) ; complet = tous répondus.
-  function score(f, rep) {
-    const D = DEFS[f]; rep = rep || {}; let pts = 0, max = 0, rd = 0, tot = 0; const blocs = [];
+  function score(f, rep, D, pts) {
+    D = def(f, D); rep = rep || {}; let p0 = 0, max = 0, rd = 0, tot = 0; const blocs = [];
     D.blocs.forEach(b => {
       let p = 0, m = 0, r = 0, t = 0;
       b.groupes.forEach(g => g.items.forEach(i => {
-        t++; const v = rep[i.id]; if (!reponseOk(f, v)) return; r++;
+        t++; const v = rep[i.id]; if (!reponseOk(f, v, D)) return; r++;
         if (v === 'SO' && D.mode === 'moyenne') return;                 // certification : « S/O » sort du calcul
-        m += i.coef; if (v === 'OUI' || v === 'SO') p += i.coef;          // CFV : « S/O » = points acquis
+        const c = coef(i, pts); m += c; if (v === 'OUI' || v === 'SO') p += c;          // CFV : « S/O » = points acquis
       }));
       blocs.push({ id: b.id, pts: p, max: m, pct: m > 0 ? p / m : null, repondus: r, total: t });
-      pts += p; max += m; rd += r; tot += t;
+      p0 += p; max += m; rd += r; tot += t;
     });
     let pct = null;
     if (D.mode === 'moyenne') { const v = blocs.filter(b => b.pct !== null); pct = v.length ? v.reduce((a, b) => a + b.pct, 0) / v.length : null; }
-    else pct = max > 0 ? pts / max : null;
-    return { pts, max, pct, blocs, repondus: rd, total: tot, complet: rd === tot && tot > 0 };
+    else pct = max > 0 ? p0 / max : null;
+    return { pts: p0, max, pct, blocs, repondus: rd, total: tot, complet: rd === tot && tot > 0 };
   }
   // Palier d'un pourcentage : 0 à 4 (montant plein à dernier palier) ou 5 (sous le dernier seuil). Seuil « strict » : > au lieu de ≥ (Focus et CFV : > 83 %).
-  function palier(f, pct) {
+  function palier(f, pct, D) {
     if (pct === null || pct === undefined || isNaN(pct)) return null;
-    const S = DEFS[f].seuils;
+    const S = def(f, D).seuils;
     for (let i = 0; i < S.length; i++) if (S[i][1] ? pct > S[i][0] : pct >= S[i][0]) return i;
     return 5;
   }
-  const seuilTxt = (f, i) => { const s = DEFS[f].seuils[i]; return (s[1] ? '> ' : '≥ ') + Math.round(s[0] * 100) + ' %'; };
+  const seuilTxt = (f, i, D) => { const s = def(f, D).seuils[i]; return (s[1] ? '> ' : '≥ ') + (Math.round(s[0] * 1000) / 10).toLocaleString('fr-FR') + ' %'; };
   // Période d'une date (AAAA-MM-JJ) : trimestre (Focus, CFV) ou semestre (certification)
   function periodeDe(f, date) {
     const m = +String(date || '').slice(5, 7); if (!(m >= 1 && m <= 12)) return null;
@@ -4378,9 +4382,35 @@ const FORMS = (() => {
     return v[0] || null;
   }
   // Une évaluation vide : tous les critères sans réponse
-  const vide = (f) => ({ form: f, reponses: {}, commentaires: {}, contexte: {} });
-  const toutOui = f => { const r = {}; items(f).forEach(i => { r[i.id] = 'OUI'; }); return r; };
-  return { DEFS, ORDRE, LIB_PALIER, FRAC, items, reponseOk, score, palier, seuilTxt, periodeDe, periodes, postesConcernes, retenue, vide, toutOui, IDX_BAREME };
+  const vide = (f) => ({ form: f, reponses: {}, commentaires: {}, contexte: {}, points: {} });
+  const toutOui = (f, D) => { const r = {}; items(f, D).forEach(i => { r[i.id] = 'OUI'; }); return r; };
+  // ── Modèle modifiable : seuls les blocs/critères et les seuils se modifient ; le reste (mode de calcul, champs d'en-tête, périodicité) vient du classeur ──
+  const copie = x => JSON.parse(JSON.stringify(x));
+  const editable = (f, D) => { const d = def(f, D); return { blocs: copie(d.blocs), seuils: copie(d.seuils) }; };
+  const fusion = (f, stocke) => Object.assign({}, DEFS[f], { blocs: stocke && Array.isArray(stocke.blocs) && stocke.blocs.length ? stocke.blocs : DEFS[f].blocs, seuils: stocke && Array.isArray(stocke.seuils) && stocke.seuils.length === 5 ? stocke.seuils : DEFS[f].seuils });
+  let _n = 0; const nouvelId = (pre) => (pre || 'n') + Date.now().toString(36) + (_n++).toString(36);
+  // Contrôle d'un modèle avant enregistrement : renvoie la liste des problèmes (vide = valide)
+  function verifier(f, d) {
+    const E = [], ids = new Set(), D = DEFS[f];
+    if (!d || !Array.isArray(d.blocs) || !d.blocs.length) return ['Le formulaire doit contenir au moins un bloc.'];
+    d.blocs.forEach((b, bi) => {
+      if (!String(b.titre || '').trim()) E.push('Bloc ' + (bi + 1) + ' : le titre est vide.');
+      if (!b.id || ids.has(b.id)) E.push('Bloc ' + (bi + 1) + ' : identifiant en double.'); ids.add(b.id);
+      const n = (b.groupes || []).reduce((a, g) => a + (g.items || []).length, 0);
+      if (!n) E.push('Bloc « ' + (b.titre || bi + 1) + ' » : aucun critère.');
+      (b.groupes || []).forEach(g => (g.items || []).forEach(i => {
+        if (!String(i.lib || '').trim()) E.push('Bloc « ' + (b.titre || bi + 1) + ' » : un critère est sans texte.');
+        if (String(i.lib || '').length > 600) E.push('Un critère dépasse 600 caractères : « ' + String(i.lib).slice(0, 40) + '… ».');
+        if (!i.id || ids.has(i.id)) E.push('Critère « ' + String(i.lib || '').slice(0, 40) + ' » : identifiant en double.'); ids.add(i.id);
+        if (!(isFinite(+i.coef) && +i.coef > 0 && +i.coef <= 1000)) E.push('Critère « ' + String(i.lib || '').slice(0, 40) + ' » : les points doivent être un nombre supérieur à 0.');
+      }));
+    });
+    const S = d.seuils || [];
+    if (S.length !== 5 || S.some(s => !(isFinite(+s[0]) && +s[0] > 0 && +s[0] <= 1))) E.push('Seuils : cinq pourcentages entre 0 et 100 sont attendus.');
+    else if (S.some((s, i) => i > 0 && !(+s[0] < +S[i - 1][0]))) E.push('Seuils : ils doivent être décroissants (du palier 1 au palier 5).');
+    return E;
+  }
+  return { DEFS, ORDRE, LIB_PALIER, FRAC, items, reponseOk, coef, score, palier, seuilTxt, periodeDe, periodes, postesConcernes, retenue, vide, toutOui, IDX_BAREME, editable, fusion, nouvelId, verifier, copie };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FORMS;
 
@@ -5274,11 +5304,11 @@ async function prEval(pid, v) {
 }
 
 // ══ Évaluations : formulaires Focus, CFV (VSC) et Certification — réalisés dans l'appli, ils alimentent les primes individuelles ══
-// Accès : tuiles « ffoc » (Focus), « fcfv » (CFV), « fcer » (Certification) réglées dans Équipes (1 = consulter, 2 = réaliser et modifier) + restaurants de la personne ; la tuile Primes ouvre aussi la lecture.
+// Accès : tuiles « ffoc » (Focus), « fcfv » (CFV), « fcer » (Certification) réglées dans Équipes (1 = consulter, 2 = réaliser, 3 = réaliser et modifier les critères et les points) + restaurants de la personne ; la tuile Primes ouvre aussi la lecture.
 // Suivi annualisé : une évaluation = une personne, un formulaire, une période (trimestre pour Focus et CFV, semestre pour la certification) d'une année ; la dernière évaluation validée de la période fait foi.
 // À la validation, la base (déclencheur) écrit le palier dans primes_indiv : l'onglet Primes en déduit le montant du poste (barème réglable) — aucune double saisie.
 // Prérequis : FORMS (formulaires_engine.js) et les outils de primes.js (prEsc, prApi, prAll, prSave, prDel, prFr, PRM…).
-const EVA = { on: false, lvl: { focus: 0, cfv: 0, certif: 0 }, annee: Math.max(2026, Math.min(new Date().getFullYear(), 2100)), tab: null, sel: null, state: 'idle', err: '', pers: [], rows: [], ed: null, dirty: false, busy: false, msg: '', nom: '' };
+const EVA = { on: false, lvl: { focus: 0, cfv: 0, certif: 0 }, annee: Math.max(2026, Math.min(new Date().getFullYear(), 2100)), tab: null, sel: null, state: 'idle', err: '', pers: [], rows: [], ed: null, dirty: false, busy: false, msg: '', nom: '', mods: { focus: null, cfv: null, certif: null }, vers: {}, hasMod: false, edit: { focus: false, cfv: false, certif: false }, me: null, ptsOn: false, cmOpen: new Set() };
 const EVA_FORMS = ['focus', 'cfv', 'certif'];
 const evaAny = () => EVA_FORMS.some(f => EVA.lvl[f] >= 1);
 const evaForms = () => EVA_FORMS.filter(f => EVA.lvl[f] >= 1);
@@ -5297,6 +5327,8 @@ function evaOnLogin(r) {                                              // droits 
   const a = (r && r.acces && typeof r.acces === 'object') ? r.acces : null, p = a ? (+a.prim || 0) : 0;
   EVA.lvl = { focus: a ? Math.max(+a.ffoc || 0, p) : 0, cfv: a ? Math.max(+a.fcfv || 0, p) : 0, certif: a ? Math.max(+a.fcer || 0, p) : 0 };
   EVA.nom = (r && (r.nom || r.email)) || '';
+  const tous = !!(r && Array.isArray(r.restos) && r.restos.includes('*'));                  // les critères valent pour toute la franchise : il faut tous les restaurants
+  EVA.edit = { focus: tous && !!a && (+a.ffoc >= 3 || p >= 2), cfv: tous && !!a && (+a.fcfv >= 3 || p >= 2), certif: tous && !!a && (+a.fcer >= 3 || p >= 2) };
   const b = document.getElementById('pillEval'); if (b) b.style.display = evaAny() ? '' : 'none';
   if (!evaAny() && EVA.on) setMode('2026');
 }
@@ -5319,11 +5351,17 @@ async function evaLoad() {
     if (!rp.ok) throw new Error(rp.status === 404 ? 'module Évaluations pas encore activé dans la base' : ((rp.j && (rp.j.message || rp.j.msg)) || ('erreur ' + rp.status)));
     EVA.pers = rp.j || [];
     EVA.rows = await prAll('/rest/v1/primes_formulaires?select=*&franchise=eq.' + f + '&annee=eq.' + a + '&order=date_eval.desc,maj_le.desc');
+    EVA.vers = {}; EVA.mods = { focus: null, cfv: null, certif: null }; EVA.hasMod = false;
+    try {                                                              // critères personnalisés (migration_modeles_formulaires.sql) : toutes les versions, la plus récente de l'année (ou antérieure) est en vigueur
+      const V = await prAll('/rest/v1/primes_formulaires_modeles?select=*&franchise=eq.' + f + '&order=cree_le.desc'); EVA.hasMod = true;
+      V.forEach(v => { EVA.vers[v.id] = v; });
+      EVA_FORMS.forEach(fm => { EVA.mods[fm] = V.filter(v => v.form === fm && +v.annee <= a).sort((x, y) => (+y.annee - +x.annee) || String(y.cree_le).localeCompare(String(x.cree_le)))[0] || null; });
+    } catch (e) { EVA.hasMod = false; }
     EVA.state = 'ok';
   } catch (e) { EVA.state = 'err'; EVA.err = String(e.message || e); }
   evaRender();
 }
-function evaYear(a) { EVA.annee = +a; EVA.state = 'idle'; EVA.sel = null; EVA.ed = null; evaLoad(); }
+function evaYear(a) { EVA.annee = +a; EVA.state = 'idle'; EVA.sel = null; EVA.ed = null; EVA.me = null; evaLoad(); }
 async function evaRefreshPrimes() {                                  // le déclencheur de la base vient de modifier primes_indiv : on relit pour que l'onglet Primes soit à jour
   if (typeof PRM === 'undefined' || PRM.state !== 'ok' || PRM.annee !== EVA.annee) return;
   try { PRM.indiv = await prAll('/rest/v1/primes_indiv?select=*&annee=eq.' + EVA.annee); } catch (e) { /* la prochaine ouverture de Primes relira */ }
@@ -5360,7 +5398,7 @@ function evaRender() {
   if (!evaAny()) { box.innerHTML = ''; return; }
   let h = '<div class="prm eva"><div class="prm-head"><div><div class="prm-t">Évaluations ' + EVA.annee + '</div><div class="prm-s">Focus et CFV par trimestre, certification par semestre · chaque évaluation validée alimente la prime individuelle de la personne · la dernière évaluation validée de la période fait foi</div></div>' +
     '<div class="prm-tools"><select class="prm-in" onchange="evaYear(this.value)" title="Année du suivi">' + Array.from({ length: Math.max(1, Math.max(2026, new Date().getFullYear() + 1) - 2025) }, (_, i) => 2026 + i).map(y => '<option value="' + y + '"' + (y === EVA.annee ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>' +
-    '<button class="prm-btn" onclick="evaExport()" ' + (EVA.state === 'ok' ? '' : 'disabled') + '><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter Excel</button></div></div>';
+    '<button class="prm-btn" onclick="evaExport()" ' + (EVA.state === 'ok' ? '' : 'disabled') + '><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter Excel</button><button class="prm-btn" onclick="evaPdfSuivi()" ' + (EVA.state === 'ok' ? '' : 'disabled') + ' title="Imprimer ou enregistrer le suivi en PDF">Exporter PDF</button></div></div>';
   if (EVA.state === 'load' || EVA.state === 'idle') h += '<div class="prm-card prm-info">Chargement des évaluations…</div>';
   else if (EVA.state === 'err') h += '<div class="prm-card prm-info" style="color:var(--red)">Chargement impossible : ' + prEsc(EVA.err) + ' <button class="prm-btn" onclick="evaLoad()">Réessayer</button></div>';
   else {
@@ -5371,10 +5409,11 @@ function evaRender() {
       if (!EVA.sel && rs.length === 1) EVA.sel = rs[0]; if (EVA.sel && !rs.includes(EVA.sel)) EVA.sel = null;
       h += evaHtmlTuiles(rs);
       h += '<div class="prm-seg eva-seg">' + evaForms().map(f => '<button class="' + (EVA.tab === f ? 'on' : '') + '" onclick="evaTab(\'' + f + '\')">' + evaNomForm(f) + (EVA.lvl[f] >= 2 ? '' : ' <span class="eva-lock" title="Consultation seule : vous ne pouvez pas réaliser ce formulaire">· lecture</span>') + '</button>').join('') + '</div>';
+      if (EVA.hasMod && EVA.edit[EVA.tab]) h += '<div class="eva-crit"><button class="prm-btn" onclick="evaMEOpen(\'' + EVA.tab + '\')">Modifier les critères et les points de « ' + evaNomForm(EVA.tab) + ' »</button><span class="prm-sub" style="display:inline">' + (EVA.mods[EVA.tab] ? 'critères personnalisés : version du ' + evaDate(EVA.mods[EVA.tab].cree_le) + ' (' + prEsc(EVA.mods[EVA.tab].cree_par || '—') + ')' : 'critères d\'origine du classeur') + '</span></div>';
       h += evaHtmlForm(EVA.tab, EVA.sel ? [EVA.sel] : rs);
     }
   }
-  box.innerHTML = h + '</div>' + (EVA.ed ? evaHtmlEd() : '');
+  box.innerHTML = h + '</div>' + (EVA.ed ? evaHtmlEd() : '') + (EVA.me ? evaHtmlME() : '');
 }
 function evaTab(f) { EVA.tab = f; evaRender(); }
 function evaPick(r) { EVA.sel = r || null; evaRender(); const e = document.getElementById('evalWrap'); if (e) e.scrollIntoView({ block: 'start' }); }
@@ -5388,7 +5427,7 @@ function evaCell(form, p, per) {
   const L = evaRows(form, p.personne_id, per), R = FORMS.retenue(L), br = L.filter(x => x.statut !== 'valide'), ed = EVA.lvl[form] >= 2, el = evaEligible(form, p, per), pid = p.personne_id;
   if (R) {
     const m = evaMontant(form, R.palier, pid), nv = L.filter(x => x.statut === 'valide').length;
-    return '<button class="eva-c ' + evaPalCls(R.palier) + '" onclick="evaEdit(\'' + R.id + '\')" title="' + prEsc(evaNomForm(form) + ' · ' + evaDate(R.date_eval) + ' · réalisé par ' + (R.realise_par || '—') + (nv > 1 ? ' · ' + nv + ' évaluations validées, la dernière compte' : '')) + '"><b>' + evaPct(R.pct, 1) + '</b><small>' + (R.palier === 5 ? 'aucune prime' : 'palier ' + (R.palier + 1)) + (m != null ? ' · ' + prEur(m) : '') + '</small></button>' +
+    return '<button class="eva-c ' + evaPalCls(R.palier) + '" onclick="evaEdit(\'' + R.id + '\')" title="' + prEsc(evaNomForm(form) + ' · ' + evaDate(R.date_eval) + ' · réalisé par ' + (R.realise_par || '—') + (nv > 1 ? ' · ' + nv + ' évaluations validées, la dernière compte' : '') + (Object.keys(R.points || {}).length ? ' · points modifiés sur cette fiche' : '')) + '"><b>' + evaPct(R.pct, 1) + '</b><small>' + (R.palier === 5 ? 'aucune prime' : 'palier ' + (R.palier + 1)) + (m != null ? ' · ' + prEur(m) : '') + '</small></button>' +
       (ed ? '<button class="eva-plus" title="Nouvelle évaluation sur cette période (la dernière validée compte)" onclick="evaNew(\'' + form + '\',\'' + pid + '\',\'' + per + '\')">+</button>' : '') + (br.length ? '<span class="prm-chip na" title="Un brouillon existe aussi">+ brouillon</span>' : '');
   }
   if (br.length) return '<button class="eva-c dr" onclick="evaEdit(\'' + br[0].id + '\')" title="Brouillon non validé : ne compte pas dans les primes"><b>Brouillon</b><small>' + (br[0].pct != null ? evaPct(br[0].pct, 0) : 'à terminer') + '</small></button>';
@@ -5408,17 +5447,24 @@ function evaHtmlForm(form, restos) {
       h += '<tr' + (p.actif === false ? ' class="eva-off"' : '') + '><td class="t-l prm-n">' + prEsc(p.nom) + (p.actif === false ? ' <span class="prm-sub">(inactif)</span>' : '') + '</td><td class="t-l">' + prEsc(posts || '—') + '</td>' + pers.map(per => '<td class="c' + (per === ref ? ' now' : '') + '">' + evaCell(form, p, per) + '</td>').join('') + '<td class="c">' + (moy == null ? '<span class="prm-sub">—</span>' : '<b>' + evaPct(moy, 1) + '</b>') + '</td>' + (typeof PRM !== 'undefined' && PRM.state === 'ok' && PRM.annee === EVA.annee ? '<td class="n t-tot">' + (prime == null ? '—' : prEur(prime)) + '</td>' : '') + '</tr>';
     });
     h += '</tbody>' + (hasTot ? '<tfoot><tr><td class="t-l" colspan="' + (3 + pers.length) + '">Total ' + prEsc(evaNomForm(form)) + '</td><td class="n">' + prEur(tot) + '</td></tr></tfoot>' : '') + '</table></div>' +
-      '<div class="prm-sub" style="margin-top:6px">Seuils : ' + D.seuils.map((s, i) => FORMS.seuilTxt(form, i) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.</div></div>';
+      '<div class="prm-sub" style="margin-top:6px">Seuils : ' + evaCur(form).seuils.map((s, i) => FORMS.seuilTxt(form, i, evaCur(form)) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.</div></div>';
   });
   return h;
 }
+
+// ── Critères : modèle courant, versions utilisées, nombres ──
+const evaNum = v => (Math.round((+v || 0) * 100) / 100).toLocaleString('fr-FR');
+const evaCur = form => { const m = EVA.mods[form]; return m ? FORMS.fusion(form, m.definition) : FORMS.DEFS[form]; };           // critères en vigueur (dernière version enregistrée, sinon ceux du classeur)
+const evaDefOf = (form, mid) => { const v = mid && EVA.vers[mid]; return v ? FORMS.fusion(form, v.definition) : FORMS.DEFS[form]; };   // critères utilisés par une évaluation
+const evaDefEd = e => evaDefOf(e.form, e.modele_id);
+const evaCmIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
 // ── Formulaire (fenêtre) ──
 function evaNew(form, pid, per) {
   const p = EVA.pers.find(x => x.personne_id === pid);
   if (EVA.lvl[form] < 2) return;
-  EVA.ed = { id: null, form, restaurant: p ? p.restaurant : (EVA.sel || evaRestos()[0]), personne_id: pid || '', periode: per || evaPeriodeRef(form) || FORMS.periodes(form)[0], date_eval: evaDefDate(per), realise_par: EVA.nom, contexte: {}, reponses: {}, commentaires: {}, statut: 'brouillon' };
-  EVA.dirty = false; evaRender();
+  EVA.ed = { id: null, form, restaurant: p ? p.restaurant : (EVA.sel || evaRestos()[0]), personne_id: pid || '', periode: per || evaPeriodeRef(form) || FORMS.periodes(form)[0], date_eval: evaDefDate(per), realise_par: EVA.nom, contexte: {}, reponses: {}, commentaires: {}, points: {}, modele_id: EVA.mods[form] ? EVA.mods[form].id : null, statut: 'brouillon' };
+  EVA.dirty = false; EVA.ptsOn = false; EVA.cmOpen = new Set(); evaRender();
 }
 function evaDefDate(per) {                                           // aujourd'hui pour l'année en cours ; sinon le 1er jour de la période
   const t = evaLocalDate(); if (+t.slice(0, 4) === EVA.annee) return t;
@@ -5426,15 +5472,15 @@ function evaDefDate(per) {                                           // aujourd'
 }
 function evaEdit(id) {
   const r = EVA.rows.find(x => x.id === id); if (!r) return;
-  EVA.ed = JSON.parse(JSON.stringify(r)); EVA.ed.contexte = EVA.ed.contexte || {}; EVA.ed.reponses = EVA.ed.reponses || {}; EVA.ed.commentaires = EVA.ed.commentaires || {};
-  EVA.dirty = false; evaRender();
+  EVA.ed = JSON.parse(JSON.stringify(r)); EVA.ed.contexte = EVA.ed.contexte || {}; EVA.ed.reponses = EVA.ed.reponses || {}; EVA.ed.commentaires = EVA.ed.commentaires || {}; EVA.ed.points = EVA.ed.points || {};
+  EVA.dirty = false; EVA.ptsOn = false; EVA.cmOpen = new Set(); evaRender();
 }
 function evaSet(id, v) {                                             // une réponse ; un second clic sur la même réponse l'efface
   const e = EVA.ed; if (!e || EVA.lvl[e.form] < 2) return;
   if (e.reponses[id] === v) delete e.reponses[id]; else e.reponses[id] = v;
   EVA.dirty = true; evaKeepRender();
 }
-function evaAll(v) { const e = EVA.ed; if (!e || EVA.lvl[e.form] < 2) return; FORMS.items(e.form).forEach(i => { if (v === null) delete e.reponses[i.id]; else if (!e.reponses[i.id]) e.reponses[i.id] = v; }); EVA.dirty = true; evaKeepRender(); }
+function evaAll(v) { const e = EVA.ed; if (!e || EVA.lvl[e.form] < 2) return; FORMS.items(e.form, evaDefEd(e)).forEach(i => { if (v === null) delete e.reponses[i.id]; else if (!e.reponses[i.id]) e.reponses[i.id] = v; }); EVA.dirty = true; evaKeepRender(); }
 function evaKeepRender() { const o = document.querySelector('#evalWrap .prm-ov'), t = o ? o.scrollTop : 0; evaRender(); const n = document.querySelector('#evalWrap .prm-ov'); if (n) n.scrollTop = t; }
 function evaField(k, v) {
   const e = EVA.ed; if (!e) return; e[k] = v; EVA.dirty = true;
@@ -5442,21 +5488,35 @@ function evaField(k, v) {
   else if (k === 'restaurant' || k === 'periode') { if (!evaPersForEd().some(p => p.personne_id === e.personne_id)) e.personne_id = ''; evaKeepRender(); }
 }
 function evaCtx(k, v) { EVA.ed.contexte[k] = v; EVA.dirty = true; }
-function evaCom(k, v) { EVA.ed.commentaires[k] = v; EVA.dirty = true; }
+function evaCom(k, v) { const c = EVA.ed.commentaires; if (String(v).trim() === '') delete c[k]; else c[k] = v; EVA.dirty = true; }   // commentaire d'un critère (clé = critère), d'un bloc (certification) ou « general »
+function evaCmToggle(id) { if (EVA.cmOpen.has(id)) EVA.cmOpen.delete(id); else EVA.cmOpen.add(id); evaKeepRender(); }
+function evaPtsToggle() { EVA.ptsOn = !EVA.ptsOn; evaKeepRender(); }
+function evaPtsReset() { if (!EVA.ed) return; if (!confirm('Remettre les points du modèle sur toute la fiche ?')) return; EVA.ed.points = {}; EVA.dirty = true; evaKeepRender(); }
+function evaPt(id, v) {                                              // points modifiés pour cette fiche seulement (réservé à ceux qui peuvent modifier les critères)
+  const e = EVA.ed; if (!e || !EVA.edit[e.form]) return; const it = FORMS.items(e.form, evaDefEd(e)).find(x => x.id === id); if (!it) return;
+  const n = String(v).replace(',', '.').trim(); e.points = e.points || {};
+  if (n === '' || !isFinite(+n) || +n < 0 || +n > 1000 || +n === +it.coef) delete e.points[id]; else e.points[id] = +n;
+  EVA.dirty = true; evaRefreshSums();
+}
+function evaRefreshSums() {                                          // recalcule le bandeau et les totaux de blocs sans redessiner la fiche (on garde le curseur dans le champ)
+  const e = EVA.ed; if (!e) return; const D = evaDefEd(e), s = FORMS.score(e.form, e.reponses, D, e.points), el = document.getElementById('evaSum'); if (el) el.outerHTML = evaSumHtml(e);
+  D.blocs.forEach(b => { const bs = s.blocs.find(x => x.id === b.id), t = document.getElementById('evaBs_' + b.id); if (t && bs) t.textContent = D.mode === 'points' ? evaNum(bs.pts) + ' / ' + evaNum(bs.max) : evaPct(bs.pct, 0); });
+}
 function evaPersForEd() {                                            // personnes proposées : celles du restaurant concernées sur la période (+ la personne déjà choisie)
   const e = EVA.ed; return EVA.pers.filter(p => p.restaurant === e.restaurant && (evaEligible(e.form, p, e.periode) || p.personne_id === e.personne_id));
 }
-function evaCloseEd() { if (EVA.dirty && EVA.lvl[EVA.ed.form] >= 2 && !confirm('Fermer sans enregistrer ? Les réponses saisies seront perdues.')) return; EVA.ed = null; EVA.dirty = false; evaRender(); }
+function evaCloseEd() { if (EVA.dirty && EVA.lvl[EVA.ed.form] >= 2 && !confirm('Fermer sans enregistrer ? Les réponses saisies seront perdues.')) return; EVA.ed = null; EVA.dirty = false; EVA.ptsOn = false; evaRender(); }
 function evaSumHtml(e) {
-  const D = FORMS.DEFS[e.form], s = FORMS.score(e.form, e.reponses), pal = FORMS.palier(e.form, s.pct), m = evaMontant(e.form, pal, e.personne_id);
-  return '<div class="eva-sum" id="evaSum"><div><span>' + (D.mode === 'points' ? 'Score' : 'Critères « OUI »') + '</span><b>' + (D.mode === 'points' ? s.pts + ' / ' + s.max : s.blocs.reduce((a, b) => a + b.pts, 0) + ' / ' + s.blocs.reduce((a, b) => a + b.max, 0)) + '</b></div>' +
+  const D = evaDefEd(e), s = FORMS.score(e.form, e.reponses, D, e.points), pal = FORMS.palier(e.form, s.pct, D), m = evaMontant(e.form, pal, e.personne_id), nMod = Object.keys(e.points || {}).length;
+  return '<div class="eva-sum" id="evaSum"><div><span>' + (D.mode === 'points' ? 'Score' : 'Points des « OUI »') + '</span><b>' + (D.mode === 'points' ? evaNum(s.pts) + ' / ' + evaNum(s.max) : evaNum(s.blocs.reduce((a, b) => a + b.pts, 0)) + ' / ' + evaNum(s.blocs.reduce((a, b) => a + b.max, 0))) + '</b></div>' +
     '<div><span>Résultat</span><b>' + evaPct(s.pct, 1) + '</b></div><div><span>Palier</span>' + evaPalChip(pal) + '</div>' +
-    '<div><span>Prime</span><b>' + (m != null ? prEur(m) : (pal == null ? '—' : FORMS.LIB_PALIER[pal] + ' du poste')) + '</b></div><div><span>Renseignés</span><b>' + s.repondus + ' / ' + s.total + '</b></div></div>';
+    '<div><span>Prime</span><b>' + (m != null ? prEur(m) : (pal == null ? '—' : FORMS.LIB_PALIER[pal] + ' du poste')) + '</b></div><div><span>Renseignés</span><b>' + s.repondus + ' / ' + s.total + '</b></div>' +
+    (nMod ? '<div><span>Points modifiés</span><b class="eva-modif">' + nMod + ' critère' + (nMod > 1 ? 's' : '') + '</b></div>' : '') + '</div>';
 }
 function evaHtmlEd() {
-  const e = EVA.ed, D = FORMS.DEFS[e.form], ro = EVA.lvl[e.form] < 2, P = evaPersForEd(), cert = e.form === 'certif', ex = !!e.id, sc = FORMS.score(e.form, e.reponses);
-  const rs = evaRestos(), an = EVA.annee;
-  let h = '<div class="prm-ov"><div class="prm-md eva-md"><div class="prm-ct">' + prEsc(D.titre) + ' · ' + (ex ? 'évaluation du ' + evaDate(e.date_eval) : 'nouvelle évaluation') + (e.statut === 'valide' ? ' <span class="prm-chip ok">validée</span>' : ' <span class="prm-chip na">brouillon</span>') + '</div>' +
+  const e = EVA.ed, D = evaDefEd(e), ro = EVA.lvl[e.form] < 2, P = evaPersForEd(), cert = e.form === 'certif', ex = !!e.id, sc = FORMS.score(e.form, e.reponses, D, e.points);
+  const rs = evaRestos(), an = EVA.annee, canPts = !ro && EVA.hasMod && !!EVA.edit[e.form], pOn = canPts && EVA.ptsOn, nMod = Object.keys(e.points || {}).length;
+  let h = '<div class="prm-ov"><div class="prm-md eva-md"><div class="prm-ct"><span>' + prEsc(D.titre) + ' · ' + (ex ? 'évaluation du ' + evaDate(e.date_eval) : 'nouvelle évaluation') + '</span>' + (e.statut === 'valide' ? '<span class="prm-chip ok">validée</span>' : '<span class="prm-chip na">brouillon</span>') + '</div>' +
     '<div class="prm-form eva-form">' +
     '<label>Restaurant<select ' + ((ex || ro || rs.length < 2) ? 'disabled' : '') + ' onchange="evaField(\'restaurant\',this.value)">' + rs.map(r => '<option value="' + r + '"' + (r === e.restaurant ? ' selected' : '') + '>' + prEsc(prRestoLib(r)) + '</option>').join('') + '</select></label>' +
     '<label>' + (cert ? 'Certification non annoncée de' : 'Personne évaluée') + '<select ' + ((ex || ro) ? 'disabled' : '') + ' onchange="evaField(\'personne_id\',this.value)"><option value="">— choisir —</option>' + P.map(p => '<option value="' + p.personne_id + '"' + (p.personne_id === e.personne_id ? ' selected' : '') + '>' + prEsc(p.nom) + '</option>').join('') + '</select></label>' +
@@ -5465,22 +5525,30 @@ function evaHtmlEd() {
     '<label>' + (cert ? 'Certifié par' : 'Réalisé par') + '<input ' + (ro ? 'disabled' : '') + ' maxlength="80" value="' + prEsc(e.realise_par || '') + '" oninput="EVA.ed.realise_par=this.value;EVA.dirty=true"></label>' +
     D.ctx.map(c => '<label>' + prEsc(c.lib) + '<input ' + (ro ? 'disabled' : '') + ' maxlength="30" value="' + prEsc(e.contexte[c.id] || '') + '" oninput="evaCtx(\'' + c.id + '\',this.value)"></label>').join('') + '</div>' +
     evaSumHtml(e) +
-    (ro ? '' : '<div class="eva-bar"><button class="prm-btn" onclick="evaAll(\'OUI\')" title="Met « OUI » sur tous les critères sans réponse (comme le classeur vierge)">Tout à OUI</button><button class="prm-btn" onclick="evaAll(null)">Tout effacer</button>' + (D.so ? '<span class="prm-sub">' + (D.mode === 'points' ? 'S/O = sans objet : les points sont acquis.' : 'S/O = sans objet : le critère sort du calcul.') + '</span>' : '') + '</div>');
+    '<div class="eva-bar">' + (ro ? '' : '<button class="prm-btn" onclick="evaAll(\'OUI\')" title="Met « OUI » sur tous les critères sans réponse (comme le classeur vierge)">Tout à OUI</button><button class="prm-btn" onclick="evaAll(null)">Tout effacer</button>') +
+    (canPts ? '<button class="prm-btn' + (pOn ? ' pri' : '') + '" onclick="evaPtsToggle()" title="Modifier les points de chaque critère, pour cette fiche seulement">' + (pOn ? 'Points : modification en cours' : 'Modifier les points') + '</button>' + (nMod ? '<button class="prm-btn" onclick="evaPtsReset()">Remettre les points du modèle</button>' : '') : '') +
+    (D.so ? '<span class="prm-sub" style="display:inline">' + (D.mode === 'points' ? 'S/O = sans objet : les points sont acquis.' : 'S/O = sans objet : le critère sort du calcul.') + '</span>' : '') +
+    '<span class="eva-sp"></span><button class="prm-btn" onclick="evaExportFiche()" title="Fichier Excel de cette évaluation">Excel</button><button class="prm-btn" onclick="evaPdfFiche()" title="Imprimer ou enregistrer en PDF">PDF</button></div>';
   D.blocs.forEach(b => {
     const bs = sc.blocs.find(x => x.id === b.id);
-    h += '<div class="eva-b"><div class="eva-bh"><b>' + prEsc(b.titre) + '</b>' + (b.horaire ? '<span class="prm-sub">' + prEsc(b.horaire) + '</span>' : '') + '<span class="eva-bs">' + (D.mode === 'points' ? bs.pts + ' / ' + bs.max : evaPct(bs.pct, 0)) + '</span></div>';
+    h += '<div class="eva-b"><div class="eva-bh"><b>' + prEsc(b.titre) + '</b>' + (b.horaire ? '<span class="prm-sub" style="display:inline">' + prEsc(b.horaire) + '</span>' : '') + '<span class="eva-bs" id="evaBs_' + b.id + '">' + (D.mode === 'points' ? evaNum(bs.pts) + ' / ' + evaNum(bs.max) : evaPct(bs.pct, 0)) + '</span></div>';
     b.groupes.forEach(g => {
       if (g.titre) h += '<div class="eva-g">' + prEsc(g.titre) + '</div>';
       g.items.forEach(i => {
-        const v = e.reponses[i.id] || '', btn = (val, lab, cls) => '<button type="button" class="eva-o ' + cls + (v === val ? ' on' : '') + '" ' + (ro ? 'disabled' : '') + ' onclick="evaSet(\'' + i.id + '\',\'' + val + '\')">' + lab + '</button>';
-        h += '<div class="eva-q' + (v ? ' r-' + v : '') + '"><div class="eva-l">' + prEsc(i.lib) + '</div>' + (D.mode === 'points' ? '<span class="eva-coef" title="Coefficient (points)">' + i.coef + '</span>' : '') + '<div class="eva-ops">' + btn('OUI', 'OUI', 'y') + btn('NON', 'NON', 'n') + (D.so ? btn('SO', 'S/O', 's') : '') + '</div></div>';
+        const v = e.reponses[i.id] || '', cm = (e.commentaires || {})[i.id] || '', c = FORMS.coef(i, e.points), ov = e.points && e.points[i.id] !== undefined, open = EVA.cmOpen.has(i.id) || (ro && !!cm) || (!ro && !!cm),
+          btn = (val, lab, cls) => '<button type="button" class="eva-o ' + cls + (v === val ? ' on' : '') + '" ' + (ro ? 'disabled' : '') + ' onclick="evaSet(\'' + i.id + '\',\'' + val + '\')">' + lab + '</button>';
+        const pt = pOn ? '<input type="number" class="eva-pt' + (ov ? ' mod' : '') + '" min="0" max="1000" step="0.5" value="' + c + '" title="Points de ce critère (modèle : ' + evaNum(i.coef) + ')" oninput="evaPt(\'' + i.id + '\',this.value)">'
+          : ((D.mode === 'points' || ov || c !== 1) ? '<span class="eva-coef' + (ov ? ' mod' : '') + '" title="' + (ov ? 'Points modifiés (modèle : ' + evaNum(i.coef) + ')' : 'Points') + '">' + evaNum(c) + '</span>' : '');
+        h += '<div class="eva-q' + (v ? ' r-' + v : '') + '"><div class="eva-l">' + prEsc(i.lib) + '</div>' + pt + (ro && !cm ? '' : '<button type="button" class="eva-cmb' + (cm ? ' has' : '') + '" title="Commentaire sur ce critère" onclick="evaCmToggle(\'' + i.id + '\')">' + evaCmIco + '</button>') +
+          '<div class="eva-ops">' + btn('OUI', 'OUI', 'y') + btn('NON', 'NON', 'n') + (D.so ? btn('SO', 'S/O', 's') : '') + '</div></div>';
+        if (open) h += ro ? '<div class="eva-qc ro">' + prEsc(cm) + '</div>' : '<div class="eva-qc"><textarea rows="2" maxlength="600" placeholder="Commentaire sur ce critère" oninput="evaCom(\'' + i.id + '\',this.value)">' + prEsc(cm) + '</textarea></div>';
       });
     });
-    if (cert) h += '<label class="eva-cm">Commentaire<textarea ' + (ro ? 'disabled' : '') + ' rows="2" maxlength="1000" oninput="evaCom(\'' + b.id + '\',this.value)">' + prEsc(e.commentaires[b.id] || '') + '</textarea></label>';
+    if (cert) h += '<label class="eva-cm">Commentaire du bloc<textarea ' + (ro ? 'disabled' : '') + ' rows="2" maxlength="1000" oninput="evaCom(\'' + b.id + '\',this.value)">' + prEsc(e.commentaires[b.id] || '') + '</textarea></label>';
     h += '</div>';
   });
   h += '<label class="eva-cm">Commentaires généraux<textarea ' + (ro ? 'disabled' : '') + ' rows="3" maxlength="2000" oninput="evaCom(\'general\',this.value)">' + prEsc(e.commentaires.general || '') + '</textarea></label>' +
-    '<div class="prm-sub" style="margin:4px 0 8px">Seuils : ' + D.seuils.map((s, i) => FORMS.seuilTxt(e.form, i) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.' + (ex ? ' · créée par ' + prEsc(e.cree_par || '—') + ' · modifiée le ' + evaDate(e.maj_le) + ' par ' + prEsc(e.maj_par || '—') : '') + '</div>' +
+    '<div class="prm-sub" style="margin:4px 0 8px">Seuils : ' + D.seuils.map((s, i) => FORMS.seuilTxt(e.form, i, D) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.' + (e.modele_id ? ' · critères personnalisés (version du ' + evaDate((EVA.vers[e.modele_id] || {}).cree_le) + ')' : '') + (ex ? ' · créée par ' + prEsc(e.cree_par || '—') + ' · modifiée le ' + evaDate(e.maj_le) + ' par ' + prEsc(e.maj_par || '—') : '') + '</div>' +
     '<div class="prm-actions"><span id="evaEdMsg" class="prm-sub" style="color:var(--red)"></span>' + (ex && !ro ? '<button class="prm-btn" style="margin-right:auto" onclick="evaDelete()">Supprimer</button>' : '') +
     '<button class="prm-btn" onclick="evaCloseEd()">' + (ro ? 'Fermer' : 'Annuler') + '</button>' +
     (ro ? '' : '<button class="prm-btn" ' + (EVA.busy ? 'disabled' : '') + ' onclick="evaSave(false)">Enregistrer le brouillon</button><button class="prm-btn pri" ' + (EVA.busy ? 'disabled' : '') + ' onclick="evaSave(true)" title="Valide l\'évaluation : la prime de la personne est mise à jour">Valider' + (e.statut === 'valide' ? ' à nouveau' : '') + '</button>') + '</div></div></div>';
@@ -5489,22 +5557,23 @@ function evaHtmlEd() {
 
 // ── Enregistrement ──
 async function evaSave(valider) {
-  const e = EVA.ed, D = FORMS.DEFS[e.form], em = t => { const x = document.getElementById('evaEdMsg'); if (x) x.textContent = t; };
+  const e = EVA.ed, D = evaDefEd(e), em = t => { const x = document.getElementById('evaEdMsg'); if (x) x.textContent = t; };
   if (!e.personne_id) return em('Choisissez la personne évaluée.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date_eval || '') || +e.date_eval.slice(0, 4) !== EVA.annee) return em('Date : choisissez une date de ' + EVA.annee + '.');
   const per = FORMS.periodes(e.form); if (!per.includes(e.periode)) return em('Période invalide.');
-  const sc = FORMS.score(e.form, e.reponses), pal = FORMS.palier(e.form, sc.pct);
+  const sc = FORMS.score(e.form, e.reponses, D, e.points), pal = FORMS.palier(e.form, sc.pct, D);
   if (valider && !sc.complet) return em('Pour valider, répondez à tous les critères (' + sc.repondus + ' / ' + sc.total + ' renseignés), ou enregistrez un brouillon.');
   const row = { franchise: prFr(), restaurant: e.restaurant, personne_id: e.personne_id, form: e.form, modele: FORMS.DEFS.modele, annee: EVA.annee, periode: e.periode, date_eval: e.date_eval,
     realise_par: (e.realise_par || '').trim() || null, contexte: e.contexte, reponses: e.reponses, commentaires: e.commentaires,
     score: sc.pct == null ? null : (D.mode === 'points' ? sc.pts : sc.blocs.reduce((a, b) => a + b.pts, 0)), maximum: sc.pct == null ? null : (D.mode === 'points' ? sc.max : sc.blocs.reduce((a, b) => a + b.max, 0)),
     pct: sc.pct == null ? null : Math.round(sc.pct * 10000) / 10000, palier: pal, statut: valider ? 'valide' : 'brouillon' };
+  if (EVA.hasMod) { row.modele_id = e.modele_id || null; row.points = e.points || {}; }          // version des critères + points modifiés (si la base a les colonnes)
   if (e.id) row.id = e.id;
   EVA.busy = true; evaKeepRender();
   try {
     const out = await prSave('primes_formulaires', [row], 'id'), n = out[0] || row;
     const i = EVA.rows.findIndex(x => x.id === n.id); if (i >= 0) EVA.rows[i] = n; else EVA.rows.unshift(n);
-    EVA.ed = null; EVA.dirty = false; EVA.busy = false; evaRender();
+    EVA.ed = null; EVA.dirty = false; EVA.busy = false; EVA.ptsOn = false; evaRender();
     evaMsg(valider ? 'Évaluation validée : ' + evaPct(n.pct, 1) + ' · ' + (n.palier === 5 ? 'aucune prime' : 'palier ' + (n.palier + 1) + ' (' + FORMS.LIB_PALIER[n.palier] + ' de la prime)') + ' — la prime est mise à jour.' : 'Brouillon enregistré (il ne compte pas dans les primes).');
     if (valider) evaRefreshPrimes();
   } catch (x) { EVA.busy = false; evaKeepRender(); em('Enregistrement impossible : ' + x.message); }
@@ -5514,6 +5583,138 @@ async function evaDelete() {
   if (!confirm('Supprimer cette évaluation' + (e.statut === 'valide' ? ' ? La prime de la période reviendra à l\'évaluation validée précédente (ou sera retirée s\'il n\'y en a pas)' : '') + ' ?')) return;
   try { await prDel('primes_formulaires', 'id=eq.' + e.id); EVA.rows = EVA.rows.filter(x => x.id !== e.id); EVA.ed = null; EVA.dirty = false; evaRender(); evaMsg('Évaluation supprimée.'); evaRefreshPrimes(); }
   catch (x) { const m = document.getElementById('evaEdMsg'); if (m) m.textContent = 'Suppression impossible : ' + x.message; }
+}
+
+// ── Modifier les critères d'un formulaire (texte, points, blocs, seuils) : une nouvelle version est enregistrée ; les évaluations déjà faites gardent leurs critères ──
+function evaMEOpen(form) { if (!EVA.edit[form] || !EVA.hasMod) return; EVA.me = { form, d: FORMS.editable(form, evaCur(form)), msg: '' }; evaRender(); }
+function evaMEClose() { EVA.me = null; evaRender(); }
+function evaMeKeep() { const o = document.querySelector('#evalWrap .eva-me-ov'), t = o ? o.scrollTop : 0; evaRender(); const n = document.querySelector('#evalWrap .eva-me-ov'); if (n) n.scrollTop = t; }
+function evaMeTot() { const el = document.getElementById('evaMeTot'); if (!el || !EVA.me) return; const D = FORMS.DEFS[EVA.me.form]; const t = EVA.me.d.blocs.reduce((a, b) => a + b.groupes.reduce((x, g) => x + g.items.reduce((y, i) => y + (+i.coef || 0), 0), 0), 0), n = EVA.me.d.blocs.reduce((a, b) => a + b.groupes.reduce((x, g) => x + g.items.length, 0), 0);
+  el.textContent = n + ' critères · ' + (D.mode === 'points' ? 'total ' + evaNum(t) + ' points' + (Math.abs(t - 100) > 1e-9 ? ' (le classeur d\'origine en compte 100 : le résultat est toujours un pourcentage du total)' : '') : 'points par critère : 1 dans le classeur (la moyenne des blocs pondère les critères par leurs points)'); }
+function evaMeCoef(b, g, i, v) { const n = +String(v).replace(',', '.'); EVA.me.d.blocs[b].groupes[g].items[i].coef = isFinite(n) ? n : 0; evaMeTot(); }
+function evaMeSeuil(i, v) { const n = +String(v).replace(',', '.'); EVA.me.d.seuils[i][0] = isFinite(n) ? Math.round(n * 10) / 1000 : 0; }
+function evaMeMove(a, k, dir) {                                      // déplace un élément d'une liste (blocs, groupes ou critères) d'un cran
+  const j = k + dir; if (j < 0 || j >= a.length) return; const t = a[k]; a[k] = a[j]; a[j] = t; evaMeKeep();
+}
+const evaMeG = (b, g) => EVA.me.d.blocs[b].groupes[g];
+function evaMeAdd(b, g) { evaMeG(b, g).items.push({ id: FORMS.nouvelId('n'), lib: '', coef: 1 }); evaMeKeep(); }
+function evaMeAddGroup(b) { EVA.me.d.blocs[b].groupes.push({ titre: '', items: [{ id: FORMS.nouvelId('n'), lib: '', coef: 1 }] }); evaMeKeep(); }
+function evaMeAddBloc() { EVA.me.d.blocs.push({ id: FORMS.nouvelId('b'), titre: 'Nouveau bloc', groupes: [{ titre: '', items: [{ id: FORMS.nouvelId('n'), lib: '', coef: 1 }] }] }); evaMeKeep(); }
+function evaMeDelItem(b, g, i) { const G = evaMeG(b, g); G.items.splice(i, 1); if (!G.items.length) EVA.me.d.blocs[b].groupes.splice(g, 1); evaMeKeep(); }
+function evaMeDelGroup(b, g) { const G = evaMeG(b, g); if (G.items.length > 1 && !confirm('Supprimer cet intertitre et ses ' + G.items.length + ' critères ?')) return; EVA.me.d.blocs[b].groupes.splice(g, 1); evaMeKeep(); }
+function evaMeDelBloc(b) { const B = EVA.me.d.blocs[b], n = B.groupes.reduce((a, g) => a + g.items.length, 0); if (!confirm('Supprimer le bloc « ' + (B.titre || '') + ' » et ses ' + n + ' critères ?')) return; EVA.me.d.blocs.splice(b, 1); evaMeKeep(); }
+function evaMeReset() { if (!confirm('Revenir aux critères d\'origine du classeur (vous pourrez encore annuler avant d\'enregistrer) ?')) return; EVA.me.d = FORMS.editable(EVA.me.form, FORMS.DEFS[EVA.me.form]); evaMeKeep(); }
+function evaMeMsg(t) { const x = document.getElementById('evaMeMsg'); if (x) x.textContent = t || ''; }
+function evaHtmlME() {
+  const m = EVA.me, D = FORMS.DEFS[m.form], d = m.d, cur = EVA.mods[m.form];
+  const mv = (a, k, fn) => '<button type="button" class="eva-mv" title="Monter" ' + (k === 0 ? 'disabled' : '') + ' onclick="' + fn + ',-1)">▲</button><button type="button" class="eva-mv" title="Descendre" ' + (k === a.length - 1 ? 'disabled' : '') + ' onclick="' + fn + ',1)">▼</button>';
+  let h = '<div class="prm-ov eva-me-ov"><div class="prm-md eva-md eva-me"><div class="prm-ct"><span>Critères · ' + prEsc(D.titre) + '</span><span class="prm-chip na">' + (cur ? 'version du ' + evaDate(cur.cree_le) + ' (' + prEsc(cur.cree_par || '—') + ')' : 'critères d\'origine du classeur') + '</span></div>' +
+    '<div class="prm-sub" style="margin-bottom:8px">Modifiez le texte, les points, l\'ordre, ajoutez ou retirez des critères, des intertitres et des blocs. Ces critères s\'appliquent aux évaluations de ' + EVA.annee + ' et des années suivantes, à partir de leur création : les évaluations déjà réalisées gardent leurs critères et leurs résultats.</div>' +
+    '<div class="prm-sub" id="evaMeTot" style="margin-bottom:10px;font-weight:800"></div>';
+  d.blocs.forEach((b, bi) => {
+    h += '<div class="eva-b"><div class="eva-bh"><input class="eva-ti" maxlength="120" value="' + prEsc(b.titre) + '" placeholder="Titre du bloc" oninput="EVA.me.d.blocs[' + bi + '].titre=this.value">' +
+      (D.blocs.some(x => x.horaire) || b.horaire ? '<input class="eva-ti s" maxlength="40" value="' + prEsc(b.horaire || '') + '" placeholder="Précision (ex. horaire)" oninput="EVA.me.d.blocs[' + bi + '].horaire=this.value">' : '') +
+      '<span class="eva-sp"></span>' + mv(d.blocs, bi, 'evaMeMove(EVA.me.d.blocs,' + bi) + '<button type="button" class="eva-mv x" title="Supprimer le bloc" onclick="evaMeDelBloc(' + bi + ')">✕</button></div>';
+    b.groupes.forEach((g, gi) => {
+      h += '<div class="eva-g eva-gr"><input class="eva-ti" maxlength="200" value="' + prEsc(g.titre) + '" placeholder="Intertitre (facultatif)" oninput="EVA.me.d.blocs[' + bi + '].groupes[' + gi + '].titre=this.value"><span class="eva-sp"></span>' + mv(b.groupes, gi, 'evaMeMove(EVA.me.d.blocs[' + bi + '].groupes,' + gi) + '<button type="button" class="eva-mv x" title="Supprimer l\'intertitre et ses critères" onclick="evaMeDelGroup(' + bi + ',' + gi + ')">✕</button></div>';
+      g.items.forEach((it, ii) => {
+        h += '<div class="eva-q"><textarea class="eva-ta" rows="2" maxlength="600" placeholder="Texte du critère" oninput="EVA.me.d.blocs[' + bi + '].groupes[' + gi + '].items[' + ii + '].lib=this.value">' + prEsc(it.lib) + '</textarea>' +
+          '<input type="number" class="eva-pt" min="0.5" max="1000" step="0.5" value="' + it.coef + '" title="Points du critère" oninput="evaMeCoef(' + bi + ',' + gi + ',' + ii + ',this.value)">' +
+          '<div class="eva-ops">' + mv(g.items, ii, 'evaMeMove(EVA.me.d.blocs[' + bi + '].groupes[' + gi + '].items,' + ii) + '<button type="button" class="eva-mv x" title="Supprimer le critère" onclick="evaMeDelItem(' + bi + ',' + gi + ',' + ii + ')">✕</button></div></div>';
+      });
+      h += '<div class="eva-add2"><button type="button" class="prm-btn" onclick="evaMeAdd(' + bi + ',' + gi + ')">+ Critère</button></div>';
+    });
+    h += '<div class="eva-add2"><button type="button" class="prm-btn" onclick="evaMeAddGroup(' + bi + ')">+ Intertitre et critère</button></div></div>';
+  });
+  h += '<div style="margin:6px 0 12px"><button type="button" class="prm-btn" onclick="evaMeAddBloc()">+ Bloc</button></div>' +
+    '<div class="eva-b"><div class="eva-bh"><b>Seuils des paliers</b><span class="prm-sub" style="display:inline">pourcentage minimum pour chaque palier (au-dessous du palier 5 : aucune prime)</span></div><div class="eva-seuils">' +
+    d.seuils.map((s, i) => '<label>Palier ' + (i + 1) + ' · ' + FORMS.LIB_PALIER[i] + '<span>' + (s[1] ? '> ' : '≥ ') + '<input type="number" class="eva-pt" min="1" max="100" step="0.5" value="' + (Math.round(s[0] * 1000) / 10) + '" oninput="evaMeSeuil(' + i + ',this.value)"> %</span></label>').join('') + '</div></div>' +
+    '<div class="prm-actions"><span id="evaMeMsg" class="prm-sub" style="color:var(--red);text-align:left;margin-right:auto"></span><button class="prm-btn" onclick="evaMeReset()" title="Remet les critères du classeur d\'origine dans l\'éditeur">Critères d\'origine</button><button class="prm-btn" onclick="evaMEClose()">Annuler</button><button class="prm-btn pri" ' + (EVA.busy ? 'disabled' : '') + ' onclick="evaMeSave()">Enregistrer ces critères</button></div></div></div>';
+  setTimeout(evaMeTot, 0);
+  return h;
+}
+async function evaMeSave() {
+  const m = EVA.me, E = FORMS.verifier(m.form, m.d); if (E.length) return evaMeMsg(E.slice(0, 3).join(' · ') + (E.length > 3 ? ' · … (' + E.length + ' problèmes)' : ''));
+  if (!confirm('Enregistrer ces critères pour « ' + FORMS.DEFS[m.form].court + ' » ? Ils s\'appliqueront aux nouvelles évaluations de ' + EVA.annee + ' et suivantes ; les évaluations déjà réalisées ne changent pas.')) return;
+  EVA.busy = true; evaMeKeep();
+  try {
+    const row = { franchise: prFr(), form: m.form, annee: EVA.annee, definition: { blocs: m.d.blocs, seuils: m.d.seuils } };
+    const r = await prApi('/rest/v1/primes_formulaires_modeles', 'POST', row, { Prefer: 'return=representation' });
+    if (!r.ok) throw new Error((r.j && (r.j.message || r.j.msg)) || ('erreur ' + r.status));
+    const n = (r.j && r.j[0]) || Object.assign({ id: null }, row); EVA.vers[n.id] = n; EVA.mods[m.form] = n; EVA.me = null; EVA.busy = false; evaRender(); evaMsg('Critères enregistrés : ils s\'appliquent aux nouvelles évaluations de ' + EVA.annee + '.');
+  } catch (x) { EVA.busy = false; evaMeKeep(); evaMeMsg('Enregistrement impossible : ' + x.message); }
+}
+
+// ── Fiche d'évaluation en Excel ou en PDF (ce qui est à l'écran, enregistré ou non) ──
+function evaFiche(e) {
+  const D = evaDefEd(e), s = FORMS.score(e.form, e.reponses, D, e.points), p = EVA.pers.find(x => x.personne_id === e.personne_id) || { nom: '?' }, pal = FORMS.palier(e.form, s.pct, D), cert = e.form === 'certif', c = e.commentaires || {};
+  const info = [[cert ? 'Certification non annoncée de' : 'Personne évaluée', p.nom], ['Restaurant', prRestoLib(e.restaurant)], ['Période', evaPerLib(e.periode) + ' ' + EVA.annee], [cert ? 'Date de certification' : 'Date', evaDate(e.date_eval)], [cert ? 'Certifié par' : 'Réalisé par', e.realise_par || '—']]
+    .concat(D.ctx.filter(x => (e.contexte || {})[x.id]).map(x => [x.lib, e.contexte[x.id]]));
+  const blocs = D.blocs.map(b => { const bs = s.blocs.find(x => x.id === b.id) || { pts: 0, max: 0, pct: null };
+    return { titre: b.titre, horaire: b.horaire || '', pts: bs.pts, max: bs.max, pct: bs.pct, com: c[b.id] || '', groupes: b.groupes.map(g => ({ titre: g.titre, lignes: g.items.map(i => { const rep = e.reponses[i.id] || '', co = FORMS.coef(i, e.points);
+      return { lib: i.lib, coef: co, modif: !!(e.points && e.points[i.id] !== undefined), rep, obt: (rep === 'OUI' || (rep === 'SO' && D.mode === 'points')) ? co : (rep === 'NON' || (rep === 'SO') ? 0 : null), com: c[i.id] || '' }; }) })) }; });
+  return { titre: D.titre, court: D.court, mode: D.mode, so: D.so, nom: p.nom, info, blocs, s, pct: s.pct, pal, palLib: pal == null ? '—' : (pal === 5 ? 'Aucune prime' : 'Palier ' + (pal + 1) + ' (' + FORMS.LIB_PALIER[pal] + ' de la prime du poste)'),
+    montant: evaMontant(e.form, pal, e.personne_id), general: c.general || '', statut: e.statut, seuils: D.seuils.map((x, i) => FORMS.seuilTxt(e.form, i, D) + ' → ' + FORMS.LIB_PALIER[i]).join(' · '), nomFichier: [D.court, p.nom, e.periode, EVA.annee].join('_').replace(/[^A-Za-z0-9À-ÿ]+/g, '_') };
+}
+const evaRepLib = (F, r) => r === 'OUI' ? 'OUI' : r === 'NON' ? 'NON' : r === 'SO' ? 'S/O' : '';
+async function evaExportFiche() {
+  const e = EVA.ed; if (!e) return;
+  try { await _loadXlsx(); } catch (x) { return evaMsg('Export impossible : bibliothèque Excel non chargée.', true); }
+  const F = evaFiche(e), X = XLSX, wb = X.utils.book_new(), rows = [[F.titre + (F.statut === 'valide' ? '' : ' (brouillon)')], []], hd = [], tt = [], sty = {};
+  const H = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F2937' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }, T = { font: { bold: true, sz: 13 } }, TOT = { font: { bold: true }, fill: { fgColor: { rgb: 'FEF3C7' } } }, GR = { font: { bold: true }, fill: { fgColor: { rgb: 'E5E7EB' } } };
+  F.info.forEach(x => rows.push([x[0], x[1]]));
+  rows.push([], ['RÉSULTAT', F.pct == null ? '' : evaPct(F.pct, 1)], ['PALIER', F.palLib]);
+  if (F.montant != null) rows.push(['PRIME', F.montant]);
+  rows.push([], ['CRITÈRE', 'RÉPONSE', 'POINTS', 'OBTENUS', 'COMMENTAIRE']); hd.push(rows.length - 1);
+  F.blocs.forEach(b => {
+    rows.push([b.titre + (b.horaire ? ' · ' + b.horaire : ''), '', '', '', b.com]); sty[rows.length - 1] = GR;
+    b.groupes.forEach(g => { if (g.titre) { rows.push([g.titre]); sty[rows.length - 1] = GR; }
+      g.lignes.forEach(l => rows.push([l.lib, evaRepLib(F, l.rep), l.coef + (l.modif ? ' (modifié)' : ''), l.obt == null ? '' : l.obt, l.com])); });
+    rows.push(['TOTAL ' + b.titre, '', F.mode === 'points' ? b.max : '', F.mode === 'points' ? b.pts : (b.pct == null ? '' : evaPct(b.pct, 1)), '']); tt.push(rows.length - 1);
+  });
+  rows.push(['TOTAL', '', F.mode === 'points' ? F.s.max : '', F.mode === 'points' ? F.s.pts : (F.pct == null ? '' : evaPct(F.pct, 1)), '']); tt.push(rows.length - 1);
+  rows.push([], ['Commentaires généraux', F.general], ['Seuils', F.seuils]);
+  const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = [{ wch: 80 }, { wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 50 }];
+  const st = (r, s) => { for (let c = 0; c < 5; c++) { const a = X.utils.encode_cell({ r, c }); if (ws[a]) ws[a].s = s; } };
+  if (ws.A1) ws.A1.s = T; hd.forEach(r => st(r, H)); tt.forEach(r => st(r, TOT)); Object.keys(sty).forEach(r => st(+r, sty[r]));
+  X.utils.book_append_sheet(wb, ws, 'ÉVALUATION'); X.writeFile(wb, F.nomFichier + '.xlsx'); evaMsg('Fichier Excel généré.');
+}
+const evaEsc = s => prEsc(s).replace(/\n/g, '<br>');
+const evaPrintCss = '@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:11px/1.35 Helvetica,Arial,sans-serif;color:#111;margin:0}h1{font-size:17px;margin:0 0 4px}h2{font-size:13px;margin:16px 0 4px;background:#1f2937;color:#fff;padding:4px 8px}h3{font-size:11px;margin:8px 0 2px;background:#e5e7eb;padding:3px 8px}' +
+  'table{border-collapse:collapse;width:100%;margin-bottom:6px;page-break-inside:auto}tr{page-break-inside:avoid}th,td{border:1px solid #9ca3af;padding:3px 6px;vertical-align:top;text-align:left}th{background:#f3f4f6;font-size:10px}td.c,th.c{text-align:center;white-space:nowrap}' +
+  '.info td{border:none;padding:1px 8px 1px 0}.info td:first-child{font-weight:700;width:190px}.res{display:flex;gap:18px;border:2px solid #111;padding:6px 10px;margin:8px 0;font-size:12px}.res b{font-size:15px;display:block}.ok{color:#15803d;font-weight:700}.ko{color:#b91c1c;font-weight:700}.so{color:#6b7280;font-weight:700}.mod{background:#fef3c7}.tot td{font-weight:700;background:#fef3c7}.com{color:#374151;font-style:italic}.small{font-size:9px;color:#6b7280}';
+function evaFicheHtml(F) {
+  let h = '<h1>' + evaEsc(F.titre) + (F.statut === 'valide' ? '' : ' <span class="small">(brouillon)</span>') + '</h1><table class="info">' + F.info.map(x => '<tr><td>' + evaEsc(x[0]) + '</td><td>' + evaEsc(x[1]) + '</td></tr>').join('') + '</table>' +
+    '<div class="res"><div>' + (F.mode === 'points' ? 'Score<b>' + evaNum(F.s.pts) + ' / ' + evaNum(F.s.max) + '</b>' : 'Résultat<b>' + evaPct(F.pct, 1) + '</b>') + '</div>' + (F.mode === 'points' ? '<div>Résultat<b>' + evaPct(F.pct, 1) + '</b></div>' : '') + '<div>Palier<b>' + evaEsc(F.palLib) + '</b></div>' + (F.montant != null ? '<div>Prime<b>' + prEur(F.montant) + '</b></div>' : '') + '</div>';
+  F.blocs.forEach(b => {
+    h += '<h2>' + evaEsc(b.titre) + (b.horaire ? ' · ' + evaEsc(b.horaire) : '') + ' <span style="float:right">' + (F.mode === 'points' ? evaNum(b.pts) + ' / ' + evaNum(b.max) : evaPct(b.pct, 0)) + '</span></h2><table><thead><tr><th>Critère</th><th class="c">Réponse</th><th class="c">Points</th><th class="c">Obtenus</th><th>Commentaire</th></tr></thead><tbody>';
+    b.groupes.forEach(g => { if (g.titre) h += '<tr><td colspan="5"><b>' + evaEsc(g.titre) + '</b></td></tr>';
+      g.lignes.forEach(l => { h += '<tr><td>' + evaEsc(l.lib) + '</td><td class="c ' + (l.rep === 'OUI' ? 'ok' : l.rep === 'NON' ? 'ko' : 'so') + '">' + evaRepLib(F, l.rep) + '</td><td class="c' + (l.modif ? ' mod' : '') + '">' + evaNum(l.coef) + '</td><td class="c">' + (l.obt == null ? '' : evaNum(l.obt)) + '</td><td class="com">' + evaEsc(l.com) + '</td></tr>'; }); });
+    h += '</tbody></table>' + (b.com ? '<div class="com">Commentaire du bloc : ' + evaEsc(b.com) + '</div>' : '');
+  });
+  h += (F.general ? '<h3>Commentaires généraux</h3><div>' + evaEsc(F.general) + '</div>' : '') + '<p class="small">Seuils : ' + evaEsc(F.seuils) + ' de la prime du poste · en dessous : aucune prime. Points modifiés sur cette fiche surlignés.</p>';
+  return h;
+}
+function evaPrint(titre, corps) {                                    // impression (ou « Enregistrer en PDF ») d'une page propre, sans quitter l'appli
+  const f = document.createElement('iframe'); f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f); const d = f.contentWindow.document; d.open(); d.write('<!doctype html><html><head><meta charset="utf-8"><title>' + prEsc(titre) + '</title><style>' + evaPrintCss + '</style></head><body>' + corps + '</body></html>'); d.close();
+  setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (x) { evaMsg('Impression impossible : ' + x.message, true); } setTimeout(() => f.remove(), 60000); }, 350);
+}
+function evaPdfFiche() { if (!EVA.ed) return; const F = evaFiche(EVA.ed); evaPrint(F.nomFichier, evaFicheHtml(F)); }
+
+// ── Export du suivi annuel : PDF (tableaux de l'écran) ──
+function evaPdfSuivi() {
+  const rs = EVA.sel ? [EVA.sel] : evaRestos(); let h = '<h1>Évaluations ' + EVA.annee + ' — suivi annuel</h1><div class="small">Édité le ' + evaDate(evaLocalDate()) + ' · dernière évaluation validée de chaque période</div>';
+  evaForms().forEach(f => {
+    const D = FORMS.DEFS[f], per = FORMS.periodes(f);
+    rs.forEach(r => { const P = evaPersResto(f, r); if (!P.length) return;
+      h += '<h2>' + evaEsc(D.court + ' — ' + prRestoLib(r)) + '</h2><table><thead><tr><th>Nom</th><th>Poste</th>' + per.map(x => '<th class="c">' + evaPerLib(x) + '</th>').join('') + '<th class="c">Moyenne</th></tr></thead><tbody>';
+      P.forEach(p => { const rets = per.map(x => FORMS.retenue(evaRows(f, p.personne_id, x))), ok = rets.filter(Boolean), moy = ok.length ? ok.reduce((a, x) => a + (+x.pct || 0), 0) / ok.length : null;
+        const posts = Object.keys(p.postes_mois || {}).filter(po => FORMS.postesConcernes(f, evaBareme()).includes(po)).map(po => prPosteLib(po)).join(' / ');
+        h += '<tr><td>' + evaEsc(p.nom) + '</td><td>' + evaEsc(posts) + '</td>' + rets.map(x => { if (!x) return '<td class="c so">—</td>'; const m = evaMontant(f, x.palier, p.personne_id); return '<td class="c ' + (x.palier === 5 ? 'ko' : x.palier === 0 ? 'ok' : '') + '">' + evaPct(x.pct, 1) + '<br><span class="small">' + (x.palier === 5 ? 'aucune prime' : 'palier ' + (x.palier + 1)) + (m != null ? ' · ' + prEur(m) : '') + '</span></td>'; }).join('') + '<td class="c"><b>' + (moy == null ? '—' : evaPct(moy, 1)) + '</b></td></tr>'; });
+      h += '</tbody></table>'; });
+  });
+  evaPrint('Evaluations_' + EVA.annee, h);
 }
 
 // ── Export Excel : suivi annuel par formulaire, détail des évaluations, réponses critère par critère ──
@@ -5529,17 +5730,19 @@ async function evaExport() {
       rows.push([prRestoLib(r), p.nom].concat(rets.flatMap(x => x ? [Math.round(x.pct * 1000) / 10, x.palier === 5 ? 'aucune prime' : x.palier + 1, evaDate(x.date_eval), x.realise_par || ''] : ['', '', '', '']), [ok.length ? Math.round(ok.reduce((a, x) => a + x.pct, 0) / ok.length * 1000) / 10 : ''])); }));
     add('SUIVI ' + D.court.toUpperCase(), rows, [16, 22].concat(per.flatMap(() => [9, 11, 11, 18]), [10]), [2]);
   });
-  const det = [['ÉVALUATIONS ' + EVA.annee + ' (toutes, validées et brouillons)'], [], ['RESTAURANT', 'NOM', 'FORMULAIRE', 'PÉRIODE', 'DATE', 'RÉALISÉ PAR', 'STATUT', 'POINTS', 'MAXIMUM', 'RÉSULTAT %', 'PALIER', 'COMMENTAIRE']];
+  const det = [['ÉVALUATIONS ' + EVA.annee + ' (toutes, validées et brouillons)'], [], ['RESTAURANT', 'NOM', 'FORMULAIRE', 'PÉRIODE', 'DATE', 'RÉALISÉ PAR', 'STATUT', 'POINTS', 'MAXIMUM', 'RÉSULTAT %', 'PALIER', 'POINTS MODIFIÉS', 'COMMENTAIRE']];
   EVA.rows.slice().sort((a, b) => String(a.restaurant).localeCompare(b.restaurant) || String(a.form).localeCompare(b.form) || String(a.periode).localeCompare(b.periode)).forEach(x => { const p = P.get(x.personne_id) || { nom: '?' };
-    det.push([prRestoLib(x.restaurant), p.nom, evaNomForm(x.form), x.periode, evaDate(x.date_eval), x.realise_par || '', x.statut === 'valide' ? 'validée' : 'brouillon', x.score == null ? '' : +x.score, x.maximum == null ? '' : +x.maximum, x.pct == null ? '' : Math.round(x.pct * 1000) / 10, x.palier == null ? '' : (x.palier === 5 ? 'aucune prime' : x.palier + 1), (x.commentaires || {}).general || '']); });
-  add('DÉTAIL', det, [16, 22, 14, 8, 11, 18, 10, 8, 9, 10, 12, 50], [2]);
+    det.push([prRestoLib(x.restaurant), p.nom, evaNomForm(x.form), x.periode, evaDate(x.date_eval), x.realise_par || '', x.statut === 'valide' ? 'validée' : 'brouillon', x.score == null ? '' : +x.score, x.maximum == null ? '' : +x.maximum, x.pct == null ? '' : Math.round(x.pct * 1000) / 10, x.palier == null ? '' : (x.palier === 5 ? 'aucune prime' : x.palier + 1), Object.keys(x.points || {}).length || '', (x.commentaires || {}).general || '']); });
+  add('DÉTAIL', det, [16, 22, 14, 8, 11, 18, 10, 8, 9, 10, 12, 10, 50], [2]);
   evaForms().forEach(f => {
     const D = FORMS.DEFS[f], L = EVA.rows.filter(x => x.form === f && x.statut === 'valide').sort((a, b) => String(a.restaurant).localeCompare(b.restaurant) || String(a.periode).localeCompare(b.periode) || ((P.get(a.personne_id) || {}).nom || '').localeCompare((P.get(b.personne_id) || {}).nom || ''));
     if (!L.length) return;
-    const rows = [[D.titre + ' ' + EVA.annee + ' — réponses critère par critère (évaluations validées)'], [], ['BLOC', 'CRITÈRE', 'COEF'].concat(L.map(x => (prRestoLib(x.restaurant) + ' · ' + ((P.get(x.personne_id) || {}).nom || '?') + ' · ' + x.periode)))];
-    D.blocs.forEach(b => b.groupes.forEach(g => g.items.forEach(i => rows.push([b.titre, (g.titre ? g.titre + ' — ' : '') + i.lib, D.mode === 'points' ? i.coef : ''].concat(L.map(x => { const v = (x.reponses || {})[i.id]; return v === 'SO' ? 'S/O' : (v || ''); }))))));
+    const crit = [], seen = new Set();                                  // critères : ceux en vigueur, puis ceux des anciennes versions encore utilisées par une évaluation
+    [evaCur(f)].concat(L.map(x => evaDefOf(f, x.modele_id))).forEach(DD => DD.blocs.forEach(b => b.groupes.forEach(g => g.items.forEach(i => { if (seen.has(i.id)) return; seen.add(i.id); crit.push({ id: i.id, bloc: b.titre, lib: (g.titre ? g.titre + ' — ' : '') + i.lib, coef: i.coef }); }))));
+    const rows = [[D.titre + ' ' + EVA.annee + ' — réponses critère par critère (évaluations validées)'], [], ['BLOC', 'CRITÈRE', 'POINTS DU MODÈLE'].concat(L.map(x => (prRestoLib(x.restaurant) + ' · ' + ((P.get(x.personne_id) || {}).nom || '?') + ' · ' + x.periode)))];
+    crit.forEach(c => rows.push([c.bloc, c.lib, D.mode === 'points' ? c.coef : ''].concat(L.map(x => { const v = (x.reponses || {})[c.id]; return v === 'SO' ? 'S/O' : (v || ''); }))));
     rows.push(['', 'RÉSULTAT %', ''].concat(L.map(x => Math.round(x.pct * 1000) / 10)));
-    add('RÉPONSES ' + D.court.toUpperCase(), rows, [24, 70, 6].concat(L.map(() => 16)), [2]);
+    add('RÉPONSES ' + D.court.toUpperCase(), rows, [24, 70, 12].concat(L.map(() => 16)), [2]);
   });
   X.writeFile(wb, 'Evaluations_' + EVA.annee + '.xlsx'); evaMsg('Fichier Excel généré.');
 }
@@ -13700,6 +13903,29 @@ body.dark-mode .prm { --pg: #3b4259; }
 .eva-o[disabled] { cursor: default; }
 .eva-cm { display: block; padding: 8px 12px; font-size: .72rem; font-weight: 700; color: var(--muted); }
 .eva-cm textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; font: 500 .8rem var(--font); border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--card); color: var(--text); resize: vertical; }
+.eva-crit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+.eva-sp { flex: 1 1 auto; }
+.eva-modif { color: #b45309; }
+.eva-coef.mod { background: rgba(245,158,11,.25); color: #b45309; }
+.eva-pt { width: 66px; font: 700 .76rem var(--font); border: 1.5px solid var(--border); border-radius: 7px; padding: 4px 6px; background: var(--card); color: var(--text); text-align: center; flex: 0 0 auto; }
+.eva-pt.mod { border-color: #d97706; background: rgba(245,158,11,.14); }
+.eva-cmb { flex: 0 0 auto; border: 1.5px solid var(--border); background: var(--card); color: var(--muted); border-radius: 8px; width: 30px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.eva-cmb.has { color: var(--gold); border-color: var(--gold); background: rgba(250,204,21,.16); }
+.eva-qc { padding: 0 12px 8px; }
+.eva-qc textarea { display: block; width: 100%; box-sizing: border-box; font: 500 .78rem var(--font); border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--card); color: var(--text); resize: vertical; }
+.eva-qc.ro { font-size: .76rem; color: var(--muted); font-style: italic; }
+.eva-me-ov { z-index: 9600; }
+.eva-ti { flex: 1 1 220px; min-width: 0; font: 700 .8rem var(--font); border: 1.5px solid var(--border); border-radius: 7px; padding: 5px 8px; background: var(--card); color: var(--text); }
+.eva-ti.s { flex: 0 1 150px; font-weight: 600; }
+.eva-gr { display: flex; align-items: center; gap: 8px; }
+.eva-ta { flex: 1 1 auto; min-width: 0; font: 500 .8rem var(--font); border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--card); color: var(--text); resize: vertical; }
+.eva-mv { border: 1.5px solid var(--border); background: var(--card); color: var(--muted); font: 800 .62rem var(--font); border-radius: 7px; width: 28px; height: 26px; cursor: pointer; padding: 0; }
+.eva-mv[disabled] { opacity: .35; cursor: default; }
+.eva-mv.x { color: var(--red); }
+.eva-add2 { padding: 4px 12px 8px; }
+.eva-seuils { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; padding: 10px 12px; }
+.eva-seuils label { display: flex; flex-direction: column; gap: 4px; font-size: .68rem; font-weight: 700; color: var(--muted); }
+.eva-seuils label span { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--text); }
 .eva-lock { font-weight: 600; font-size: .66rem; color: var(--muted); }
 @media (max-width: 760px) { .eva-sum { padding: 6px 10px; gap: 6px 14px; } .eva-sum b { font-size: .9rem; } .eva-sum span { font-size: .56rem; } .eva-q { flex-wrap: wrap; } .eva-ops { width: 100%; } .eva-o { flex: 1; padding: 9px 10px; min-width: 0; } .eva-sum { gap: 12px; } .eva-md { padding: 14px 12px; } }
 </style>
@@ -14183,7 +14409,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261115-090418';
+const BUILD_VERSION = '20261115-094945';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
