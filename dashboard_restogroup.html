@@ -1534,8 +1534,6 @@ window.addEventListener('DOMContentLoaded', () => {
 <!-- BARRE D'ESPACES -->
 <div class="espaces-bar" id="espacesBar">
   <button class="espace-pill active" data-esp="pilotage" style="--e-color:#b8860b;--e-bg:rgba(184,134,11,.14)" onclick="switchEspace('pilotage')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 13 3.4-3.4"/><path d="M3.4 18a9 9 0 1 1 17.2 0"/></svg></span>Pilotage Opérationnel</button>
-  <button class="espace-pill" id="espPrimes" data-esp="primes" style="--e-color:#b45309;--e-bg:rgba(180,83,9,.14);display:none" onclick="primesGo('primes')" title="Primes EDG"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.6-.8-1.6-1.2-2.6-1.2-1.5 0-2.6.8-2.6 2s1 1.7 2.7 2c1.7.3 2.7.8 2.7 2s-1.1 2-2.7 2c-1.1 0-2.1-.4-2.8-1.3"/><line x1="12" y1="6" x2="12" y2="7.4"/><line x1="12" y1="16.6" x2="12" y2="18"/></svg></span>Primes</button>
-  <button class="espace-pill" id="espEval" data-esp="evals" style="--e-color:#0f766e;--e-bg:rgba(15,118,110,.14);display:none" onclick="primesGo('eval')" title="Évaluations Focus, CFV et Certification"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>Évaluations</button>
   <button class="espace-pill" data-esp="performance" style="--e-color:#2563eb;--e-bg:rgba(37,99,235,.14)" onclick="switchEspace('performance')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1Z"/><path d="M20 3h-2a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z"/><path d="M13 7h-2a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Z"/></svg></span>Performance</button>
   <button class="espace-pill" data-esp="interventions" style="--e-color:#0d9488;--e-bg:rgba(13,148,136,.14)" onclick="switchEspace('interventions')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>Interventions</button>
   <button class="espace-pill" data-esp="formation" style="--e-color:#7c3aed;--e-bg:rgba(124,58,237,.14)" onclick="switchEspace('formation')"><span class="esp-ico-sq"><svg viewBox="0 0 24 24" fill="none" stroke="var(--e-color)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2.5 9 2.5 12 0v-5"/></svg></span>Formation</button>
@@ -3403,7 +3401,6 @@ function updateModePills(val) {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', mode === val);
   });
-  if (typeof primesEspSync === 'function') primesEspSync();
 }
 
 // Généré par patches/gen_formulaires.py depuis les classeurs vierges (Focus 2027, VSC 2027, Certification RZ en poste). Ne pas modifier à la main.
@@ -4692,20 +4689,7 @@ const prRestoLib = r => r === 'AIX LES BAINS' ? 'Aix les Bains' : r.charAt(0) + 
 function prOnLogin(r) {                                              // droits de la personne : la pastille « Primes » n'apparaît qu'avec la tuile (consultation ou modification)
   PRM.lvl = (r && r.acces && typeof r.acces === 'object') ? (+r.acces.prim || 0) : 0;
   const b = document.getElementById('pillPrimes'); if (b) b.style.display = PRM.lvl >= 1 ? '' : 'none';
-  const be = document.getElementById('espPrimes'); if (be) be.style.display = PRM.lvl >= 1 ? '' : 'none';
   if (PRM.lvl < 1 && PRM.on) setMode('2026');
-}
-// Accès direct à Primes et Évaluations depuis n'importe quel espace (boutons de la barre des espaces)
-function primesGo(mode) {
-  window.__pGo = 1;
-  try { if (typeof currentEspace !== 'undefined' && currentEspace !== 'pilotage') switchEspace('pilotage'); setMode(mode); } finally { window.__pGo = 0; }
-  primesEspSync();
-}
-function primesEspSync(name) {                                            // surbrillance de la barre des espaces ; un clic sur « Pilotage » ramène à la vue d'accueil
-  const open = (typeof PRM !== 'undefined' && PRM.on) ? 'primes' : ((typeof EVA !== 'undefined' && EVA.on) ? 'evals' : null);
-  if (name === 'pilotage' && open && !window.__pGo) { setMode(String(typeof currentYear !== 'undefined' && currentYear ? currentYear : YEAR_CUR)); return; }
-  if ((name || (typeof currentEspace !== 'undefined' ? currentEspace : 'pilotage')) !== 'pilotage') return;
-  document.querySelectorAll('.espace-pill').forEach(p => p.classList.toggle('active', p.dataset.esp === (open || 'pilotage')));
 }
 function prOpen() {                                                  // appelé par setMode('primes')
   if (PRM.lvl < 1) return;
@@ -5352,7 +5336,6 @@ function evaOnLogin(r) {                                              // droits 
   const tous = !!(r && Array.isArray(r.restos) && r.restos.includes('*'));                  // les critères valent pour toute la franchise : il faut tous les restaurants
   EVA.edit = { focus: tous && !!a && (+a.ffoc >= 3 || p >= 2), cfv: tous && !!a && (+a.fcfv >= 3 || p >= 2), certif: tous && !!a && (+a.fcer >= 3 || p >= 2) };
   const b = document.getElementById('pillEval'); if (b) b.style.display = evaAny() ? '' : 'none';
-  const be = document.getElementById('espEval'); if (be) be.style.display = evaAny() ? '' : 'none';
   if (!evaAny() && EVA.on) setMode('2026');
 }
 function evaOpen() {
@@ -5771,6 +5754,7 @@ async function evaExport() {
 }
 
 function setMode(val) {
+  if ((val === 'primes' || val === 'eval') && typeof currentEspace !== 'undefined' && currentEspace !== 'pilotage') switchEspace('pilotage');      // depuis un autre espace (Performance, Formation…) : retour au Pilotage, sinon la vue s'ouvre dans un espace masqué
   if (val === 'primes') { evaClose(); prOpen(); return; }
   if (val === 'eval') { prClose(); evaOpen(); return; }
   prClose(); evaClose();
@@ -14703,7 +14687,6 @@ function switchEspace(name) {
     if (el) el.style.display = (e === name) ? '' : 'none';
   });
   document.querySelectorAll('.espace-pill').forEach(p => p.classList.toggle('active', p.dataset.esp === name));
-  if (typeof primesEspSync === 'function') primesEspSync(name);
   // Recherche → Pilotage seul ; Export → Pilotage + Performance
   const bR = document.getElementById('btnRecherche'); if (bR) bR.style.display = (name === 'pilotage') ? '' : 'none';
   const bE = document.getElementById('btnExporter'); if (bE) bE.style.display = (name === 'pilotage' || name === 'performance') ? '' : 'none';
@@ -14734,7 +14717,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261115-155114';
+const BUILD_VERSION = '20261115-160120';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
