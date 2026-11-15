@@ -2330,9 +2330,7 @@ function renderBudget() {
       </ol></div></div>
     ${typeof bdShareHtml === 'function' ? `<div id="bdShare" class="bd-shw">${bdShareHtml(r, Ty)}</div>` : ''}
     ${typeof bcBannerHtml === 'function' ? `<div id="bcBox">${bcBannerHtml(r, Ty)}</div>` : ''}
-    <div class="bd-import"><div><b>Hypothèses :</b> ${o.file ? `reprises de « ${escH(o.file)} » (${o.date})` : 'valeurs réseau seulement (redevances, publicité, G&A, IS) — importe le classeur du restaurant pour reprendre les tiens'}</div>
-      <label class="step" style="cursor:pointer">📂 Importer le classeur PREV ET BUDGET (.xlsx)<input type="file" accept=".xlsx,.xlsm" style="display:none" onchange="bdImport(this)"></label>
-      <span class="hint" style="margin:0">Lu dans ton navigateur (onglet PNL uniquement) : rien n'est envoyé.</span><span class="save-msg" id="bdMsg"></span></div>
+    <div class="bd-import" style="border:none;background:none;padding:0;margin:0 0 10px"><label class="lv-btn" style="margin:0">Importer le classeur PREV ET BUDGET (.xlsx)<input type="file" accept=".xlsx,.xlsm" style="display:none" onchange="bdImport(this)"></label> <span class="save-msg" id="bdMsg"></span></div>
     <div class="sim-note">CA ${Ty} issu du calendrier Prévision CA : <span class="bd-src bd-j"></span>${nJ} mois complets · <span class="bd-src bd-s"></span>${nP} partiels · <span class="bd-src bd-n"></span>${nN} sans prévision.
       <a style="cursor:pointer;text-decoration:underline;margin-left:8px" onclick="setTab('prevca')">Ouvrir la Prévision CA (calendrier et simulation) →</a></div>
     <div class="sim-kpis">${kp('CA alim. ' + Ty, pvEur(A), refT ? evC(ev(A, refT.alim)) : '')}${kp('Marge brute', bdP(A ? tot('marge') / A : null), pvEur(tot('marge')))}${kp('Main-d\'œuvre', bdP(A ? tot('mo') / A : null), pvEur(tot('mo')))}
@@ -3256,12 +3254,17 @@ function bdSharePaint() { wfBarPaint(); }
 (function () {
   const st = document.createElement('style');
   st.textContent = `
-.lv-bar{ background:var(--card2); border:1.5px solid var(--border); border-radius:12px; padding:11px 14px; margin:0 0 12px; font-size:.84rem; line-height:1.45; }
-.lv-bar.ro{ border-color:#7c3aed; background:rgba(124,58,237,.07); } .lv-bar.err{ border-color:#dc2626; background:rgba(220,38,38,.07); }
-.lv-chips{ display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px; } .lv-chip{ flex:1; min-width:150px; border:1.5px solid var(--border); border-radius:12px; padding:8px 10px; background:var(--card); }
-.lv-chip b{ display:block; font-size:.84rem; } .lv-chip small{ display:block; color:var(--muted); font-size:.7rem; margin-top:2px; line-height:1.4; }
-.lv-chip.done{ border-color:#22a447; background:rgba(34,164,71,.08); } .lv-chip.cur{ border-color:#7c3aed; background:rgba(124,58,237,.09); } .lv-chip.view{ box-shadow:0 0 0 2px #7c3aed; }
-.lv-chip button{ margin:6px 4px 0 0; } .lv-act{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.lv-bar{ background:var(--card); border:1.5px solid var(--border); border-radius:14px; padding:14px 16px; margin:0 0 14px; font-size:.86rem; line-height:1.5; color:var(--text); }
+.lv-bar.err{ border-color:#dc2626; background:rgba(220,38,38,.05); }
+.lv-chips{ display:flex; gap:10px; flex-wrap:wrap; margin:0 0 12px; }
+.lv-chip{ flex:1; min-width:170px; border:1.5px solid var(--border); border-radius:12px; padding:10px 12px; background:var(--card2); }
+.lv-chip.view{ border-color:var(--gold2); background:#fffaf0; }
+.lv-chip b{ display:block; font-size:.86rem; } .lv-chip .st{ display:block; font-size:.76rem; font-weight:700; margin-top:2px; color:var(--muted); }
+.lv-chip .st.ok{ color:#1e8449; } .lv-chip .st.cur{ color:var(--gold); } .lv-chip small{ display:block; color:var(--muted); font-size:.72rem; margin-top:2px; line-height:1.4; }
+.lv-chip .ask{ display:block; color:#b45309; font-size:.72rem; font-weight:700; margin-top:4px; }
+.lv-btn{ border:1.5px solid var(--border); background:var(--card); color:var(--text); font-family:inherit; font-size:.78rem; font-weight:700; border-radius:10px; padding:7px 12px; cursor:pointer; white-space:nowrap; margin:8px 6px 0 0; }
+.lv-btn:hover{ border-color:var(--gold2); } .lv-btn.p{ background:var(--gold); border-color:var(--gold); color:#fff; box-shadow:0 2px 8px rgba(184,134,11,.25); }
+.lv-line{ font-size:.86rem; } .lv-line b{ font-weight:800; } .lv-act{ display:flex; gap:0; flex-wrap:wrap; align-items:center; margin-top:2px; }
 .lv-ro #panel input[type=text], .lv-ro #panel input[type=number], .lv-ro #panel input:not([type]), .lv-ro #panel textarea, .lv-ro #panel table select{ pointer-events:none; background:var(--card2); }
 .lv-ro #panel .bd-mv, .lv-ro #panel [onclick*="bdDet"], .lv-ro #panel [onclick*="pvSave"], .lv-ro #panel [onclick*="bdApply"]{ pointer-events:none; opacity:.45; }
 .lv-ro #panel .lv-bar input, .lv-ro #panel .lv-bar textarea{ pointer-events:auto; }`;
@@ -3370,7 +3373,7 @@ const lvCnt = d => { try { return Object.values(wfLines(d)).filter(v => !wfEmpty
 async function lvSave(silent) {
   const r = curResto, Y = lvYearOf(), key = lvK(r, Y), my = lvMy(r), m = lvRow(r, Y, my);
   if (LV.busyAct) return false; if (lvView(r, Y) !== 'mine' || !lvEditable(r, Y)) { lvMsg(r, Y, 'err', "Ta saisie n'est pas modifiable pour le moment."); return false; }
-  const mine = wfCollect(r, Y); if (!wfHasContent(mine)) { lvMsg(r, Y, 'err', "Rien à enregistrer : saisis d'abord une prévision journalière ou des hypothèses de budget."); return false; }
+  const mine = wfCollect(r, Y); if (!wfHasContent(mine)) { lvMsg(r, Y, 'err', "Rien à enregistrer : saisis d'abord une prévision journalière ou des montants de budget."); return false; }
   const donnees = JSON.stringify(mine); if (donnees.length > 45000) { lvMsg(r, Y, 'err', 'Dossier trop volumineux (' + donnees.length + ' caractères).'); return false; }
   LV.busyAct = true; lvMsg(r, Y, '', 'Enregistrement…');
   try {
@@ -3381,7 +3384,7 @@ async function lvSave(silent) {
     let j = await lvCall('save', r, Y, { donnees, salaires: wfEdgSeg(r), base_version: m ? m.version : undefined });
     if (j.conflict) { if (!confirm("Une version plus récente de ta saisie a été enregistrée depuis un autre appareil.\nL'écraser avec cet écran ?")) { lvMsg(r, Y, 'err', 'Enregistrement annulé : recharge ta version (bouton « Charger ma version enregistrée »).'); return false; } j = await lvCall('save', r, Y, { donnees, salaires: wfEdgSeg(r) }); }
     if (!j.ok) { lvMsg(r, Y, 'err', 'Erreur : ' + j.error); return false; }
-    LV.sig[key] = wfSig(r, Y); await lvRefresh(true); lvMsg(r, Y, 'ok', '✓ Enregistré (version ' + j.version + ').'); return true;
+    LV.sig[key] = wfSig(r, Y); await lvRefresh(true); lvMsg(r, Y, 'ok', 'Enregistré.'); return true;
   } finally { LV.busyAct = false; }
 }
 async function lvValidate() {
@@ -3411,53 +3414,53 @@ async function lvValidate() {
       pvDraftPersist(); PV.resto = null; PV.loadedYm = null;
     }
     LV.sig[lvK(r, Y)] = wfSig(r, Y); LV.view[lvK(r, Y)] = 'mine'; delete LV.shown[lvK(r, Y)]; delete LV.stash[lvK(r, Y)];
-    await lvRefresh(true); lvMsg(r, Y, 'ok', next ? '✓ Saisie validée et envoyée au ' + LV_NAME[next] + '. Tu es en consultation.' : '✓ Prévisionnel ' + Y + ' publié dans le Sheet.'); await lvEnter(r, Y);
+    await lvRefresh(true); lvMsg(r, Y, 'ok', next ? 'Saisie validée et envoyée au ' + LV_NAME[next] + '. Tu es en consultation.' : 'Prévisionnel ' + Y + ' publié dans le Sheet.'); await lvEnter(r, Y);
   } finally { LV.busyAct = false; }
 }
 async function lvRequest() {
   const r = curResto, Y = lvYearOf(), c = prompt('Pourquoi veux-tu modifier ta saisie ? (facultatif, visible du niveau au-dessus)', ''); if (c === null) return;
   const j = await lvCall('request', r, Y, { comment: c }); if (!j.ok) return lvMsg(r, Y, 'err', 'Erreur : ' + j.error);
-  await lvRefresh(true); lvMsg(r, Y, 'ok', '✓ Demande de déblocage envoyée.');
+  await lvRefresh(true); lvMsg(r, Y, 'ok', 'Demande de déblocage envoyée.');
 }
 async function lvUnlock(level) {
   const r = curResto, Y = lvYearOf(), my = lvMy(r), self = level === my;
   if (!confirm(self ? `Te débloquer pour modifier ta saisie ${Y} ?` : `Débloquer la saisie ${Y} du ${LV_NAME[level]} ? Elle redeviendra modifiable par lui.`)) return;
   const j = await lvCall('unlock', r, Y, { niveau: level }); if (!j.ok) return lvMsg(r, Y, 'err', 'Erreur : ' + j.error);
-  await lvRefresh(true); if (self) { LV.view[lvK(r, Y)] = 'mine'; await lvLoadMine(r, Y); } lvMsg(r, Y, 'ok', '✓ Saisie débloquée.'); await lvEnter(r, Y);
+  await lvRefresh(true); if (self) { LV.view[lvK(r, Y)] = 'mine'; await lvLoadMine(r, Y); } lvMsg(r, Y, 'ok', 'Saisie débloquée.'); await lvEnter(r, Y);
 }
-const lvLoadClick = async () => { const r = curResto, Y = lvYearOf(); if (!confirm('Charger ta version enregistrée ? Ce qui est à l\'écran et non enregistré sera remplacé.')) return; await lvLoadMine(r, Y); lvMsg(r, Y, 'ok', '✓ Ta version enregistrée est à l\'écran.'); };
+const lvLoadClick = async () => { const r = curResto, Y = lvYearOf(); if (!confirm('Charger ta version enregistrée ? Ce qui est à l\'écran et non enregistré sera remplacé.')) return; await lvLoadMine(r, Y); lvMsg(r, Y, 'ok', 'Ta version enregistrée est à l\'écran.'); };
 // ── Bandeau (Prévision CA, Budget & PNL, Validation) ──
 function lvBarHtml(r, Y) {
   if (!r || !wfInCircuit(r, Y)) return '';
   const box = (c, h) => `<div class="lv-bar ${c}">${h}</div>`;
   if (LV.backend === false) return box('err', "Le circuit de validation demande une mise à jour de l'Apps Script du Sheet.");
-  if (!wfRightsOk(r)) return box('', `💾 Brouillon sur cet appareil seulement : ton accès n'a ni « Prévision CA et simulation » ni « Budget & PNL ». Demande au franchisé de l'activer (Équipes → Modifier).`);
-  if (LV.backend === null) return box('', '⏳ Chargement du circuit de validation…');
+  if (!wfRightsOk(r)) return box('', `Brouillon sur cet appareil seulement : ton accès n'a ni « Prévision CA et simulation » ni « Budget & PNL ». Demande au franchisé de l'activer (Équipes → Modifier).`);
+  if (LV.backend === null) return box('', 'Chargement du circuit de validation…');
   const key = lvK(r, Y), ch = lvChain(r), my = lvMy(r), view = lvView(r, Y), i = ch.indexOf(my), ed = lvEditable(r, Y) && view === 'mine', next = ch[i + 1], mrow = lvRow(r, Y, my), fl = LV.flash[key];
   const target = lvTarget(r, Y), showing = lvIsRO(r, Y) ? target : my;
   const chips = ch.map((n, k) => {
     const x = lvRow(r, Y, n), prev = k > 0 ? lvRow(r, Y, ch[k - 1]) : null, wait = k > 0 && !(prev && (prev.statut === 'valide' || prev.statut === 'publie')) && !x;
-    const cls = x && (x.statut === 'valide' || x.statut === 'publie') ? 'done' : (x ? 'cur' : ''), when = x ? `v${x.version} · ${wfDate(x.at)}${x.by ? ' · ' + escH(x.by) : ''}` : '';
-    const lab = !x ? (wait ? '⏳ En attente de ' + LV_NAME[ch[k - 1]] : 'Pas encore de saisie') : (x.statut === 'publie' ? '✔ Validé et publié' : x.statut === 'valide' ? '✓ Validé' : 'En cours');
-    let dem = ''; try { if (x && x.demande) { const d = JSON.parse(x.demande); dem = `<br><b style="color:#b45309">🔔 Déblocage demandé</b>${d.comment ? ' : ' + escH(d.comment) : ''}`; } } catch (e) {}
-    const nx = k + 1 < ch.length ? lvRow(r, Y, ch[k + 1]) : null, unl = x && (x.statut === 'valide' || x.statut === 'publie') && lvCanUnlock(my, n) && n !== my && !(nx && (nx.statut === 'valide' || nx.statut === 'publie')) ? `<button class="step" onclick="lvUnlock('${n}')">Débloquer</button>` : '';
-    const see = x ? `<button class="step" onclick="lvViewSet('${n === my ? 'mine' : n}')">${showing === n ? '👁 Affichée' : 'Voir'}</button>` : '';
-    return `<div class="lv-chip ${cls} ${showing === n ? 'view' : ''}"><b>${LV_NAME[n]}${n === my ? ' (toi)' : ''}</b><small>${lab}<br>${when}${dem}</small>${see}${unl}</div>`;
+    const cls = x && (x.statut === 'valide' || x.statut === 'publie') ? 'done' : (x ? 'cur' : ''), when = x ? `${wfDate(x.at)}${x.by ? ' · ' + escH(x.by) : ''}` : '';
+    const lab = !x ? (wait ? 'En attente du ' + LV_NAME[ch[k - 1]] : 'Pas encore de saisie') : (x.statut === 'publie' ? 'Validé et publié' : x.statut === 'valide' ? 'Validé' : 'En cours'), lcl = x ? (x.statut === 'en_cours' ? 'cur' : 'ok') : '';
+    let dem = ''; try { if (x && x.demande) { const d = JSON.parse(x.demande); dem = `<span class="ask">Déblocage demandé${d.comment ? ' : ' + escH(d.comment) : ''}</span>`; } } catch (e) {}
+    const nx = k + 1 < ch.length ? lvRow(r, Y, ch[k + 1]) : null, unl = x && (x.statut === 'valide' || x.statut === 'publie') && lvCanUnlock(my, n) && n !== my && !(nx && (nx.statut === 'valide' || nx.statut === 'publie')) ? `<button class="lv-btn p" onclick="lvUnlock('${n}')">Débloquer</button>` : '';
+    const see = x ? `<button class="lv-btn" onclick="lvViewSet('${n === my ? 'mine' : n}')">${showing === n ? 'Affichée' : 'Voir'}</button>` : '';
+    return `<div class="lv-chip ${showing === n ? 'view' : ''}"><b>${LV_NAME[n]}${n === my ? ' (toi)' : ''}</b><span class="st ${lcl}">${lab}</span>${when ? `<small>${when}</small>` : ''}${dem}${see}${unl}</div>`;
   }).join('');
   let act = '', head = '';
-  if (view !== 'mine') head = `👁 <b>Consultation de la saisie du ${LV_NAME[view]}</b> (lecture seule). <button class="step" onclick="lvViewSet('mine')">Revenir à ma saisie</button>`;
+  if (view !== 'mine') head = `<b>Consultation de la saisie du ${LV_NAME[view]}</b> (lecture seule). <button class="lv-btn" onclick="lvViewSet('mine')">Revenir à ma saisie</button>`;
   else if (ed) {
     const unsaved = LV.sig[key] === undefined ? wfHasContent(wfCollect(r, Y)) : LV.sig[key] !== wfSig(r, Y);
-    head = `✏ <b>Ta saisie (${LV_NAME[my]})</b> — ${mrow ? 'dernier enregistrement : v' + mrow.version + ' · ' + wfDate(mrow.at) : 'pas encore enregistrée'}. ${unsaved ? '<b style="color:#b45309">● Modifications non enregistrées</b>' : '<span style="color:#16a34a">✓ à jour</span>'}`;
-    act = `<button class="btn-save" onclick="lvSave()">💾 Enregistrer</button><button class="btn-save" onclick="lvValidate()">✔ Valider${next ? ' → ' + LV_NAME[next] : ' et publier'}</button>`;
-    if (mrow && LV.sig[key] === undefined && wfHasContent(wfCollect(r, Y))) act += `<button class="step" onclick="lvLoadClick()">Charger ma version enregistrée</button>`;
+    head = `<b>Ta saisie (${LV_NAME[my]})</b> — ${mrow ? 'dernier enregistrement : ' + wfDate(mrow.at) : 'pas encore enregistrée'}. ${unsaved ? '<b style="color:#b45309">Modifications non enregistrées</b>' : '<span style="color:#1e8449">À jour</span>'}`;
+    act = `<button class="lv-btn p" onclick="lvSave()">Enregistrer</button><button class="lv-btn p" onclick="lvValidate()">Valider${next ? ' et envoyer au ' + LV_NAME[next] : ' et publier'}</button>`;
+    if (mrow && LV.sig[key] === undefined && wfHasContent(wfCollect(r, Y))) act += `<button class="lv-btn" onclick="lvLoadClick()">Charger ma version enregistrée</button>`;
   } else if (mrow && (mrow.statut === 'valide' || mrow.statut === 'publie')) {
     let dem = ''; try { if (mrow.demande) dem = JSON.parse(mrow.demande); } catch (e) {}
-    head = `🔒 <b>Ta saisie est validée</b> (${wfDate(mrow.at)}) : tu es en consultation.`;
-    act = my === 'franchise' ? `<button class="btn-save" onclick="lvUnlock('${my}')">Me débloquer pour modifier</button>` : (dem ? `<span class="hint">⏳ Déblocage demandé le ${wfDate(dem.at)} : en attente du ${LV_NAME[ch[i + 1]] || 'niveau supérieur'}.</span>` : `<button class="btn-save" onclick="lvRequest()">Demander le déblocage</button>`);
-  } else head = `⏳ <b>En attente de la validation du ${LV_NAME[ch[i - 1]] || 'niveau précédent'}</b> : tu consultes sa saisie ; la tienne démarrera d'une copie dès sa validation.`;
+    head = `<b>Ta saisie est validée</b> (${wfDate(mrow.at)}) : tu es en consultation.`;
+    act = my === 'franchise' ? `<button class="lv-btn p" onclick="lvUnlock('${my}')">Me débloquer pour modifier</button>` : (dem ? `<span class="hint" style="margin:8px 0 0">Déblocage demandé le ${wfDate(dem.at)} : en attente du ${LV_NAME[ch[i + 1]] || 'niveau supérieur'}.</span>` : `<button class="lv-btn p" onclick="lvRequest()">Demander le déblocage</button>`);
+  } else head = `<b>En attente de la validation du ${LV_NAME[ch[i - 1]] || 'niveau précédent'}</b> : tu consultes sa saisie ; la tienne démarrera d'une copie dès sa validation.`;
   const msg = fl ? `<span class="save-msg ${fl[0]}">${escH(fl[1])}</span>` : '';
-  return box(lvIsRO(r, Y) ? 'ro' : '', `${view === 'mine' ? wfSafeHtml(r, Y) : ''}<div class="lv-chips">${chips}</div><div>${head}</div><div class="lv-act" style="margin-top:8px">${act}${msg}</div>`);
+  return box('', `${view === 'mine' ? wfSafeHtml(r, Y) : ''}<div class="lv-chips">${chips}</div><div class="lv-line">${head}</div><div class="lv-act">${act}${msg}</div>`);
 }
 function wfBarHtml(r, Y) { return lvBarHtml(r, Y); }
 function wfBarCore(r, Y) { return lvBarHtml(r, Y); }
@@ -3493,7 +3496,7 @@ function renderValid() {
   const J = (LV.journal[key] || {}).rows || [];
   const T = { lv_save: 'a enregistré (version précédente archivée)', lv_validate: 'a validé', lv_request: 'a demandé le déblocage', lv_unlock: 'a débloqué', lv_reset: 'a remis à zéro', open: 'a ouvert le dossier', validate: 'a validé la saisie', finalize: 'a finalisé et publié', unlock: 'a déverrouillé', comment: 'a commenté', save: 'a repris la main sur la version d\'un autre', restore: 'a restauré une version' };
   const hist = J.filter(x => x.action !== 'comment' || x.comment).slice().reverse().slice(0, 40).map(x => `<li><b>${escH(x.by)}</b> ${T[x.action] || escH(x.action)}${x.from && /^lv_/.test(x.action) ? ' (' + escH(LV_NAME[x.from] || x.from) + ')' : ''} <small>· ${wfDate(x.at)}</small>${x.comment ? `<i>${escH(x.comment)}</i>` : ''}</li>`).join('');
-  const ov = RESTOS.length > 1 ? `<details class="sim-d"><summary>Tous les dossiers ${Y} de mon périmètre</summary><div class="sim-wrap" style="margin-top:8px"><table class="sim" style="min-width:520px"><thead><tr><th class="l">Restaurant</th>${['directeur', 'superviseur', 'franchise'].map(n => `<th>${LV_NAME[n]}</th>`).join('')}</tr></thead><tbody>${RESTOS.map(x => `<tr><td class="l">${escH(x[1])}</td>${['directeur', 'superviseur', 'franchise'].map(n => { const v = lvRow(x[0], Y, n); return `<td>${!lvChain(x[0]).includes(n) ? '—' : !v ? '<span style="color:var(--muted)">—</span>' : (v.statut === 'publie' ? '✔ Publié' : v.statut === 'valide' ? '✓ Validé' : 'En cours') + (v.demande ? ' 🔔' : '')}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
+  const ov = RESTOS.length > 1 ? `<details class="sim-d"><summary>Tous les dossiers ${Y} de mon périmètre</summary><div class="sim-wrap" style="margin-top:8px"><table class="sim" style="min-width:520px"><thead><tr><th class="l">Restaurant</th>${['directeur', 'superviseur', 'franchise'].map(n => `<th>${LV_NAME[n]}</th>`).join('')}</tr></thead><tbody>${RESTOS.map(x => `<tr><td class="l">${escH(x[1])}</td>${['directeur', 'superviseur', 'franchise'].map(n => { const v = lvRow(x[0], Y, n); return `<td>${!lvChain(x[0]).includes(n) ? '—' : !v ? '<span style="color:var(--muted)">—</span>' : (v.statut === 'publie' ? 'Publié' : v.statut === 'valide' ? 'Validé' : 'En cours') + (v.demande ? ' (déblocage demandé)' : '')}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
   pn.innerHTML = head + `<div class="sim-note">Connecté : <b>${escH(me ? me.label : '')}</b> <span class="wf-tag">${me ? ACC_ROLE[me.role] : ''}</span></div><div id="lvVal">${lvBarHtml(r, Y)}</div>` + `<div class="hint" style="margin:6px 0 10px">Pour modifier ou consulter le détail d'une saisie : ouvre « Prévision CA » ou « Budget &amp; PNL » (l'écran affiche la version choisie ci-dessus).</div>` + ov + `<div class="sim-h">Historique</div>${hist ? `<ul class="wf-log">${hist}</ul>` : '<div class="hint">Aucune action pour le moment.</div>'}`;
 }
 // ── Branchement : l'écran suit l'état à chaque ouverture (lecture seulement) ──
