@@ -223,7 +223,7 @@ const SBA = (() => {
   // ── APERÇU (« voir le site comme ce profil ») : page ouverte avec ?apercu=1 et les droits simulés dans l'adresse (#apercu=…). LECTURE SEULE : aucune écriture partie vers l'Apps Script ni Supabase,
   //    aucune écriture dans le stockage local (sauf la session, jamais renouvelée ici), ni déconnexion, ni journal de connexion. Les droits simulés remplacent mes_droits ; le serveur, lui, ne voit que le jeton réel.
   const APERCU = (() => { if (!/[?&]apercu=1(&|$)/.test(location.search)) return null; try { return JSON.parse(decodeURIComponent(String(location.hash || '').replace(/^#apercu=/, ''))) || {}; } catch (e) { return {}; } })();
-  const RPC_READ = /\/rest\/v1\/rpc\/(mes_droits|acces_218_liste|connexions_liste|planning_restos|semaine_reglage)(\?|$)/, READ_POST = /^(read|wf_load|wf_list|bc_load|bc_list|px_load|px_journal|pb_cfg_load|pb_list|pb_load|wf_archives|rv_load|acc_login|acc_list)$/;
+  const RPC_READ = /\/rest\/v1\/rpc\/(mes_droits|acces_218_liste|connexions_liste|planning_restos|semaine_reglage|primes_frm_personnes)(\?|$)/, READ_POST = /^(read|wf_load|wf_list|bc_load|bc_list|px_load|px_journal|pb_cfg_load|pb_list|pb_load|wf_archives|rv_load|acc_login|acc_list)$/;
   const apercuOk = (url, method, body) => { if (!APERCU) return true; method = String(method || 'GET').toUpperCase(); if (method === 'GET' || method === 'HEAD') return true; if (RPC_READ.test(String(url))) return true; let a = ''; try { a = JSON.parse(String(body || '{}')).action || ''; } catch (e) {} return READ_POST.test(a); };
   const APERCU_REFUS = "Aperçu : lecture seule, rien n'est enregistré.";
   let gateRes, refreshing = null, rightsC = null, legacyOk = false;
@@ -473,11 +473,11 @@ const SBA = (() => {
 // Les droits viennent de la base (poste + écarts de la personne, fonction mes_droits : champ « acces »). Une personne sans « acces » (base pas encore migrée) garde le fonctionnement d'avant.
 const ACC_CAT = [
   ['Page de saisie', [['q', 'Quotidien', 'tab:quotidien'], ['h', 'Hebdomadaire', 'tab:hebdomadaire'], ['m', 'Mensuel', 'tab:mensuel'], ['p', 'Ponctuel (visites et audits)', 'tab:ponctuel'], ['pv', 'Prévisionnel', 'tab:previsionnel'], ['pca', 'Prévision CA', 'tab:prevca'], ['bud', 'Budget et PNL', 'tab:budget'], ['val', 'Validation du prévisionnel', 'tab:valid'], ['prix', 'Prix franchise', 'tab:prix|esp:prix'], ['pb', 'Point Business', 'tab:pb|esp:pb'], ['doc', 'Documents', 'tab:documents']]],
-  ['Dashboard', [['pil', 'Pilotage opérationnel', 'esp:pilotage'], ['perf', 'Performance', 'esp:performance'], ['itv', 'Interventions', 'esp:interventions'], ['form', 'Formation', 'esp:formation'], ['mkt', 'Marketing', 'esp:marketing'], ['com', 'Plan de communication', 'esp:plancom'], ['plan', 'Planning EDG', 'esp:planning'], ['act', 'Actualité restaurant', 'esp:actualite'], ['tps', 'Suivi temps de travail', 'tab:tps|esp:ext-pointage'], ['rev', 'Business Review', 'esp:revue'], ['prim', 'Primes (Pilotage)', '']]],
+  ['Dashboard', [['pil', 'Pilotage opérationnel', 'esp:pilotage'], ['perf', 'Performance', 'esp:performance'], ['itv', 'Interventions', 'esp:interventions'], ['form', 'Formation', 'esp:formation'], ['mkt', 'Marketing', 'esp:marketing'], ['com', 'Plan de communication', 'esp:plancom'], ['plan', 'Planning EDG', 'esp:planning'], ['act', 'Actualité restaurant', 'esp:actualite'], ['tps', 'Suivi temps de travail', 'tab:tps|esp:ext-pointage'], ['rev', 'Business Review', 'esp:revue'], ['prim', 'Primes (Pilotage)', ''], ['ffoc', 'Évaluations : Focus', ''], ['fcfv', 'Évaluations : CFV (VSC)', ''], ['fcer', 'Évaluations : Certification', '']]],
   ['Administration', [['eq', 'Équipes et accès', 'tab:equipes'], ['sal', 'Salaires par poste', ''], ['ban', 'Bannières', '']]]];
-{ const _c = (typeof FRANCHISE_CFG !== 'undefined' ? FRANCHISE_CFG : (typeof CFG !== 'undefined' ? CFG : {})); if (!((_c.modules || {}).primes === 'on')) ACC_CAT.forEach(g => { g[1] = g[1].filter(t => t[0] !== 'prim'); }); }   // la tuile « Primes » n'existe que pour les franchises dont la config l'active
+{ const _c = (typeof FRANCHISE_CFG !== 'undefined' ? FRANCHISE_CFG : (typeof CFG !== 'undefined' ? CFG : {})); if (!((_c.modules || {}).primes === 'on')) ACC_CAT.forEach(g => { g[1] = g[1].filter(t => !['prim', 'ffoc', 'fcfv', 'fcer'].includes(t[0])); }); }   // la tuile « Primes » n'existe que pour les franchises dont la config l'active
 const accMax = k => k === 'pb' ? 3 : 2;   // toutes les tuiles : aucun / consultation / modification (Point Business : 4 niveaux ; « Suivi du temps de travail » : le niveau ne règle que la visibilité, les droits d'écriture sont ceux de l'application forfait jours)
-const accLevelName = (k, v) => v === 0 ? 'Aucun accès' : (k === 'pb' ? ['', 'Consultation', 'Réponse du directeur', 'Rédaction'][v] : (v === 1 ? 'Consultation' : 'Modification'));
+const accLevelName = (k, v) => v === 0 ? 'Aucun accès' : (k === 'pb' ? ['', 'Consultation', 'Réponse du directeur', 'Rédaction'][v] : (v === 1 ? 'Consultation' : (['ffoc', 'fcfv', 'fcer'].includes(k) ? 'Réalisation' : 'Modification')));
 const accLvl = (r, k) => (r && r.acces && typeof r.acces === 'object') ? (+r.acces[k] || 0) : null;           // null = anciens droits (pas de tuiles)
 const accTabLvl = (r, tab) => { const t = ACC_CAT.flatMap(g => g[1]).find(x => (x[2] || '').split('|').includes('tab:' + tab)); return t ? accLvl(r, t[0]) : null; };
 const accEspLvl = (r, esp) => { const t = ACC_CAT.flatMap(g => g[1]).find(x => (x[2] || '').split('|').includes('esp:' + esp)); return t ? accLvl(r, t[0]) : null; };
@@ -516,6 +516,7 @@ function dashEnter(r) {
   if (typeof plgOnLogin === 'function') plgOnLogin(r);
   if (typeof rvOnLogin === 'function') rvOnLogin(r);
   if (typeof prOnLogin === 'function') prOnLogin(r);
+  if (typeof evaOnLogin === 'function') evaOnLogin(r);
   try { SBA.note(); } catch (e) {}
   document.getElementById('app').style.display = 'block';
   renderTabs(); renderMain(); try { dashPills(r); } catch (e) {}
@@ -1490,6 +1491,10 @@ window.addEventListener('DOMContentLoaded', () => {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.6-.8-1.6-1.2-2.6-1.2-1.5 0-2.6.8-2.6 2s1 1.7 2.7 2c1.7.3 2.7.8 2.7 2s-1.1 2-2.7 2c-1.1 0-2.1-.4-2.8-1.3"/><line x1="12" y1="6" x2="12" y2="7.4"/><line x1="12" y1="16.6" x2="12" y2="18"/></svg>
         Primes
       </button>
+      <button class="mode-pill m-eval" id="pillEval" style="display:none" onclick="setMode('eval')" title="Évaluations : formulaires Focus, CFV et Certification qui alimentent les primes">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Évaluations
+      </button>
     </div>
     <a id="btnSaisie" href="saisie_franchise_py.html" target="_blank" rel="noopener" class="topbar-intervention" title="Saisir les KPI (quotidien, hebdomadaire, mensuel, visites…)" style="cursor:pointer;border-color:#16a34a;color:#15803d;text-decoration:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1561,6 +1566,7 @@ window.addEventListener('DOMContentLoaded', () => {
 <!-- DEMANDE D'INTERVENTION -->
 <div class="main" id="interventionWrap" style="padding-top:0;padding-bottom:28px"></div>
 <div class="main" id="primesWrap" style="display:none"></div>
+<div class="main" id="evalWrap" style="display:none"></div>
 </div><!-- fin espace-pilotage -->
 
 <!-- ESPACE : INTERVENTIONS -->
@@ -3384,12 +3390,999 @@ function getBadge(kpiId, v) {
 // MODE
 // ============================================================
 function updateModePills(val) {
-  const map = { [YEAR_CUR]:'pill2026',[YEAR_PREV]:'pill2025',[YEAR_P2]:'pill2024','compare':'pillCompare','prev':'pillPrev','kpiview':'pillKpiview','primes':'pillPrimes' };
+  const map = { [YEAR_CUR]:'pill2026',[YEAR_PREV]:'pill2025',[YEAR_P2]:'pill2024','compare':'pillCompare','prev':'pillPrev','kpiview':'pillKpiview','primes':'pillPrimes','eval':'pillEval' };
   Object.entries(map).forEach(([mode, id]) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('active', mode === val);
   });
 }
+
+// Généré par patches/gen_formulaires.py depuis les classeurs vierges (Focus 2027, VSC 2027, Certification RZ en poste). Ne pas modifier à la main.
+const FRM_DEFS = {
+ "modele": "2027",
+ "focus": {
+  "id": "focus",
+  "titre": "FOCUS OPÉRATIONNEL",
+  "court": "Focus",
+  "mode": "points",
+  "so": false,
+  "prime": 200,
+  "periodicite": "T",
+  "seuils": [
+   [
+    0.97,
+    0
+   ],
+   [
+    0.92,
+    0
+   ],
+   [
+    0.88,
+    0
+   ],
+   [
+    0.83,
+    1
+   ],
+   [
+    0.8,
+    0
+   ]
+  ],
+  "ctx": [
+   {
+    "id": "prevu",
+    "lib": "Prévus"
+   },
+   {
+    "id": "reel",
+    "lib": "Réel"
+   },
+   {
+    "id": "equipiers",
+    "lib": "Équipiers"
+   }
+  ],
+  "blocs": [
+   {
+    "id": "b1",
+    "titre": "PRÉPA QUART",
+    "groupes": [
+     {
+      "titre": "Contrôle la propreté du retaurant et mène des actions correctives",
+      "items": [
+       {
+        "id": "q12",
+        "lib": "- Propreté des extèrieurs",
+        "coef": 2
+       },
+       {
+        "id": "q13",
+        "lib": "- Propreté de la salle et des toilettes",
+        "coef": 2
+       },
+       {
+        "id": "q14",
+        "lib": "Propreté plonge",
+        "coef": 2
+       },
+       {
+        "id": "q15",
+        "lib": "- Propreté des stocks et parties communes (vestiaires - salle équipier - couloir - chaufferie)",
+        "coef": 2
+       },
+       {
+        "id": "q16",
+        "lib": "- Propreté de la cuisine et du comptoir",
+        "coef": 2
+       },
+       {
+        "id": "q17",
+        "lib": "Assigne des équipiers pour effectuer les tâches en termes de produits et d’équipements. - Produits : stocks pour la journée, pour le rush, tempering.",
+        "coef": 2
+       },
+       {
+        "id": "q18",
+        "lib": "Réalise un contrôle des DLC",
+        "coef": 3
+       },
+       {
+        "id": "q19",
+        "lib": "Ambiance globale du restaurant (lumière, musique, température, et rangement à mesure)",
+        "coef": 1
+       },
+       {
+        "id": "q20",
+        "lib": "Fixe et communique des objectifs ciblés personnels et aux équipes pour le quart et pour le rush (SIM)",
+        "coef": 2
+       },
+       {
+        "id": "q21",
+        "lib": "Utilise la liste de contrôle pré quart et réalise le chemin de contrôle du QSP",
+        "coef": 1
+       },
+       {
+        "id": "q22",
+        "lib": "Rempli la LCQ (avant ouverture du restaurant) et apporter des actions correctives appropriées aux problèmes identifiés + signer avant midi et bluetooth à 100%",
+        "coef": 2
+       },
+       {
+        "id": "q23",
+        "lib": "Connais et maitrise les offres, campagnes, CAPAD et PLV",
+        "coef": 1
+       },
+       {
+        "id": "q24",
+        "lib": "Présente le brief de son rush de facon fluide et cohérente (Conditions, niveaux, ZDD, Objectifs)",
+        "coef": 4
+       },
+       {
+        "id": "q25",
+        "lib": "S’assure que les employés ont une apparence propre et soignée",
+        "coef": 1
+       },
+       {
+        "id": "q26",
+        "lib": "RE-USE en quantité suffisante",
+        "coef": 2
+       },
+       {
+        "id": "q27",
+        "lib": "Ruptures controlées sur la caisse",
+        "coef": 1
+       },
+       {
+        "id": "q28",
+        "lib": "Valide le Beef Integrity en bluetooth (+ questions sécu alim)",
+        "coef": 3
+       }
+      ]
+     }
+    ],
+    "horaire": "9H00 - 11H30"
+   },
+   {
+    "id": "b2",
+    "titre": "PENDANT LE QUART",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q31",
+        "lib": "Prends les informations nécessaires",
+        "coef": 3
+       },
+       {
+        "id": "q32",
+        "lib": "Effectue des chemins de contrôle du QSP et prendre les décisions appropriées.",
+        "coef": 3
+       },
+       {
+        "id": "q33",
+        "lib": "Ouverture et fermeture de ligne adaptées",
+        "coef": 3
+       },
+       {
+        "id": "q34",
+        "lib": "Maintient un positionnement équilibré pendant tout le quart",
+        "coef": 2
+       }
+      ]
+     },
+     {
+      "titre": "GERER SON QUART AU TRAVERS DES AUTRES",
+      "items": [
+       {
+        "id": "q36",
+        "lib": "Donne des directives claires et spécifiques et fait du suivi.",
+        "coef": 2
+       },
+       {
+        "id": "q37",
+        "lib": "Donne aux membres de l’équipe du feedback efficace et fait du coaching.",
+        "coef": 3
+       },
+       {
+        "id": "q38",
+        "lib": "Anime sa salle et ses équipes tout au long du rush",
+        "coef": 2
+       },
+       {
+        "id": "q39",
+        "lib": "Travaille en impliquant les formateurs, les hôtes et l'EDG",
+        "coef": 2
+       },
+       {
+        "id": "q40",
+        "lib": "Ambiance conviviale et chaleureuse",
+        "coef": 1
+       }
+      ]
+     },
+     {
+      "titre": "ASSURER LA SECURITE ALIMENTAIRE",
+      "items": [
+       {
+        "id": "q42",
+        "lib": "Effectue un suivi sur l'horloge de traçabilité alimentaire",
+        "coef": 1
+       },
+       {
+        "id": "q43",
+        "lib": "Effectue un suivi sur le lavage des mains (procédure et fréquence)",
+        "coef": 1
+       },
+       {
+        "id": "q44",
+        "lib": "Effectue un suivi du temps de retenu des produits",
+        "coef": 1
+       }
+      ]
+     },
+     {
+      "titre": "ASSURER LA PROPRETE DU RESTAURANT",
+      "items": [
+       {
+        "id": "q46",
+        "lib": "Les extérieurs sont propres et débarrassés des détritus",
+        "coef": 2
+       },
+       {
+        "id": "q47",
+        "lib": "Toutes les zones du restaurant sont propres et aseptisées.",
+        "coef": 2
+       },
+       {
+        "id": "q48",
+        "lib": "Les toilettes sont propres et aseptisées",
+        "coef": 2
+       }
+      ]
+     },
+     {
+      "titre": "ASSURE LA QUALITE DES PRODUITS",
+      "items": [
+       {
+        "id": "q50",
+        "lib": "Suit les niveaux minimum",
+        "coef": 3
+       }
+      ]
+     },
+     {
+      "titre": "Golden standard",
+      "items": [
+       {
+        "id": "q52",
+        "lib": "- Frite",
+        "coef": 2
+       },
+       {
+        "id": "q53",
+        "lib": "- Sandwich",
+        "coef": 2
+       },
+       {
+        "id": "q54",
+        "lib": "- Bonne présentation du plateau",
+        "coef": 1
+       },
+       {
+        "id": "q55",
+        "lib": "S'assure que les produits servis soient conformes aux attentes",
+        "coef": 1
+       }
+      ]
+     },
+     {
+      "titre": "ASSURER LA SATISFACTION DES CLIENTS",
+      "items": [
+       {
+        "id": "q57",
+        "lib": "Va à la rencontre des clients.",
+        "coef": 3
+       },
+       {
+        "id": "q58",
+        "lib": "Prise en charge rapide des clients au comptoir",
+        "coef": 1
+       },
+       {
+        "id": "q59",
+        "lib": "Adopte une posture commerciale et avenante",
+        "coef": 2
+       },
+       {
+        "id": "q60",
+        "lib": "Offre des attentions aux clients : ballons, primes pour les enfants, dégustations…",
+        "coef": 1
+       }
+      ]
+     }
+    ],
+    "horaire": "11H30 - 14H00"
+   },
+   {
+    "id": "b3",
+    "titre": "POST QUART",
+    "groupes": [
+     {
+      "titre": "RESULTATS REALISES PAR RAPPORT AU OBJECTFS FIXES",
+      "items": [
+       {
+        "id": "q64",
+        "lib": "Objectif OEPE atteint (inf ou égal 300 sec maximum)",
+        "coef": 4
+       },
+       {
+        "id": "q65",
+        "lib": "Objectif R2P atteint (inf ou égal 300 sec maximum)",
+        "coef": 4
+       },
+       {
+        "id": "q66",
+        "lib": "Temps d'initiation et d'assemblage cohérents par rapport aux temps de service",
+        "coef": 2
+       }
+      ]
+     },
+     {
+      "titre": "COACHE POUR AMELIORER LA PERFORMANCE DES EQUIPES",
+      "items": [
+       {
+        "id": "q68",
+        "lib": "Fait de la reconnaissance aux équipiers qui se sont investis pendant le quart (entretien conseil)",
+        "coef": 2
+       },
+       {
+        "id": "q69",
+        "lib": "Réalise un débrief cohérent et se fixe des objectifs pour s'améliorer",
+        "coef": 2
+       },
+       {
+        "id": "q70",
+        "lib": "Débrief les équipes par rapport aux objectifs et aux résultats",
+        "coef": 2
+       },
+       {
+        "id": "q71",
+        "lib": "Fait du coaching aux équipiers qui ont besoin d'améliorer leur performance (entretien conseil)",
+        "coef": 2
+       }
+      ]
+     },
+     {
+      "titre": "PREPARE LE QUART SUIVANT",
+      "items": [
+       {
+        "id": "q73",
+        "lib": "Gère les pannes rencontrées",
+        "coef": 1
+       },
+       {
+        "id": "q74",
+        "lib": "Fait des tours de contrôles réguliers de son restaurant",
+        "coef": 2
+       }
+      ]
+     }
+    ],
+    "horaire": "13H45 - 15H00"
+   }
+  ]
+ },
+ "cfv": {
+  "id": "cfv",
+  "titre": "VSC",
+  "court": "CFV",
+  "mode": "points",
+  "so": true,
+  "prime": 100,
+  "periodicite": "T",
+  "seuils": [
+   [
+    0.97,
+    0
+   ],
+   [
+    0.92,
+    0
+   ],
+   [
+    0.88,
+    0
+   ],
+   [
+    0.83,
+    1
+   ],
+   [
+    0.8,
+    0
+   ]
+  ],
+  "ctx": [
+   {
+    "id": "ca",
+    "lib": "CA"
+   },
+   {
+    "id": "equipiers",
+    "lib": "Équipiers"
+   }
+  ],
+  "blocs": [
+   {
+    "id": "b1",
+    "titre": "QUALITÉ · Golden standard",
+    "groupes": [
+     {
+      "titre": "GOLDEN STANDARD",
+      "items": [
+       {
+        "id": "q12",
+        "lib": "Frites",
+        "coef": 6
+       },
+       {
+        "id": "q13",
+        "lib": "Sandwichs",
+        "coef": 6
+       },
+       {
+        "id": "q14",
+        "lib": "Boisson",
+        "coef": 2
+       },
+       {
+        "id": "q15",
+        "lib": "Présentation de la commande",
+        "coef": 3
+       },
+       {
+        "id": "q16",
+        "lib": "Commande complète",
+        "coef": 3
+       },
+       {
+        "id": "q17",
+        "lib": "Glaces, café, patisseries",
+        "coef": 2
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b2",
+    "titre": "SERVICE · Drive, accueil, temps de service",
+    "groupes": [
+     {
+      "titre": "DRIVE",
+      "items": [
+       {
+        "id": "q21",
+        "lib": "L'équipier me salue et est agréable",
+        "coef": 3
+       },
+       {
+        "id": "q22",
+        "lib": "L'équipier me propose de m'identifier (FID)",
+        "coef": 2
+       },
+       {
+        "id": "q23",
+        "lib": "L'équipier me demande de suivre la commande",
+        "coef": 2
+       },
+       {
+        "id": "q24",
+        "lib": "L'équipier fait de la vente de la moussée",
+        "coef": 4
+       },
+       {
+        "id": "q25",
+        "lib": "L'équipier fait de la vente suggestive",
+        "coef": 4
+       },
+       {
+        "id": "q26",
+        "lib": "L'équipier annonce le montant et demande le moyen de paiement",
+        "coef": 2
+       },
+       {
+        "id": "q27",
+        "lib": "L'équipier prend congé de façon cordiale et agréable",
+        "coef": 2
+       },
+       {
+        "id": "q28",
+        "lib": "Je suis accueilli à tous les guichets",
+        "coef": 3
+       },
+       {
+        "id": "q29",
+        "lib": "Le sac m'a été remis à deux mains (signature de service)",
+        "coef": 3
+       },
+       {
+        "id": "q30",
+        "lib": "Ça passe ou ça park !",
+        "coef": 3
+       }
+      ]
+     },
+     {
+      "titre": "ACCUEIL",
+      "items": [
+       {
+        "id": "q33",
+        "lib": "Des attentions sont disponibles pour les clients (ballons, coloriages)",
+        "coef": 3
+       },
+       {
+        "id": "q34",
+        "lib": "Qualité de l'accueil à l'arrivée en salle (saluer)",
+        "coef": 3
+       },
+       {
+        "id": "q35",
+        "lib": "Posture du manager sur son terrain (présence, ton de voix)",
+        "coef": 5
+       },
+       {
+        "id": "q36",
+        "lib": "Ambiance chaleureuse en salle (musique, température, lumière)",
+        "coef": 3
+       },
+       {
+        "id": "q37",
+        "lib": "PLV à jour (PLV affiches + bornes + bashup)",
+        "coef": 4
+       }
+      ]
+     },
+     {
+      "titre": "TEMPS DE SERVICE",
+      "items": [
+       {
+        "id": "q39",
+        "lib": "Temps attente (3ème voiture avant la PDC - 70 secondes)",
+        "coef": 2
+       },
+       {
+        "id": "q40",
+        "lib": "Temps PDC (<40 secondes) ou bien réalisée",
+        "coef": 2
+       },
+       {
+        "id": "q41",
+        "lib": "OEPE (inférieur à 300s)",
+        "coef": 10
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b3",
+    "titre": "PROPRETÉ",
+    "groupes": [
+     {
+      "titre": "PROPRETÉ",
+      "items": [
+       {
+        "id": "q45",
+        "lib": "Les abords du restaurant sont propres et entretenus",
+        "coef": 4
+       },
+       {
+        "id": "q46",
+        "lib": "La salle est propre",
+        "coef": 4
+       },
+       {
+        "id": "q47",
+        "lib": "L'aire de jeux est propre et sécurisée",
+        "coef": 2
+       },
+       {
+        "id": "q48",
+        "lib": "Les toilettes sont propres",
+        "coef": 4
+       },
+       {
+        "id": "q49",
+        "lib": "La cuisine est propre (aspect client)",
+        "coef": 2
+       },
+       {
+        "id": "q50",
+        "lib": "Le comptoir est propre (aspect client)",
+        "coef": 2
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "certif": {
+  "id": "certif",
+  "titre": "CERTIFICATION RESPONSABLE DE ZONE EN POSTE",
+  "court": "Certification",
+  "mode": "moyenne",
+  "so": true,
+  "prime": 200,
+  "periodicite": "S",
+  "seuils": [
+   [
+    0.98,
+    0
+   ],
+   [
+    0.95,
+    0
+   ],
+   [
+    0.9,
+    0
+   ],
+   [
+    0.85,
+    0
+   ],
+   [
+    0.8,
+    0
+   ]
+  ],
+  "ctx": [],
+  "blocs": [
+   {
+    "id": "b1",
+    "titre": "Aptitudes attendues",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q6",
+        "lib": "Il/elle a toujours une présentation professionnelle propre et soignée",
+        "coef": 1
+       },
+       {
+        "id": "q7",
+        "lib": "Il/elle est exigent et encourage les employés sous sa supe",
+        "coef": 1
+       },
+       {
+        "id": "q8",
+        "lib": "Il/elle fait respecter les normes et les procédures sur la zone ou il/elle est posté (e)",
+        "coef": 1
+       },
+       {
+        "id": "q9",
+        "lib": "Il/elle crée du dynamisme sur ses quarts de travail.",
+        "coef": 1
+       },
+       {
+        "id": "q10",
+        "lib": "Il/elle a une communication adaptée en fonction de la situation (participative ou directive)",
+        "coef": 1
+       },
+       {
+        "id": "q11",
+        "lib": "Il/elle donne systématiquement du feadback aux employés à leur arrivée et leur départ",
+        "coef": 1
+       },
+       {
+        "id": "q12",
+        "lib": "Il/elle prend des initiatives dans certaines situations",
+        "coef": 1
+       },
+       {
+        "id": "q13",
+        "lib": "il/elle maitrise la sécurité alimentaire (DSA et beef intégrity)",
+        "coef": 1
+       },
+       {
+        "id": "q14",
+        "lib": "S’adapte aux situations inatendues, il/elle sait gérer son stress",
+        "coef": 1
+       },
+       {
+        "id": "q15",
+        "lib": "Il/elle a une vraie culture service (contact facile avec les clients, tours de contrôle réguliers en salle, propreté du restaurant, alentours et des toilettes)",
+        "coef": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b2",
+    "titre": "Activité : Prépa quart",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q17",
+        "lib": "Les DLC ont été vérifiées sur la zone (horloge de tracabilité et la feuille prévue à cet effet)",
+        "coef": 1
+       },
+       {
+        "id": "q18",
+        "lib": "Utilise la prépa rush pour garantir un bon de niveau de stock (produits frais, congelés et secs)",
+        "coef": 1
+       },
+       {
+        "id": "q19",
+        "lib": "Il/elle fait en sorte que la zone soit propre",
+        "coef": 1
+       },
+       {
+        "id": "q20",
+        "lib": "Il/elle fait en sorte que l'aseptisation soit en place : Chiffons en quantité suffisante, un chiffon à chaque poste de production, que les seaux à chiffons soient vérifiés et timés.",
+        "coef": 1
+       },
+       {
+        "id": "q21",
+        "lib": "Il/elle s'assure que le niveau ReUse soit cohérent avec les besoins",
+        "coef": 1
+       },
+       {
+        "id": "q22",
+        "lib": "Il/elle fixe des objectifs ciblés aux formateurs présents sur le rush ou se fixe à lui-même des objectifs ciblés de formation et le partage lors du brief rush",
+        "coef": 1
+       },
+       {
+        "id": "q23",
+        "lib": "Il/elle prépare les tiroirs en ligne frit en fonction des niveaux ou que les sirops de la shake sont bien calibrés",
+        "coef": 1
+       },
+       {
+        "id": "q24",
+        "lib": "Il/elle a préparé son brief avec le manager",
+        "coef": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b3",
+    "titre": "Activité : Gestion de la zone / Cuisine",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q26",
+        "lib": "Il/elle prépare le tempering ou verifie que le tempering soit bien en place",
+        "coef": 1
+       },
+       {
+        "id": "q27",
+        "lib": "Communique en permanence avec les équipiers pour dynamiser la zone",
+        "coef": 1
+       },
+       {
+        "id": "q28",
+        "lib": "Il/elle fait respecter les normes par chacun afin de maintenir un haut niveau de sécurité alimentaire et de propreté en cuisine (timers en cuisine,etc….)",
+        "coef": 1
+       },
+       {
+        "id": "q29",
+        "lib": "S'assure que le nettoyage au fur et à mesure soit respecter pendant le rush",
+        "coef": 1
+       },
+       {
+        "id": "q30",
+        "lib": "Fait preuve de leadership et de dynamisme pour booster la cuisine",
+        "coef": 1
+       },
+       {
+        "id": "q31",
+        "lib": "S'assure que tous les équipements fonctionnent et signale toute annomalie",
+        "coef": 1
+       },
+       {
+        "id": "q32",
+        "lib": "Il/elle fait de la reconnaissance positive et constructive tout au long du rush",
+        "coef": 1
+       },
+       {
+        "id": "q33",
+        "lib": "Il/elle communique éfficacement avec le manager sur sa prise de décisions afin d'aller chercher la performance en cuisine et fait créé le lien avec la zone comptoir",
+        "coef": 1
+       },
+       {
+        "id": "q34",
+        "lib": "Culture service : Il/elle s'assure que les produits soient bien emballés, pas plus de 6 produits/plateau et qu'ils soient propres. Les picks listes sont bien collés et visibles. Set à plateaux sur place.",
+        "coef": 1
+       },
+       {
+        "id": "q35",
+        "lib": "Il/elle s'assure que la montée et la baisse des niveaux soient respectés en donnant des directives précises",
+        "coef": 1
+       },
+       {
+        "id": "q36",
+        "lib": "Avec l'accord du manager, Il/elle est capable de maintenir un positionnement adapté en gérant les pauses.",
+        "coef": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b4",
+    "titre": "Activité : Gestion de la zone / Comptoir",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q38",
+        "lib": "Il/elle a une réel capacité d'entrain et de leadership pour booster le comptoir",
+        "coef": 1
+       },
+       {
+        "id": "q39",
+        "lib": "Il/elle s'assure que les plateaux envoyés en SAT sont bien présentés et que les sacs des commandes drive ne contiennent pas plus que le nombre de produit recommandé.",
+        "coef": 1
+       },
+       {
+        "id": "q40",
+        "lib": "Effectue des tours de contrôle : toilettes, lobby et exterieurs au minimum 4 fois sur le rush (1h)",
+        "coef": 1
+       },
+       {
+        "id": "q41",
+        "lib": "Observe les zones de danger et prend les décisions afin d'améliorer le service",
+        "coef": 1
+       },
+       {
+        "id": "q42",
+        "lib": "Prend en charge les clients au comptoir et s'assure que les équipiers le fasse aussi",
+        "coef": 1
+       },
+       {
+        "id": "q43",
+        "lib": "Communique éfficacement avec le manager sur sa prise de décisions",
+        "coef": 1
+       },
+       {
+        "id": "q44",
+        "lib": "Avec l'accord du manager, Il/elle est capable de maintenir un positionnement adapté en gérant les pauses.",
+        "coef": 1
+       },
+       {
+        "id": "q45",
+        "lib": "Développe son relationnel client et sa présence en salle afin d'atteindre le niveau 4",
+        "coef": 1
+       },
+       {
+        "id": "q46",
+        "lib": "S'assure que les ballons soient en place et que les happy meals soient en quantité suffisante",
+        "coef": 1
+       },
+       {
+        "id": "q47",
+        "lib": "Il/elle s'assure que la prise de commande efficace soit respectée et que les employés appliquent la cutlure service à l'enlevement.",
+        "coef": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b5",
+    "titre": "Activité : Post quart",
+    "groupes": [
+     {
+      "titre": "",
+      "items": [
+       {
+        "id": "q49",
+        "lib": "Il/elle fait maintenir un haut de niveau de service et/ou de production avec les équipers présents sur la zone",
+        "coef": 1
+       },
+       {
+        "id": "q50",
+        "lib": "Priorise les tâches après rush : sécurité alimentaire et propreté (zone cuisine : cuisine et arrière cuisine) (zone comptoir : comptoir et salle)",
+        "coef": 1
+       },
+       {
+        "id": "q51",
+        "lib": "S'assure que les pertes (vides/complétes) ont été notées",
+        "coef": 1
+       },
+       {
+        "id": "q52",
+        "lib": "Il/elle réalise un feedback à chaque équipier qui quitte sa zone",
+        "coef": 1
+       },
+       {
+        "id": "q53",
+        "lib": "Demande un feedback au manager de shift sur sa gestion de zone",
+        "coef": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+};
+
+// ══ Formulaires d'évaluation (Focus, CFV/VSC, Certification) : moteur de calcul (sans interface) ══
+// Reproduit les classeurs « FOCUS VIERGE 2027 », « VSC VIERGE 2027 » et « CERTIFICATION RZ EN POSTE » : mêmes critères, mêmes coefficients, mêmes paliers.
+//  · Focus et CFV : score = points des « OUI » ÷ points possibles ; au CFV, un critère « S/O » (sans objet) donne ses points (la feuille VSC les ajoute au total).
+//  · Certification : pourcentage par bloc = « OUI » ÷ critères évalués (hors « S/O »), puis moyenne des blocs.
+//  · Palier (0 = plein … 4 = dernier palier payé, 5 = aucune prime) : seuils du classeur (Focus et CFV : ≥ 97 / 92 / 88 %, > 83 %, ≥ 80 % ; certification : ≥ 98 / 95 / 90 / 85 / 80 %).
+// Le montant en euros ne vient PAS d'ici : il se déduit du palier et du barème du poste (onglet Primes).
+// Prérequis : FRM_DEFS (patches/formulaires_defs.js, généré depuis les classeurs).
+const FORMS = (() => {
+  const DEFS = FRM_DEFS, ORDRE = ['focus', 'cfv', 'certif'];
+  const LIB_PALIER = ['100 %', '87,5 %', '75 %', '62,5 %', '50 %', '0 %'];
+  const FRAC = [1, 0.875, 0.75, 0.625, 0.5, 0];
+  const items = f => DEFS[f].blocs.flatMap(b => b.groupes.flatMap(g => g.items));
+  const reponseOk = (f, v) => v === 'OUI' || v === 'NON' || (v === 'SO' && DEFS[f].so);
+  // Calcul d'un formulaire à partir des réponses { idCritère : 'OUI' | 'NON' | 'SO' }. Un critère sans réponse n'est pas compté (calcul provisoire) ; complet = tous répondus.
+  function score(f, rep) {
+    const D = DEFS[f]; rep = rep || {}; let pts = 0, max = 0, rd = 0, tot = 0; const blocs = [];
+    D.blocs.forEach(b => {
+      let p = 0, m = 0, r = 0, t = 0;
+      b.groupes.forEach(g => g.items.forEach(i => {
+        t++; const v = rep[i.id]; if (!reponseOk(f, v)) return; r++;
+        if (v === 'SO' && D.mode === 'moyenne') return;                 // certification : « S/O » sort du calcul
+        m += i.coef; if (v === 'OUI' || v === 'SO') p += i.coef;          // CFV : « S/O » = points acquis
+      }));
+      blocs.push({ id: b.id, pts: p, max: m, pct: m > 0 ? p / m : null, repondus: r, total: t });
+      pts += p; max += m; rd += r; tot += t;
+    });
+    let pct = null;
+    if (D.mode === 'moyenne') { const v = blocs.filter(b => b.pct !== null); pct = v.length ? v.reduce((a, b) => a + b.pct, 0) / v.length : null; }
+    else pct = max > 0 ? pts / max : null;
+    return { pts, max, pct, blocs, repondus: rd, total: tot, complet: rd === tot && tot > 0 };
+  }
+  // Palier d'un pourcentage : 0 à 4 (montant plein à dernier palier) ou 5 (sous le dernier seuil). Seuil « strict » : > au lieu de ≥ (Focus et CFV : > 83 %).
+  function palier(f, pct) {
+    if (pct === null || pct === undefined || isNaN(pct)) return null;
+    const S = DEFS[f].seuils;
+    for (let i = 0; i < S.length; i++) if (S[i][1] ? pct > S[i][0] : pct >= S[i][0]) return i;
+    return 5;
+  }
+  const seuilTxt = (f, i) => { const s = DEFS[f].seuils[i]; return (s[1] ? '> ' : '≥ ') + Math.round(s[0] * 100) + ' %'; };
+  // Période d'une date (AAAA-MM-JJ) : trimestre (Focus, CFV) ou semestre (certification)
+  function periodeDe(f, date) {
+    const m = +String(date || '').slice(5, 7); if (!(m >= 1 && m <= 12)) return null;
+    return DEFS[f].periodicite === 'T' ? 'T' + Math.ceil(m / 3) : 'S' + Math.ceil(m / 6);
+  }
+  const periodes = f => DEFS[f].periodicite === 'T' ? ['T1', 'T2', 'T3', 'T4'] : ['S1', 'S2'];
+  // Postes concernés par chaque formulaire : ceux dont le barème prévoit une prime (CFV, Focus : assistant et manager ; certification : responsable de zone)
+  const IDX_BAREME = { cfv: 5, focus: 6, certif: 7 };
+  function postesConcernes(f, bareme) {
+    const B = bareme || (typeof PRIMES !== 'undefined' ? PRIMES.BAREME_2026 : {});
+    return Object.keys(B).filter(p => +((B[p] || [])[IDX_BAREME[f]]) > 0);
+  }
+  // Instance retenue pour une personne, une période et un formulaire : la dernière évaluation validée (date, puis dernière modification)
+  function retenue(liste) {
+    const v = (liste || []).filter(x => x.statut === 'valide');
+    v.sort((a, b) => String(b.date_eval).localeCompare(String(a.date_eval)) || String(b.maj_le || '').localeCompare(String(a.maj_le || '')));
+    return v[0] || null;
+  }
+  // Une évaluation vide : tous les critères sans réponse
+  const vide = (f) => ({ form: f, reponses: {}, commentaires: {}, contexte: {} });
+  const toutOui = f => { const r = {}; items(f).forEach(i => { r[i.id] = 'OUI'; }); return r; };
+  return { DEFS, ORDRE, LIB_PALIER, FRAC, items, reponseOk, score, palier, seuilTxt, periodeDe, periodes, postesConcernes, retenue, vide, toutOui, IDX_BAREME };
+})();
+if (typeof module !== 'undefined' && module.exports) module.exports = FORMS;
 
 // ══ Primes EDG : moteur de calcul (sans interface) ══
 // Reproduit à l'identique le classeur « PRIMES 2026.xlsx » (onglets COLLECTIVES + sociétés) : mêmes seuils, mêmes arrondis, même règle de présence.
@@ -3683,8 +4676,9 @@ async function prLoad() {
   PRM.state = 'load'; PRM.err = ''; prRender();
   try {
     const f = prFr(), a = PRM.annee;
-    const [p, o, i, ob, rg] = await Promise.all([prAll('/rest/v1/primes_personnes?select=*&franchise=eq.' + f + '&order=restaurant,ordre,nom'), prAll('/rest/v1/primes_organigramme?select=*&annee=eq.' + a + '&order=personne_id,mois'),
+    let [p, o, i, ob, rg] = await Promise.all([prAll('/rest/v1/primes_personnes?select=*&franchise=eq.' + f + '&order=restaurant,ordre,nom'), prAll('/rest/v1/primes_organigramme?select=*&annee=eq.' + a + '&order=personne_id,mois'),
       prAll('/rest/v1/primes_indiv?select=*&annee=eq.' + a), prAll('/rest/v1/primes_objectifs?select=*&franchise=eq.' + f + '&annee=eq.' + a), prAll('/rest/v1/primes_reglages?select=*&franchise=eq.' + f + '&annee=eq.' + a)]);
+    if (!rg.length && a > 2026) { try { rg = await prAll('/rest/v1/primes_reglages?select=*&franchise=eq.' + f + '&annee=eq.' + (a - 1)); } catch (e) { rg = []; } }   // nouvelle année : mêmes conditions que l'année précédente tant qu'elles ne sont pas enregistrées
     PRM.personnes = p; PRM.org = o; PRM.hasArret = o.length > 0 && Object.prototype.hasOwnProperty.call(o[0], 'arret'); PRM.indiv = i; PRM.obj = ob; PRM.reg = { bareme: null, seuils: null, perso: [] }; rg.forEach(x => { PRM.reg[x.cle] = x.valeur; });
     try { PRM.aud = await prAll('/rest/v1/primes_audits?select=*&franchise=eq.' + f + '&annee=eq.' + a); PRM.hasAud = true; } catch (e) { PRM.aud = []; PRM.hasAud = false; } if (!Array.isArray(PRM.reg.perso)) PRM.reg.perso = []; PRM.draft = null; PRM.state = 'ok';
   } catch (e) { PRM.state = 'err'; PRM.err = String(e.message || e); }
@@ -3701,6 +4695,11 @@ const prMsg = (t, ko) => { PRM.msg = t ? (ko ? '✗ ' : '✓ ') + t : ''; const 
 function prRestos() { const vis = new Set(PRM.personnes.map(p => p.restaurant)); return PRIMES.SOCIETES.map(s => s[1]).filter(r => (typeof RESTOS === 'undefined' || RESTOS.includes(r)) && (vis.has(r) || PRM.lvl >= 1)); }
 function prCfg() { const r = PRM.reg || {}, B = {}; Object.keys(PRIMES.BAREME_2026).forEach(k => { const u = (r.bareme || {})[k] || []; B[k] = PRIMES.BAREME_2026[k].map((v, i) => (u[i] !== undefined && u[i] !== null) ? u[i] : v); }); return { bareme: B, seuils: PRIMES.seuilsDe(r.seuils), perso: (r.perso || []).filter(x => x.actif !== false) }; }
 function prAudRest(r) { const o = {}; PRM.aud.filter(x => x.restaurant === r).forEach(x => { o[x.domaine] = x.score == null ? null : +x.score; }); return o; }
+function prMontantIndiv(i, CF) {                                     // palier issu d'un formulaire d'évaluation → montant du poste (barème en vigueur) ; sinon montant saisi
+  if (i.palier == null) return +i.montant || 0;
+  const L = prListeIndiv(i.indic, prPersPostes(i.personne_id), CF || prCfg()); return L ? (L[i.palier] || 0) : 0;
+}
+const prMark = (pid, ind, per) => { const x = PRM.indiv.find(i => i.personne_id === pid && i.indic === ind && i.periode === per); return x && x.formulaire_id ? '<span class="prm-frm" title="Valeur issue d\'un formulaire d\'évaluation (onglet Évaluations) : corrigez-la dans l\'évaluation">' + evaIco + '</span>' : ''; };
 function prCalc(semIdx) {
   const CF = prCfg(), D = (typeof DASHBOARD_DATA !== 'undefined') ? DASHBOARD_DATA : {}, obj = {};
   PRM.obj.filter(o => o.semestre === semIdx + 1).forEach(o => { obj[o.restaurant] = { oepe: o.oepe == null ? null : +o.oepe, r2p: o.r2p == null ? null : +o.r2p }; });
@@ -3709,8 +4708,8 @@ function prCalc(semIdx) {
   PRM.indiv.forEach(i => {
     const o = indiv[i.personne_id] || (indiv[i.personne_id] = { cfv: [0, 0], focus: [0, 0], certif: 0, eval: null });
     if (i.indic === 'eval' && i.periode === 'S2' && i.score != null) o.eval = Math.round(+i.score);
-    if ((i.indic === 'cfv' || i.indic === 'focus') && tr.includes(i.periode)) o[i.indic][tr.indexOf(i.periode)] = +i.montant;
-    if (i.indic === 'certif' && i.periode === per) o.certif = +i.montant;
+    if ((i.indic === 'cfv' || i.indic === 'focus') && tr.includes(i.periode)) o[i.indic][tr.indexOf(i.periode)] = prMontantIndiv(i, CF);
+    if (i.indic === 'certif' && i.periode === per) o.certif = prMontantIndiv(i, CF);
     if (i.indic === 'fixe' && i.periode === per) fixes[i.personne_id] = +i.montant;
   });
   const lignes = {}, cust = {};
@@ -3730,7 +4729,7 @@ function prRender() {
   if (PRM.lvl < 1) { box.innerHTML = ''; return; }
   const annuel = PRM.sem === 0;
   let h = '<div class="prm"><div class="prm-head"><div><div class="prm-t">Primes EDG ' + PRM.annee + '</div><div class="prm-s">Année complète : 1er semestre (versement en juillet) et 2e semestre (versement en janvier) · résultats calculés depuis les données de l\'application · barème et règles du classeur PRIMES</div></div>' +
-    '<div class="prm-tools"><div class="prm-seg"><button class="' + (PRM.sem === 0 ? 'on' : '') + '" onclick="prSetSem(0)">Année</button><button class="' + (PRM.sem === 1 ? 'on' : '') + '" onclick="prSetSem(1)">1er semestre</button><button class="' + (PRM.sem === 2 ? 'on' : '') + '" onclick="prSetSem(2)">2e semestre</button></div>' +
+    '<div class="prm-tools"><select class="prm-in" onchange="prYear(this.value)" title="Année des primes">' + Array.from({ length: Math.max(1, Math.max(2026, new Date().getFullYear() + 1) - 2025) }, (_, i) => 2026 + i).map(y => '<option value="' + y + '"' + (y === PRM.annee ? ' selected' : '') + '>' + y + '</option>').join('') + '</select><div class="prm-seg"><button class="' + (PRM.sem === 0 ? 'on' : '') + '" onclick="prSetSem(0)">Année</button><button class="' + (PRM.sem === 1 ? 'on' : '') + '" onclick="prSetSem(1)">1er semestre</button><button class="' + (PRM.sem === 2 ? 'on' : '') + '" onclick="prSetSem(2)">2e semestre</button></div>' +
     '<button class="prm-btn" onclick="prExport()" ' + (PRM.state === 'ok' ? '' : 'disabled') + '><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter Excel</button></div></div>';
   if (PRM.state === 'load' || PRM.state === 'idle') h += '<div class="prm-card prm-info">Chargement des primes…</div>';
   else if (PRM.state === 'err') h += '<div class="prm-card prm-info" style="color:var(--red)">Chargement impossible : ' + prEsc(PRM.err) + ' <button class="prm-btn" onclick="prLoad()">Réessayer</button></div>';
@@ -3743,6 +4742,7 @@ function prRender() {
     if (PRM.sel && !prRestos().includes(PRM.sel)) PRM.sel = null;
     PRM.ppvAn = {}; if (C.CF.seuils.ppv.actif) [0, 1].forEach(i => { const X = (CS.find(x => x.sem === i) || { C: prCalc(i) }).C; Object.values(X.lignes).forEach(L => L.forEach(l => { PRM.ppvAn[l.nom] = (PRM.ppvAn[l.nom] || 0) + (l.ppv || 0); })); });
     h += prHtmlTuiles(CS);
+    if (PRM.lvl >= 2 && PRM.annee > 2026 && !PRM.org.length) h += '<div class="prm-card prm-warn"><b>Aucun organigramme pour ' + PRM.annee + '.</b> Reprenez celui de décembre ' + (PRM.annee - 1) + ' (poste et fraction de contrat de chaque personne), puis ajustez mois par mois. <button class="prm-btn pri" onclick="prReprendre()">Reprendre l\'organigramme de ' + (PRM.annee - 1) + '</button></div>';
     if (PRM.sys) h += prHtmlSys(C);
     else {
       CS.forEach(x => { h += prHtmlColl(x.C, x.sem); });
@@ -3760,6 +4760,17 @@ function prHtmlRecap(CS) {                                          // total ann
   return '<div class="prm-card"><div class="prm-ct"><span>' + prEsc(prRestoLib(r)) + ' · total annuel par personne</span><span class="prm-tot">' + prEur(t[0] + t[1]) + '</span></div><div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Nom</th><th>1er semestre (juillet)</th><th>2e semestre (janvier)</th><th>Année</th></tr></thead><tbody>' +
     L.map(([id, o]) => '<tr><td class="prm-n">' + prEsc((P.get(id) || { nom: '?' }).nom) + '</td><td>' + prEur(o.s[0]) + '</td><td>' + prEur(o.s[1]) + '</td><td class="prm-b">' + prEur(o.s[0] + o.s[1]) + '</td></tr>').join('') +
     '<tr><td class="prm-n">Total</td><td class="prm-b">' + prEur(t[0]) + '</td><td class="prm-b">' + prEur(t[1]) + '</td><td class="prm-b">' + prEur(t[0] + t[1]) + '</td></tr></tbody></table></div></div>';
+}
+function prYear(a) { PRM.annee = +a; PRM.state = 'idle'; PRM.sel = null; PRM.sys = false; PRM.ed = null; PRM.draft = null; prLoad(); }
+async function prReprendre() {                                       // nouvelle année : reprend l'organigramme de décembre de l'année précédente (poste et fraction de contrat), à ajuster ensuite mois par mois
+  const a = PRM.annee - 1; if (PRM.lvl < 2) return;
+  if (!confirm('Reprendre l\'organigramme de décembre ' + a + ' pour les 12 mois de ' + PRM.annee + ' ? (poste et fraction de contrat de chaque personne présente en décembre ; vous pourrez ajuster mois par mois ensuite)')) return;
+  try {
+    const prev = await prAll('/rest/v1/primes_organigramme?select=*&annee=eq.' + a + '&mois=eq.12'), ok = new Set(PRM.personnes.filter(p => p.actif !== false).map(p => p.id)), rows = [];
+    prev.filter(o => ok.has(o.personne_id) && +o.contrat > 0).forEach(o => { for (let m = 1; m <= 12; m++) { const r = { personne_id: o.personne_id, annee: PRM.annee, mois: m, poste: o.poste, contrat: o.contrat }; if (PRM.hasArret) r.arret = 0; rows.push(r); } });
+    if (!rows.length) return prMsg('Aucune personne présente en décembre ' + a + ' : rien à reprendre.', true);
+    await prSave('primes_organigramme', rows, 'personne_id,annee,mois,poste'); await prLoad(); prMsg('Organigramme repris : ' + new Set(rows.map(r => r.personne_id)).size + ' personnes.');
+  } catch (e) { prMsg('Reprise impossible : ' + e.message, true); }
 }
 function prSetSem(n) { PRM.sem = n; prRender(); }
 function prSys() { PRM.sys = true; PRM.sel = null; prRender(); const e = document.getElementById('primesWrap'); if (e) e.scrollIntoView({ block: 'start' }); }
@@ -3816,11 +4827,11 @@ function prHtmlRestos(C, sem, annuel) {                              // une tabl
       const p = P.get(l.nom) || { nom: '?' }, ps = prPersPostes(l.nom), tr = sem === 0 ? ['T1', 'T2'] : ['T3', 'T4'], per = 'S' + (sem + 1), iv = C.indiv[l.nom] || { cfv: [0, 0], focus: [0, 0], certif: 0 };
       const indivOk = ['directeur', 'adjoint', 'assistant', 'manager'].some(x => ps.has(x)), rzOk = ps.has('rz'), fixOk = ps.has('adm') || ps.has('hotesse');
       const lst = ind => prListeIndiv(ind, ps, C.CF), none = '<td class="n x"></td>';
-      const q = (ind, i) => prSel(lst(ind), iv[ind][i], "prIndiv('" + l.nom + "','" + ind + "','" + tr[i] + "',this.value)");
+      const q = (ind, i) => prSel(lst(ind), iv[ind][i], "prIndiv('" + l.nom + "','" + ind + "','" + tr[i] + "',this.value)") + prMark(l.nom, ind, tr[i]);
       h += '<tr><td class="t-l">' + prEsc(prPosteLib(l.poste === 'fixe' ? [...ps].find(x => x === 'adm' || x === 'hotesse') || 'adm' : l.poste)) + '</td><td class="t-l prm-n">' + prEsc(p.nom) + '</td><td class="n">' + (l.coef == null ? '<span class="prm-sub">' + (l.supprime ? 'arrêt trop long' : 'absent fin de sem.') + '</span>' : Math.round(l.coef * 100) + ' %') + '</td>' +
         '<td class="n">' + prN(l.prel) + '</td><td class="n">' + prN(l.audit) + '</td><td class="n">' + prN(l.oepe) + '</td><td class="n">' + prN(l.r2p) + '</td><td class="n">' + prN(l.oph) + '</td>' +
         (indivOk ? '<td class="n">' + (ed ? q('cfv', 0) + q('cfv', 1) : prN(l.cfv)) + '</td><td class="n">' + (ed ? q('focus', 0) + q('focus', 1) : prN(l.focus)) + '</td>' : none + none) +
-        (rzOk ? '<td class="n">' + (ed ? prSel(lst('certif'), iv.certif, "prIndiv('" + l.nom + "','certif','" + per + "',this.value)") : prN(l.certif)) + '</td>' : none) +
+        (rzOk ? '<td class="n">' + (ed ? prSel(lst('certif'), iv.certif, "prIndiv('" + l.nom + "','certif','" + per + "',this.value)") + prMark(l.nom, 'certif', per) : prN(l.certif)) + '</td>' : none) +
         '<td class="n">' + prN(l.ca) + '</td><td class="n">' + prN(l.pac) + '</td>' +
         (s2 ? (l.aud || [0, 0, 0, 0]).map(v => '<td class="n">' + prN(v) + '</td>').join('') + (() => {                       // évaluation de performance : palier saisi par personne
           const base = Math.max(0, ...[...ps].map(k => (C.CF.bareme[k] || [])[14] || 0)); if (!(base > 0)) return none;
@@ -3860,6 +4871,7 @@ async function prObj(r, s, k, val) {
 async function prIndiv(pid, ind, per, val) {
   try {
     const m = +val || 0, row = { personne_id: pid, annee: PRM.annee, periode: per, indic: ind, montant: m };
+    if (PRM.indiv.some(x => Object.prototype.hasOwnProperty.call(x, 'palier'))) { row.palier = null; row.formulaire_id = null; }   // saisie manuelle : la valeur ne dépend plus d'un formulaire
     const out = await prSave('primes_indiv', [row], 'personne_id,annee,periode,indic'); const i = PRM.indiv.findIndex(x => x.personne_id === pid && x.periode === per && x.indic === ind);
     if (i >= 0) PRM.indiv[i] = out[0] || row; else PRM.indiv.push(out[0] || row); prRender(); prMsg('Prime enregistrée.');
   } catch (e) { prMsg('Enregistrement impossible : ' + e.message, true); }
@@ -3956,7 +4968,7 @@ async function prExport() {
   PRM.personnes.forEach(p => { const ps = [...new Set(PRM.org.filter(o => o.personne_id === p.id).map(o => o.poste))]; ps.forEach(po => { const l = new Array(12).fill(''); PRM.org.filter(o => o.personne_id === p.id && o.poste === po).forEach(o => { l[o.mois - 1] = Math.round(+o.contrat * 10000) / 10000; }); og.push([prRestoLib(p.restaurant), p.nom, prPosteLib(po)].concat(l)); }); });
   add('ORGANIGRAMME', og, [16, 22, 24].concat(new Array(12).fill(7)), [2]);
   const iv = [['PRIMES INDIVIDUELLES ' + PRM.annee], [], ['RESTAURANT', 'NOM', 'CFV T1', 'CFV T2', 'FOCUS T1', 'FOCUS T2', 'CERTIF S1', 'FIXE S1', 'CFV T3', 'CFV T4', 'FOCUS T3', 'FOCUS T4', 'CERTIF S2', 'FIXE S2']];
-  const g = (pid, ind, per) => { const x = PRM.indiv.find(i => i.personne_id === pid && i.indic === ind && i.periode === per); return x ? +x.montant : 0; };
+  const g = (pid, ind, per) => { const x = PRM.indiv.find(i => i.personne_id === pid && i.indic === ind && i.periode === per); return x ? prMontantIndiv(x) : 0; };
   PRM.personnes.forEach(p => iv.push([prRestoLib(p.restaurant), p.nom, g(p.id, 'cfv', 'T1'), g(p.id, 'cfv', 'T2'), g(p.id, 'focus', 'T1'), g(p.id, 'focus', 'T2'), g(p.id, 'certif', 'S1'), g(p.id, 'fixe', 'S1'), g(p.id, 'cfv', 'T3'), g(p.id, 'cfv', 'T4'), g(p.id, 'focus', 'T3'), g(p.id, 'focus', 'T4'), g(p.id, 'certif', 'S2'), g(p.id, 'fixe', 'S2')]));
   add('INDIVIDUELLES', iv, [16, 22, 9, 9, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9], [2]);
   const au = [['AUDITS RH / FORMATION / MARKETING / PEP ' + PRM.annee + ' (score en %)'], [], ['RESTAURANT', 'RH', 'FORMATION', 'MARKETING', 'PEP']];
@@ -4261,9 +5273,281 @@ async function prEval(pid, v) {
   } catch (e) { prMsg('Enregistrement impossible : ' + e.message + (/check|violat/i.test(e.message) ? ' (la saisie des évaluations n\'est pas encore activée dans la base)' : ''), true); }
 }
 
+// ══ Évaluations : formulaires Focus, CFV (VSC) et Certification — réalisés dans l'appli, ils alimentent les primes individuelles ══
+// Accès : tuiles « ffoc » (Focus), « fcfv » (CFV), « fcer » (Certification) réglées dans Équipes (1 = consulter, 2 = réaliser et modifier) + restaurants de la personne ; la tuile Primes ouvre aussi la lecture.
+// Suivi annualisé : une évaluation = une personne, un formulaire, une période (trimestre pour Focus et CFV, semestre pour la certification) d'une année ; la dernière évaluation validée de la période fait foi.
+// À la validation, la base (déclencheur) écrit le palier dans primes_indiv : l'onglet Primes en déduit le montant du poste (barème réglable) — aucune double saisie.
+// Prérequis : FORMS (formulaires_engine.js) et les outils de primes.js (prEsc, prApi, prAll, prSave, prDel, prFr, PRM…).
+const EVA = { on: false, lvl: { focus: 0, cfv: 0, certif: 0 }, annee: Math.max(2026, Math.min(new Date().getFullYear(), 2100)), tab: null, sel: null, state: 'idle', err: '', pers: [], rows: [], ed: null, dirty: false, busy: false, msg: '', nom: '' };
+const EVA_FORMS = ['focus', 'cfv', 'certif'];
+const evaAny = () => EVA_FORMS.some(f => EVA.lvl[f] >= 1);
+const evaForms = () => EVA_FORMS.filter(f => EVA.lvl[f] >= 1);
+const evaNomForm = f => FORMS.DEFS[f].court;
+const evaLocalDate = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const evaMois = per => { const n = +per.slice(1), t = per[0] === 'T' ? 3 : 6; return Array.from({ length: t }, (_, i) => (n - 1) * t + 1 + i); };
+const evaPerLib = per => per[0] === 'T' ? per + ' (' + ['janv.–mars', 'avr.–juin', 'juil.–sept.', 'oct.–déc.'][+per[1] - 1] + ')' : (per === 'S1' ? 'S1 (janv.–juin)' : 'S2 (juil.–déc.)');
+const evaPct = (v, d) => v == null ? '—' : (v * 100).toLocaleString('fr-FR', { minimumFractionDigits: d == null ? 1 : d, maximumFractionDigits: d == null ? 1 : d }) + ' %';
+const evaDate = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : '—'; };
+const evaPalCls = p => p === 0 ? 'ok' : p === 5 ? 'ko' : 'mid';
+const evaPalChip = p => p == null ? '<span class="prm-chip na">—</span>' : '<span class="prm-chip ' + (p === 0 ? 'ok' : p === 5 ? 'ko' : 'mid') + '">' + (p === 5 ? 'Aucune prime' : 'Palier ' + (p + 1) + ' · ' + FORMS.LIB_PALIER[p]) + '</span>';
+const evaMsg = (t, ko) => { EVA.msg = t ? (ko ? '✗ ' : '✓ ') + t : ''; const e = document.getElementById('evaMsg'); if (e) { e.textContent = EVA.msg; e.style.color = ko ? 'var(--red)' : 'var(--green)'; } };
+const evaIco = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+
+function evaOnLogin(r) {                                              // droits : tuile du formulaire, ou tuile Primes (lecture ≥ 1, modification = 2)
+  const a = (r && r.acces && typeof r.acces === 'object') ? r.acces : null, p = a ? (+a.prim || 0) : 0;
+  EVA.lvl = { focus: a ? Math.max(+a.ffoc || 0, p) : 0, cfv: a ? Math.max(+a.fcfv || 0, p) : 0, certif: a ? Math.max(+a.fcer || 0, p) : 0 };
+  EVA.nom = (r && (r.nom || r.email)) || '';
+  const b = document.getElementById('pillEval'); if (b) b.style.display = evaAny() ? '' : 'none';
+  if (!evaAny() && EVA.on) setMode('2026');
+}
+function evaOpen() {
+  if (!evaAny()) return;
+  EVA.on = true; document.getElementById('espace-pilotage').classList.add('pm-primes');
+  const w = document.getElementById('evalWrap'); if (w) w.style.display = 'block';
+  updateModePills('eval'); if (!EVA.tab || EVA.lvl[EVA.tab] < 1) EVA.tab = evaForms()[0];
+  evaRender(); if (EVA.state === 'idle' || EVA.state === 'err') evaLoad();
+  if (typeof PRM !== 'undefined' && PRM.lvl >= 1 && PRM.state === 'idle') prLoad().then(() => evaRender());   // barème et organigramme : pour afficher les montants en euros
+}
+function evaClose() { EVA.on = false; const e = document.getElementById('espace-pilotage'); if (e) e.classList.remove('pm-primes'); const w = document.getElementById('evalWrap'); if (w) w.style.display = 'none'; }
+
+// ── Données ──
+async function evaLoad() {
+  EVA.state = 'load'; EVA.err = ''; evaRender();
+  try {
+    const f = prFr(), a = EVA.annee;
+    const rp = await prApi('/rest/v1/rpc/primes_frm_personnes', 'POST', { f, an: a });
+    if (!rp.ok) throw new Error(rp.status === 404 ? 'module Évaluations pas encore activé dans la base' : ((rp.j && (rp.j.message || rp.j.msg)) || ('erreur ' + rp.status)));
+    EVA.pers = rp.j || [];
+    EVA.rows = await prAll('/rest/v1/primes_formulaires?select=*&franchise=eq.' + f + '&annee=eq.' + a + '&order=date_eval.desc,maj_le.desc');
+    EVA.state = 'ok';
+  } catch (e) { EVA.state = 'err'; EVA.err = String(e.message || e); }
+  evaRender();
+}
+function evaYear(a) { EVA.annee = +a; EVA.state = 'idle'; EVA.sel = null; EVA.ed = null; evaLoad(); }
+async function evaRefreshPrimes() {                                  // le déclencheur de la base vient de modifier primes_indiv : on relit pour que l'onglet Primes soit à jour
+  if (typeof PRM === 'undefined' || PRM.state !== 'ok' || PRM.annee !== EVA.annee) return;
+  try { PRM.indiv = await prAll('/rest/v1/primes_indiv?select=*&annee=eq.' + EVA.annee); } catch (e) { /* la prochaine ouverture de Primes relira */ }
+}
+
+// ── Qui, quand, combien ──
+const evaBareme = () => (typeof PRM !== 'undefined' && PRM.state === 'ok') ? prCfg().bareme : PRIMES.BAREME_2026;
+function evaEligible(form, p, per) {                                 // la personne occupe, sur la période, un poste qui donne droit à cette prime
+  const posts = FORMS.postesConcernes(form, evaBareme()), M = evaMois(per);
+  return posts.some(po => ((p.postes_mois || {})[po] || []).some(m => M.includes(m)));
+}
+const evaRows = (form, pid, per) => EVA.rows.filter(x => x.form === form && x.personne_id === pid && x.periode === per);
+function evaRestos() { const s = new Set(EVA.pers.map(p => p.restaurant)); return PRIMES.SOCIETES.map(x => x[1]).filter(r => s.has(r)); }
+function evaPersResto(form, resto) {                                 // personnes du restaurant concernées au moins une période de l'année (ou déjà évaluées)
+  return EVA.pers.filter(p => p.restaurant === resto && (FORMS.periodes(form).some(per => evaEligible(form, p, per)) || EVA.rows.some(x => x.form === form && x.personne_id === p.personne_id)));
+}
+function evaPeriodeRef(form) {                                       // période « en cours » du suivi : la période d'aujourd'hui pour l'année en cours ; la première si l'année est à venir ; null = toute l'année
+  const y = new Date().getFullYear(); if (EVA.annee < y) return null;
+  return EVA.annee > y ? FORMS.periodes(form)[0] : FORMS.periodeDe(form, evaLocalDate());
+}
+function evaMontant(form, palier, pid) {                             // montant en euros du palier pour le poste de la personne (seulement avec la tuile Primes)
+  if (typeof PRM === 'undefined' || PRM.state !== 'ok' || PRM.annee !== EVA.annee || palier == null) return null;
+  const L = prListeIndiv(form, prPersPostes(pid), prCfg()); return L ? (L[palier] || 0) : null;
+}
+function evaAvancement(form, resto) {                                // validées / attendues sur la période en cours (ou sur l'année)
+  const ref = evaPeriodeRef(form), pers = EVA.pers.filter(p => p.restaurant === resto), pers_ = ref ? [ref] : FORMS.periodes(form); let att = 0, ok = 0;
+  pers.forEach(p => pers_.forEach(per => { if (!evaEligible(form, p, per)) return; att++; if (FORMS.retenue(evaRows(form, p.personne_id, per))) ok++; }));
+  return { att, ok, ref };
+}
+
+// ── Affichage ──
+function evaRender() {
+  const box = document.getElementById('evalWrap'); if (!box || !EVA.on) return;
+  if (!evaAny()) { box.innerHTML = ''; return; }
+  let h = '<div class="prm eva"><div class="prm-head"><div><div class="prm-t">Évaluations ' + EVA.annee + '</div><div class="prm-s">Focus et CFV par trimestre, certification par semestre · chaque évaluation validée alimente la prime individuelle de la personne · la dernière évaluation validée de la période fait foi</div></div>' +
+    '<div class="prm-tools"><select class="prm-in" onchange="evaYear(this.value)" title="Année du suivi">' + Array.from({ length: Math.max(1, Math.max(2026, new Date().getFullYear() + 1) - 2025) }, (_, i) => 2026 + i).map(y => '<option value="' + y + '"' + (y === EVA.annee ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>' +
+    '<button class="prm-btn" onclick="evaExport()" ' + (EVA.state === 'ok' ? '' : 'disabled') + '><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporter Excel</button></div></div>';
+  if (EVA.state === 'load' || EVA.state === 'idle') h += '<div class="prm-card prm-info">Chargement des évaluations…</div>';
+  else if (EVA.state === 'err') h += '<div class="prm-card prm-info" style="color:var(--red)">Chargement impossible : ' + prEsc(EVA.err) + ' <button class="prm-btn" onclick="evaLoad()">Réessayer</button></div>';
+  else {
+    h += '<div id="evaMsg" class="prm-msg">' + prEsc(EVA.msg) + '</div>';
+    const rs = evaRestos();
+    if (!rs.length) h += '<div class="prm-card prm-info">Aucune personne à évaluer : les personnes et leur poste se règlent dans l\'onglet Primes (« Personnes et présence »).</div>';
+    else {
+      if (!EVA.sel && rs.length === 1) EVA.sel = rs[0]; if (EVA.sel && !rs.includes(EVA.sel)) EVA.sel = null;
+      h += evaHtmlTuiles(rs);
+      h += '<div class="prm-seg eva-seg">' + evaForms().map(f => '<button class="' + (EVA.tab === f ? 'on' : '') + '" onclick="evaTab(\'' + f + '\')">' + evaNomForm(f) + (EVA.lvl[f] >= 2 ? '' : ' <span class="eva-lock" title="Consultation seule : vous ne pouvez pas réaliser ce formulaire">· lecture</span>') + '</button>').join('') + '</div>';
+      h += evaHtmlForm(EVA.tab, EVA.sel ? [EVA.sel] : rs);
+    }
+  }
+  box.innerHTML = h + '</div>' + (EVA.ed ? evaHtmlEd() : '');
+}
+function evaTab(f) { EVA.tab = f; evaRender(); }
+function evaPick(r) { EVA.sel = r || null; evaRender(); const e = document.getElementById('evalWrap'); if (e) e.scrollIntoView({ block: 'start' }); }
+function evaHtmlTuiles(rs) {                                         // une tuile par restaurant : avancement de la période en cours pour chaque formulaire
+  const chip = (f, r) => { const a = evaAvancement(f, r); if (!a.att) return ''; const c = a.ok >= a.att ? 'ok' : a.ok === 0 ? 'ko' : 'mid'; return '<span class="prm-chip ' + c + '" title="' + evaNomForm(f) + ' · ' + (a.ref ? evaPerLib(a.ref) : 'année ' + EVA.annee) + ' : ' + a.ok + ' validée(s) sur ' + a.att + ' attendue(s)">' + evaNomForm(f) + ' ' + a.ok + '/' + a.att + '</span>'; };
+  const T = rs.map(r => '<button type="button" class="prm-tile' + (EVA.sel === r ? ' on' : '') + '" style="--tc:' + (PR_RCOL[r] || '#64748b') + '" onclick="evaPick(\'' + r + '\')"><div class="prm-tn"><i></i>' + prEsc(prRestoLib(r)) + '</div><div class="eva-chips">' + evaForms().map(f => chip(f, r)).join('') + '</div></button>');
+  const all = rs.length > 1 ? '<button type="button" class="prm-tile all' + (EVA.sel ? '' : ' on') + '" onclick="evaPick(null)"><div class="prm-tn"><i></i>Tous les restaurants</div><div class="eva-chips">' + evaForms().map(f => { let ok = 0, att = 0; rs.forEach(r => { const a = evaAvancement(f, r); ok += a.ok; att += a.att; }); const c = att && ok >= att ? 'ok' : ok === 0 ? 'ko' : 'mid'; return att ? '<span class="prm-chip ' + c + '">' + evaNomForm(f) + ' ' + ok + '/' + att + '</span>' : ''; }).join('') + '</div></button>' : '';
+  return '<div class="prm-tiles">' + all + T.join('') + '</div><div class="prm-leg">Pastilles : évaluations validées sur attendues pour la période en cours (l\'année entière pour une année passée).</div>';
+}
+function evaCell(form, p, per) {
+  const L = evaRows(form, p.personne_id, per), R = FORMS.retenue(L), br = L.filter(x => x.statut !== 'valide'), ed = EVA.lvl[form] >= 2, el = evaEligible(form, p, per), pid = p.personne_id;
+  if (R) {
+    const m = evaMontant(form, R.palier, pid), nv = L.filter(x => x.statut === 'valide').length;
+    return '<button class="eva-c ' + evaPalCls(R.palier) + '" onclick="evaEdit(\'' + R.id + '\')" title="' + prEsc(evaNomForm(form) + ' · ' + evaDate(R.date_eval) + ' · réalisé par ' + (R.realise_par || '—') + (nv > 1 ? ' · ' + nv + ' évaluations validées, la dernière compte' : '')) + '"><b>' + evaPct(R.pct, 1) + '</b><small>' + (R.palier === 5 ? 'aucune prime' : 'palier ' + (R.palier + 1)) + (m != null ? ' · ' + prEur(m) : '') + '</small></button>' +
+      (ed ? '<button class="eva-plus" title="Nouvelle évaluation sur cette période (la dernière validée compte)" onclick="evaNew(\'' + form + '\',\'' + pid + '\',\'' + per + '\')">+</button>' : '') + (br.length ? '<span class="prm-chip na" title="Un brouillon existe aussi">+ brouillon</span>' : '');
+  }
+  if (br.length) return '<button class="eva-c dr" onclick="evaEdit(\'' + br[0].id + '\')" title="Brouillon non validé : ne compte pas dans les primes"><b>Brouillon</b><small>' + (br[0].pct != null ? evaPct(br[0].pct, 0) : 'à terminer') + '</small></button>';
+  if (el && ed) return '<button class="eva-add" onclick="evaNew(\'' + form + '\',\'' + pid + '\',\'' + per + '\')">+ Réaliser</button>';
+  return '<span class="prm-sub">' + (el ? 'à faire' : '·') + '</span>';
+}
+function evaHtmlForm(form, restos) {
+  const D = FORMS.DEFS[form], pers = FORMS.periodes(form), ref = evaPeriodeRef(form); let h = '';
+  restos.forEach(r => {
+    const P = evaPersResto(form, r); if (!P.length) { if (restos.length === 1) h += '<div class="prm-card prm-info">Aucune personne concernée par « ' + prEsc(evaNomForm(form)) + ' » dans ce restaurant en ' + EVA.annee + ' (' + (form === 'certif' ? 'responsable de zone' : 'assistant de direction ou manager') + ').</div>'; return; }
+    h += '<div class="prm-card"><div class="prm-ct"><span class="prm-rn" style="--tc:' + (PR_RCOL[r] || '#64748b') + '"><i></i>' + prEsc(prRestoLib(r)) + '</span><span>' + prEsc(D.titre) + ' ' + EVA.annee + '</span></div><div class="prm-scroll"><table class="prm-xl eva-t"><thead><tr><th class="t-l">Nom</th><th class="t-l">Poste</th>' + pers.map(per => '<th class="' + (per === ref ? 'now' : '') + '">' + evaPerLib(per) + '</th>').join('') + '<th>Moyenne</th>' + (typeof PRM !== 'undefined' && PRM.state === 'ok' && PRM.annee === EVA.annee ? '<th class="g-tot">Prime de l\'année</th>' : '') + '</tr></thead><tbody>';
+    let tot = 0, hasTot = false;
+    P.forEach(p => {
+      const rets = pers.map(per => FORMS.retenue(evaRows(form, p.personne_id, per))), ok = rets.filter(Boolean), moy = ok.length ? ok.reduce((a, x) => a + (+x.pct || 0), 0) / ok.length : null;
+      const ms = ok.map(x => evaMontant(form, x.palier, p.personne_id)), prime = ms.some(v => v != null) ? ms.reduce((a, v) => a + (v || 0), 0) : null; if (prime != null) { tot += prime; hasTot = true; }
+      const posts = Object.keys(p.postes_mois || {}).filter(po => FORMS.postesConcernes(form, evaBareme()).includes(po)).map(po => prPosteLib(po)).join(' / ');
+      h += '<tr' + (p.actif === false ? ' class="eva-off"' : '') + '><td class="t-l prm-n">' + prEsc(p.nom) + (p.actif === false ? ' <span class="prm-sub">(inactif)</span>' : '') + '</td><td class="t-l">' + prEsc(posts || '—') + '</td>' + pers.map(per => '<td class="c' + (per === ref ? ' now' : '') + '">' + evaCell(form, p, per) + '</td>').join('') + '<td class="c">' + (moy == null ? '<span class="prm-sub">—</span>' : '<b>' + evaPct(moy, 1) + '</b>') + '</td>' + (typeof PRM !== 'undefined' && PRM.state === 'ok' && PRM.annee === EVA.annee ? '<td class="n t-tot">' + (prime == null ? '—' : prEur(prime)) + '</td>' : '') + '</tr>';
+    });
+    h += '</tbody>' + (hasTot ? '<tfoot><tr><td class="t-l" colspan="' + (3 + pers.length) + '">Total ' + prEsc(evaNomForm(form)) + '</td><td class="n">' + prEur(tot) + '</td></tr></tfoot>' : '') + '</table></div>' +
+      '<div class="prm-sub" style="margin-top:6px">Seuils : ' + D.seuils.map((s, i) => FORMS.seuilTxt(form, i) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.</div></div>';
+  });
+  return h;
+}
+
+// ── Formulaire (fenêtre) ──
+function evaNew(form, pid, per) {
+  const p = EVA.pers.find(x => x.personne_id === pid);
+  if (EVA.lvl[form] < 2) return;
+  EVA.ed = { id: null, form, restaurant: p ? p.restaurant : (EVA.sel || evaRestos()[0]), personne_id: pid || '', periode: per || evaPeriodeRef(form) || FORMS.periodes(form)[0], date_eval: evaDefDate(per), realise_par: EVA.nom, contexte: {}, reponses: {}, commentaires: {}, statut: 'brouillon' };
+  EVA.dirty = false; evaRender();
+}
+function evaDefDate(per) {                                           // aujourd'hui pour l'année en cours ; sinon le 1er jour de la période
+  const t = evaLocalDate(); if (+t.slice(0, 4) === EVA.annee) return t;
+  return EVA.annee + '-' + (per && per[0] === 'T' ? String((+per[1] - 1) * 3 + 1).padStart(2, '0') : (per === 'S2' ? '07' : '01')) + '-01';
+}
+function evaEdit(id) {
+  const r = EVA.rows.find(x => x.id === id); if (!r) return;
+  EVA.ed = JSON.parse(JSON.stringify(r)); EVA.ed.contexte = EVA.ed.contexte || {}; EVA.ed.reponses = EVA.ed.reponses || {}; EVA.ed.commentaires = EVA.ed.commentaires || {};
+  EVA.dirty = false; evaRender();
+}
+function evaSet(id, v) {                                             // une réponse ; un second clic sur la même réponse l'efface
+  const e = EVA.ed; if (!e || EVA.lvl[e.form] < 2) return;
+  if (e.reponses[id] === v) delete e.reponses[id]; else e.reponses[id] = v;
+  EVA.dirty = true; evaKeepRender();
+}
+function evaAll(v) { const e = EVA.ed; if (!e || EVA.lvl[e.form] < 2) return; FORMS.items(e.form).forEach(i => { if (v === null) delete e.reponses[i.id]; else if (!e.reponses[i.id]) e.reponses[i.id] = v; }); EVA.dirty = true; evaKeepRender(); }
+function evaKeepRender() { const o = document.querySelector('#evalWrap .prm-ov'), t = o ? o.scrollTop : 0; evaRender(); const n = document.querySelector('#evalWrap .prm-ov'); if (n) n.scrollTop = t; }
+function evaField(k, v) {
+  const e = EVA.ed; if (!e) return; e[k] = v; EVA.dirty = true;
+  if (k === 'date_eval') { const per = FORMS.periodeDe(e.form, v); if (per) e.periode = per; evaKeepRender(); }
+  else if (k === 'restaurant' || k === 'periode') { if (!evaPersForEd().some(p => p.personne_id === e.personne_id)) e.personne_id = ''; evaKeepRender(); }
+}
+function evaCtx(k, v) { EVA.ed.contexte[k] = v; EVA.dirty = true; }
+function evaCom(k, v) { EVA.ed.commentaires[k] = v; EVA.dirty = true; }
+function evaPersForEd() {                                            // personnes proposées : celles du restaurant concernées sur la période (+ la personne déjà choisie)
+  const e = EVA.ed; return EVA.pers.filter(p => p.restaurant === e.restaurant && (evaEligible(e.form, p, e.periode) || p.personne_id === e.personne_id));
+}
+function evaCloseEd() { if (EVA.dirty && EVA.lvl[EVA.ed.form] >= 2 && !confirm('Fermer sans enregistrer ? Les réponses saisies seront perdues.')) return; EVA.ed = null; EVA.dirty = false; evaRender(); }
+function evaSumHtml(e) {
+  const D = FORMS.DEFS[e.form], s = FORMS.score(e.form, e.reponses), pal = FORMS.palier(e.form, s.pct), m = evaMontant(e.form, pal, e.personne_id);
+  return '<div class="eva-sum" id="evaSum"><div><span>' + (D.mode === 'points' ? 'Score' : 'Critères « OUI »') + '</span><b>' + (D.mode === 'points' ? s.pts + ' / ' + s.max : s.blocs.reduce((a, b) => a + b.pts, 0) + ' / ' + s.blocs.reduce((a, b) => a + b.max, 0)) + '</b></div>' +
+    '<div><span>Résultat</span><b>' + evaPct(s.pct, 1) + '</b></div><div><span>Palier</span>' + evaPalChip(pal) + '</div>' +
+    '<div><span>Prime</span><b>' + (m != null ? prEur(m) : (pal == null ? '—' : FORMS.LIB_PALIER[pal] + ' du poste')) + '</b></div><div><span>Renseignés</span><b>' + s.repondus + ' / ' + s.total + '</b></div></div>';
+}
+function evaHtmlEd() {
+  const e = EVA.ed, D = FORMS.DEFS[e.form], ro = EVA.lvl[e.form] < 2, P = evaPersForEd(), cert = e.form === 'certif', ex = !!e.id, sc = FORMS.score(e.form, e.reponses);
+  const rs = evaRestos(), an = EVA.annee;
+  let h = '<div class="prm-ov"><div class="prm-md eva-md"><div class="prm-ct">' + prEsc(D.titre) + ' · ' + (ex ? 'évaluation du ' + evaDate(e.date_eval) : 'nouvelle évaluation') + (e.statut === 'valide' ? ' <span class="prm-chip ok">validée</span>' : ' <span class="prm-chip na">brouillon</span>') + '</div>' +
+    '<div class="prm-form eva-form">' +
+    '<label>Restaurant<select ' + ((ex || ro || rs.length < 2) ? 'disabled' : '') + ' onchange="evaField(\'restaurant\',this.value)">' + rs.map(r => '<option value="' + r + '"' + (r === e.restaurant ? ' selected' : '') + '>' + prEsc(prRestoLib(r)) + '</option>').join('') + '</select></label>' +
+    '<label>' + (cert ? 'Certification non annoncée de' : 'Personne évaluée') + '<select ' + ((ex || ro) ? 'disabled' : '') + ' onchange="evaField(\'personne_id\',this.value)"><option value="">— choisir —</option>' + P.map(p => '<option value="' + p.personne_id + '"' + (p.personne_id === e.personne_id ? ' selected' : '') + '>' + prEsc(p.nom) + '</option>').join('') + '</select></label>' +
+    '<label>Période<select ' + ((ex || ro) ? 'disabled' : '') + ' onchange="evaField(\'periode\',this.value)">' + FORMS.periodes(e.form).map(per => '<option value="' + per + '"' + (per === e.periode ? ' selected' : '') + '>' + evaPerLib(per) + '</option>').join('') + '</select></label>' +
+    '<label>' + (cert ? 'Date de certification' : 'Date') + '<input type="date" ' + (ro ? 'disabled' : '') + ' min="' + an + '-01-01" max="' + an + '-12-31" value="' + prEsc(e.date_eval) + '" onchange="evaField(\'date_eval\',this.value)"></label>' +
+    '<label>' + (cert ? 'Certifié par' : 'Réalisé par') + '<input ' + (ro ? 'disabled' : '') + ' maxlength="80" value="' + prEsc(e.realise_par || '') + '" oninput="EVA.ed.realise_par=this.value;EVA.dirty=true"></label>' +
+    D.ctx.map(c => '<label>' + prEsc(c.lib) + '<input ' + (ro ? 'disabled' : '') + ' maxlength="30" value="' + prEsc(e.contexte[c.id] || '') + '" oninput="evaCtx(\'' + c.id + '\',this.value)"></label>').join('') + '</div>' +
+    evaSumHtml(e) +
+    (ro ? '' : '<div class="eva-bar"><button class="prm-btn" onclick="evaAll(\'OUI\')" title="Met « OUI » sur tous les critères sans réponse (comme le classeur vierge)">Tout à OUI</button><button class="prm-btn" onclick="evaAll(null)">Tout effacer</button>' + (D.so ? '<span class="prm-sub">' + (D.mode === 'points' ? 'S/O = sans objet : les points sont acquis.' : 'S/O = sans objet : le critère sort du calcul.') + '</span>' : '') + '</div>');
+  D.blocs.forEach(b => {
+    const bs = sc.blocs.find(x => x.id === b.id);
+    h += '<div class="eva-b"><div class="eva-bh"><b>' + prEsc(b.titre) + '</b>' + (b.horaire ? '<span class="prm-sub">' + prEsc(b.horaire) + '</span>' : '') + '<span class="eva-bs">' + (D.mode === 'points' ? bs.pts + ' / ' + bs.max : evaPct(bs.pct, 0)) + '</span></div>';
+    b.groupes.forEach(g => {
+      if (g.titre) h += '<div class="eva-g">' + prEsc(g.titre) + '</div>';
+      g.items.forEach(i => {
+        const v = e.reponses[i.id] || '', btn = (val, lab, cls) => '<button type="button" class="eva-o ' + cls + (v === val ? ' on' : '') + '" ' + (ro ? 'disabled' : '') + ' onclick="evaSet(\'' + i.id + '\',\'' + val + '\')">' + lab + '</button>';
+        h += '<div class="eva-q' + (v ? ' r-' + v : '') + '"><div class="eva-l">' + prEsc(i.lib) + '</div>' + (D.mode === 'points' ? '<span class="eva-coef" title="Coefficient (points)">' + i.coef + '</span>' : '') + '<div class="eva-ops">' + btn('OUI', 'OUI', 'y') + btn('NON', 'NON', 'n') + (D.so ? btn('SO', 'S/O', 's') : '') + '</div></div>';
+      });
+    });
+    if (cert) h += '<label class="eva-cm">Commentaire<textarea ' + (ro ? 'disabled' : '') + ' rows="2" maxlength="1000" oninput="evaCom(\'' + b.id + '\',this.value)">' + prEsc(e.commentaires[b.id] || '') + '</textarea></label>';
+    h += '</div>';
+  });
+  h += '<label class="eva-cm">Commentaires généraux<textarea ' + (ro ? 'disabled' : '') + ' rows="3" maxlength="2000" oninput="evaCom(\'general\',this.value)">' + prEsc(e.commentaires.general || '') + '</textarea></label>' +
+    '<div class="prm-sub" style="margin:4px 0 8px">Seuils : ' + D.seuils.map((s, i) => FORMS.seuilTxt(e.form, i) + ' → ' + FORMS.LIB_PALIER[i]).join(' · ') + ' de la prime du poste · en dessous : aucune prime.' + (ex ? ' · créée par ' + prEsc(e.cree_par || '—') + ' · modifiée le ' + evaDate(e.maj_le) + ' par ' + prEsc(e.maj_par || '—') : '') + '</div>' +
+    '<div class="prm-actions"><span id="evaEdMsg" class="prm-sub" style="color:var(--red)"></span>' + (ex && !ro ? '<button class="prm-btn" style="margin-right:auto" onclick="evaDelete()">Supprimer</button>' : '') +
+    '<button class="prm-btn" onclick="evaCloseEd()">' + (ro ? 'Fermer' : 'Annuler') + '</button>' +
+    (ro ? '' : '<button class="prm-btn" ' + (EVA.busy ? 'disabled' : '') + ' onclick="evaSave(false)">Enregistrer le brouillon</button><button class="prm-btn pri" ' + (EVA.busy ? 'disabled' : '') + ' onclick="evaSave(true)" title="Valide l\'évaluation : la prime de la personne est mise à jour">Valider' + (e.statut === 'valide' ? ' à nouveau' : '') + '</button>') + '</div></div></div>';
+  return h;
+}
+
+// ── Enregistrement ──
+async function evaSave(valider) {
+  const e = EVA.ed, D = FORMS.DEFS[e.form], em = t => { const x = document.getElementById('evaEdMsg'); if (x) x.textContent = t; };
+  if (!e.personne_id) return em('Choisissez la personne évaluée.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date_eval || '') || +e.date_eval.slice(0, 4) !== EVA.annee) return em('Date : choisissez une date de ' + EVA.annee + '.');
+  const per = FORMS.periodes(e.form); if (!per.includes(e.periode)) return em('Période invalide.');
+  const sc = FORMS.score(e.form, e.reponses), pal = FORMS.palier(e.form, sc.pct);
+  if (valider && !sc.complet) return em('Pour valider, répondez à tous les critères (' + sc.repondus + ' / ' + sc.total + ' renseignés), ou enregistrez un brouillon.');
+  const row = { franchise: prFr(), restaurant: e.restaurant, personne_id: e.personne_id, form: e.form, modele: FORMS.DEFS.modele, annee: EVA.annee, periode: e.periode, date_eval: e.date_eval,
+    realise_par: (e.realise_par || '').trim() || null, contexte: e.contexte, reponses: e.reponses, commentaires: e.commentaires,
+    score: sc.pct == null ? null : (D.mode === 'points' ? sc.pts : sc.blocs.reduce((a, b) => a + b.pts, 0)), maximum: sc.pct == null ? null : (D.mode === 'points' ? sc.max : sc.blocs.reduce((a, b) => a + b.max, 0)),
+    pct: sc.pct == null ? null : Math.round(sc.pct * 10000) / 10000, palier: pal, statut: valider ? 'valide' : 'brouillon' };
+  if (e.id) row.id = e.id;
+  EVA.busy = true; evaKeepRender();
+  try {
+    const out = await prSave('primes_formulaires', [row], 'id'), n = out[0] || row;
+    const i = EVA.rows.findIndex(x => x.id === n.id); if (i >= 0) EVA.rows[i] = n; else EVA.rows.unshift(n);
+    EVA.ed = null; EVA.dirty = false; EVA.busy = false; evaRender();
+    evaMsg(valider ? 'Évaluation validée : ' + evaPct(n.pct, 1) + ' · ' + (n.palier === 5 ? 'aucune prime' : 'palier ' + (n.palier + 1) + ' (' + FORMS.LIB_PALIER[n.palier] + ' de la prime)') + ' — la prime est mise à jour.' : 'Brouillon enregistré (il ne compte pas dans les primes).');
+    if (valider) evaRefreshPrimes();
+  } catch (x) { EVA.busy = false; evaKeepRender(); em('Enregistrement impossible : ' + x.message); }
+}
+async function evaDelete() {
+  const e = EVA.ed; if (!e || !e.id) return;
+  if (!confirm('Supprimer cette évaluation' + (e.statut === 'valide' ? ' ? La prime de la période reviendra à l\'évaluation validée précédente (ou sera retirée s\'il n\'y en a pas)' : '') + ' ?')) return;
+  try { await prDel('primes_formulaires', 'id=eq.' + e.id); EVA.rows = EVA.rows.filter(x => x.id !== e.id); EVA.ed = null; EVA.dirty = false; evaRender(); evaMsg('Évaluation supprimée.'); evaRefreshPrimes(); }
+  catch (x) { const m = document.getElementById('evaEdMsg'); if (m) m.textContent = 'Suppression impossible : ' + x.message; }
+}
+
+// ── Export Excel : suivi annuel par formulaire, détail des évaluations, réponses critère par critère ──
+async function evaExport() {
+  try { await _loadXlsx(); } catch (e) { return evaMsg('Export impossible : bibliothèque Excel non chargée.', true); }
+  const X = XLSX, wb = X.utils.book_new(), P = new Map(EVA.pers.map(p => [p.personne_id, p]));
+  const H = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F2937' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }, T = { font: { bold: true, sz: 12 } };
+  const add = (name, rows, cols, hdr) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = (cols || []).map(w => ({ wch: w })); (hdr || []).forEach(r => { for (let c = 0; c < (rows[r] || []).length; c++) { const a = X.utils.encode_cell({ r, c }); if (ws[a]) ws[a].s = H; } }); if (ws.A1) ws.A1.s = T; X.utils.book_append_sheet(wb, ws, name.slice(0, 31)); };
+  const rs = evaRestos(), val = (f, pid, per) => FORMS.retenue(evaRows(f, pid, per));
+  evaForms().forEach(f => {
+    const D = FORMS.DEFS[f], per = FORMS.periodes(f), rows = [[D.court.toUpperCase() + ' ' + EVA.annee + ' — suivi annuel (résultat de la dernière évaluation validée de chaque période)'], [], ['RESTAURANT', 'NOM'].concat(per.flatMap(p => [p + ' %', p + ' PALIER', p + ' DATE', p + ' RÉALISÉ PAR']), ['MOYENNE'])];
+    rs.forEach(r => evaPersResto(f, r).forEach(p => { const rets = per.map(pp => val(f, p.personne_id, pp)), ok = rets.filter(Boolean);
+      rows.push([prRestoLib(r), p.nom].concat(rets.flatMap(x => x ? [Math.round(x.pct * 1000) / 10, x.palier === 5 ? 'aucune prime' : x.palier + 1, evaDate(x.date_eval), x.realise_par || ''] : ['', '', '', '']), [ok.length ? Math.round(ok.reduce((a, x) => a + x.pct, 0) / ok.length * 1000) / 10 : ''])); }));
+    add('SUIVI ' + D.court.toUpperCase(), rows, [16, 22].concat(per.flatMap(() => [9, 11, 11, 18]), [10]), [2]);
+  });
+  const det = [['ÉVALUATIONS ' + EVA.annee + ' (toutes, validées et brouillons)'], [], ['RESTAURANT', 'NOM', 'FORMULAIRE', 'PÉRIODE', 'DATE', 'RÉALISÉ PAR', 'STATUT', 'POINTS', 'MAXIMUM', 'RÉSULTAT %', 'PALIER', 'COMMENTAIRE']];
+  EVA.rows.slice().sort((a, b) => String(a.restaurant).localeCompare(b.restaurant) || String(a.form).localeCompare(b.form) || String(a.periode).localeCompare(b.periode)).forEach(x => { const p = P.get(x.personne_id) || { nom: '?' };
+    det.push([prRestoLib(x.restaurant), p.nom, evaNomForm(x.form), x.periode, evaDate(x.date_eval), x.realise_par || '', x.statut === 'valide' ? 'validée' : 'brouillon', x.score == null ? '' : +x.score, x.maximum == null ? '' : +x.maximum, x.pct == null ? '' : Math.round(x.pct * 1000) / 10, x.palier == null ? '' : (x.palier === 5 ? 'aucune prime' : x.palier + 1), (x.commentaires || {}).general || '']); });
+  add('DÉTAIL', det, [16, 22, 14, 8, 11, 18, 10, 8, 9, 10, 12, 50], [2]);
+  evaForms().forEach(f => {
+    const D = FORMS.DEFS[f], L = EVA.rows.filter(x => x.form === f && x.statut === 'valide').sort((a, b) => String(a.restaurant).localeCompare(b.restaurant) || String(a.periode).localeCompare(b.periode) || ((P.get(a.personne_id) || {}).nom || '').localeCompare((P.get(b.personne_id) || {}).nom || ''));
+    if (!L.length) return;
+    const rows = [[D.titre + ' ' + EVA.annee + ' — réponses critère par critère (évaluations validées)'], [], ['BLOC', 'CRITÈRE', 'COEF'].concat(L.map(x => (prRestoLib(x.restaurant) + ' · ' + ((P.get(x.personne_id) || {}).nom || '?') + ' · ' + x.periode)))];
+    D.blocs.forEach(b => b.groupes.forEach(g => g.items.forEach(i => rows.push([b.titre, (g.titre ? g.titre + ' — ' : '') + i.lib, D.mode === 'points' ? i.coef : ''].concat(L.map(x => { const v = (x.reponses || {})[i.id]; return v === 'SO' ? 'S/O' : (v || ''); }))))));
+    rows.push(['', 'RÉSULTAT %', ''].concat(L.map(x => Math.round(x.pct * 1000) / 10)));
+    add('RÉPONSES ' + D.court.toUpperCase(), rows, [24, 70, 6].concat(L.map(() => 16)), [2]);
+  });
+  X.writeFile(wb, 'Evaluations_' + EVA.annee + '.xlsx'); evaMsg('Fichier Excel généré.');
+}
+
 function setMode(val) {
-  if (val === 'primes') { prOpen(); return; }
-  prClose();
+  if (val === 'primes') { evaClose(); prOpen(); return; }
+  if (val === 'eval') { prClose(); evaOpen(); return; }
+  prClose(); evaClose();
   compareMode = false;
   prevMode    = false;
   kpiViewMode = false;
@@ -12374,6 +13658,50 @@ body.dark-mode .prm { --pg: #3b4259; }
 .prm-conds b { font-weight: 800; }
 .prm-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 14px; }
 @media (max-width: 760px) { .prm-card { padding: 12px; } .prm-t { font-size: 1.05rem; } }
+.prm-rn { display: inline-flex; align-items: center; gap: 7px; }
+.prm-rn i { width: 10px; height: 10px; border-radius: 50%; background: var(--tc); display: inline-block; }
+/* Évaluations (formulaires Focus, CFV, Certification) */
+.eva-seg { margin: 4px 0 12px; }
+.eva-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.eva-t td.c { white-space: normal; min-width: 112px; }
+.eva-t th.now, .eva-t td.now { background: rgba(250,204,21,.20); }
+.eva-off td { opacity: .6; }
+.eva-c { display: inline-flex; flex-direction: column; align-items: center; min-width: 92px; border: 1.5px solid var(--border); border-radius: 9px; padding: 3px 8px; font: 800 .78rem var(--font); cursor: pointer; background: var(--card); color: var(--text); }
+.eva-c small { font-weight: 600; font-size: .64rem; color: var(--muted); }
+.eva-c.ok { border-color: var(--green); background: rgba(30,132,73,.10); }
+.eva-c.mid { border-color: #d97706; background: rgba(245,158,11,.12); }
+.eva-c.ko { border-color: var(--red); background: rgba(192,57,43,.10); }
+.eva-c.dr { border-style: dashed; color: var(--muted); }
+.eva-add { border: 1.5px dashed var(--gold); background: transparent; color: var(--text); font: 700 .72rem var(--font); padding: 6px 10px; border-radius: 9px; cursor: pointer; }
+.eva-add:hover { background: rgba(250,204,21,.18); }
+.eva-plus { border: 1px solid var(--border); background: var(--card); border-radius: 50%; width: 20px; height: 20px; margin-left: 4px; cursor: pointer; font-weight: 800; line-height: 1; color: var(--muted); padding: 0; }
+.prm-frm { display: inline-flex; vertical-align: middle; color: var(--green); margin-left: 2px; }
+.eva-md { width: min(1000px, 100%); }
+.eva-sum { position: sticky; top: 0; z-index: 3; display: flex; gap: 20px; flex-wrap: wrap; align-items: center; background: var(--card2); border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 14px; margin: 12px 0; box-shadow: 0 4px 10px rgba(0,0,0,.10); }
+.eva-sum > div { display: flex; flex-direction: column; gap: 2px; }
+.eva-sum span { font-size: .62rem; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: .03em; }
+.eva-sum b { font-size: 1.05rem; }
+.eva-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+.eva-b { border: 1.5px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.eva-bh { display: flex; align-items: center; gap: 10px; background: var(--card2); padding: 8px 12px; flex-wrap: wrap; }
+.eva-bh .prm-sub { display: inline; }
+.eva-bs { margin-left: auto; font-weight: 800; }
+.eva-g { padding: 7px 12px 3px; font-size: .68rem; font-weight: 800; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; border-top: 1px solid var(--pg); }
+.eva-q { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-top: 1px solid var(--pg); font-size: .82rem; }
+.eva-q.r-NON { background: rgba(192,57,43,.07); }
+.eva-q.r-SO { background: rgba(148,163,184,.14); }
+.eva-l { flex: 1 1 auto; min-width: 0; }
+.eva-coef { flex: 0 0 auto; font-size: .66rem; font-weight: 800; color: var(--muted); background: var(--card2); border-radius: 20px; padding: 1px 7px; }
+.eva-ops { display: flex; gap: 4px; flex: 0 0 auto; }
+.eva-o { border: 1.5px solid var(--border); background: var(--card); color: var(--muted); font: 800 .7rem var(--font); padding: 5px 10px; border-radius: 8px; cursor: pointer; min-width: 44px; }
+.eva-o.y.on { background: var(--green); border-color: var(--green); color: #fff; }
+.eva-o.n.on { background: var(--red); border-color: var(--red); color: #fff; }
+.eva-o.s.on { background: #64748b; border-color: #64748b; color: #fff; }
+.eva-o[disabled] { cursor: default; }
+.eva-cm { display: block; padding: 8px 12px; font-size: .72rem; font-weight: 700; color: var(--muted); }
+.eva-cm textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; font: 500 .8rem var(--font); border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--card); color: var(--text); resize: vertical; }
+.eva-lock { font-weight: 600; font-size: .66rem; color: var(--muted); }
+@media (max-width: 760px) { .eva-sum { padding: 6px 10px; gap: 6px 14px; } .eva-sum b { font-size: .9rem; } .eva-sum span { font-size: .56rem; } .eva-q { flex-wrap: wrap; } .eva-ops { width: 100%; } .eva-o { flex: 1; padding: 9px 10px; min-width: 0; } .eva-sum { gap: 12px; } .eva-md { padding: 14px 12px; } }
 </style>
 <!-- ════════ FAQ / AIDE ════════ -->
 <style>
@@ -12855,7 +14183,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261114-210619';
+const BUILD_VERSION = '20261115-090418';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
