@@ -4971,11 +4971,22 @@ async function prSavePers() {
 async function prExport() {
   try { await _loadXlsx(); } catch (e) { return prMsg('Export impossible : bibliothèque Excel non chargée.', true); }
   const X = XLSX, wb = X.utils.book_new(), AC = [prCalc(0), prCalc(1)], P = new Map(PRM.personnes.map(p => [p.id, p]));
-  const H = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F2937' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }, T = { font: { bold: true, sz: 12 } }, TOT = { font: { bold: true }, fill: { fgColor: { rgb: 'FEF3C7' } } };
-  const add = (name, rows, cols, hdrRows, totRows) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = (cols || []).map(w => ({ wch: w }));
-    (hdrRows || []).forEach(r => { for (let c = 0; c < (rows[r] || []).length; c++) { const a = X.utils.encode_cell({ r, c }); if (ws[a]) ws[a].s = H; } });
-    (totRows || []).forEach(r => { for (let c = 0; c < (rows[r] || []).length; c++) { const a = X.utils.encode_cell({ r, c }); if (ws[a]) ws[a].s = TOT; } });
+  // Visuel du classeur d'origine « PRIMES 2026.xlsx » : police Avenir Next Condensed, pastel par indicateur, montants en €, quadrillage masqué (fond blanc), en-têtes sur deux niveaux, libellé de semestre vertical.
+  const FN = 'Avenir Next Condensed', EUR = '#,##0.00\\ "€"', PCT = '0%';
+  const S = (o = {}) => ({ font: { name: FN, sz: o.sz || 12, bold: !!o.b, color: { rgb: o.c || '000000' } }, fill: { patternType: 'solid', fgColor: { rgb: o.f || 'FFFFFF' } }, alignment: { horizontal: o.h || 'center', vertical: 'center', wrapText: !!o.w, textRotation: o.rot || 0 }, border: o.bd, numFmt: o.nf });
+  const BD = (c = 'D9D9D9') => { const e = { style: 'thin', color: { rgb: c } }; return { top: e, bottom: e, left: e, right: e }; };
+  const GR = { pres: ['9DC3E6', 'DEEBF7'], sec: ['FFD966', 'FFF2CC', 'FFE699'], qsp: ['F4B183', 'FBE5D6', 'F8CBAD'], perf: ['A9D18E', 'E2F0D9', 'C5E0B4'], fin: ['8497B0', 'D6DCE5', 'ADB9CA'], aud: ['B294D3', 'EBDEF8', 'D7CAE2'], ev: ['C9C9C9', 'EDEDED', 'DBDBDB'], oth: ['D9D9D9', 'F2F2F2', 'E7E6E6'] };
+  const add = (name, rows, cols, opt) => {
+    opt = opt || {}; const nR = rows.length, nC = Math.max(1, ...rows.map(r => r.length));
+    const ws = X.utils.aoa_to_sheet(rows.map(r => r.map(v => v === undefined || v === null ? '' : v)));
+    ws['!cols'] = (cols || []).map(w => ({ wch: w })); ws['!rows'] = rows.map((r, i) => ({ hpt: (opt.ht && opt.ht[i]) || 20 }));
+    const mgs = (opt.merges || []).slice();                                                                  // une ligne qui ne contient qu'un texte (titre, note) est fusionnée sur la largeur : le texte n'est plus coupé
+    rows.forEach((r, i) => { if (nC > 3 && typeof r[0] === 'string' && r[0] !== '' && r.slice(1).every(v => v === '' || v === undefined || v === null) && !mgs.some(m => m.s.r <= i && m.e.r >= i && m.s.c === 0)) mgs.push({ s: { r: i, c: 0 }, e: { r: i, c: Math.min(nC - 1, 12) } }); });
+    if (mgs.length) ws['!merges'] = mgs;
+    for (let r = 0; r < nR + 2; r++) for (let c = 0; c < nC + 2; c++) { const a = X.utils.encode_cell({ r, c }), cell = ws[a] || (ws[a] = { t: 's', v: '' }), v = rows[r] ? rows[r][c] : undefined; cell.s = (opt.sty && r < nR && c < nC ? opt.sty(r, c, v) : null) || S(); }      // fond blanc partout : pas de quadrillage
+    ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: nR + 1, c: nC + 1 } });
     X.utils.book_append_sheet(wb, ws, name.slice(0, 31)); return ws; };
+  const titleSty = () => S({ b: 1, c: 'FFFFFF', f: '000000', h: 'left', sz: 14 }), mTitle = n => [{ s: { r: 0, c: 0 }, e: { r: 0, c: n } }];
   const B = prCfg().bareme, pl = { directeur: 'DIRECTEUR', adjoint: 'DIRECTEUR ADJOINT', assistant: 'ASSISTANT DE DIRECTION', manager: 'MANAGER', rz: 'RESPONSABLE DE ZONE', adm: 'ASSISTANT ADMINISTRATIF (ADM)', hotesse: 'HÔTESSE PRINCIPALE' };
   {
     const CF = prCfg(), rows = [['SYSTÈME DE PRIME ' + PRM.annee + ' (référence des montants et des objectifs)'], [], ['POSTE', 'PRÉLÈVEMENT (par trim.)', 'AUDIT (par trim.)', 'OEPE', 'R2P', 'OPH', 'CFV (par trim.)', 'FOCUS (par trim.)', 'CERTIF', 'CA', 'PAC', 'RH', 'FORMATION', 'MARKETING', 'PEP', 'ÉVALUATION', 'MAXIMUM ANNUEL (calculé)']], hd = [2];
@@ -4994,28 +5005,85 @@ async function prExport() {
       hd.push(rows.length); rows.push(['RESTAURANT'].concat(Object.keys(pl).map(k => pl[k])));
       [['tous', 'Tous les restaurants']].concat(prRestos().map(r => [r, prRestoLib(r)])).forEach(([key, lib]) => rows.push([lib].concat(Object.keys(pl).map(k => { const v = ((PV.montants || {})[key] || {})[k]; return v === undefined ? '' : v; }))));
     }
-    add('SYSTÈME DE PRIME', rows, [30, 16, 16, 16, 60, 10, 14, 14, 10, 10, 10, 10, 10, 10, 10, 12, 18], hd);
+    const objHdr = rows.findIndex(x => x[0] === 'RESTAURANT' && x[1] === 'OEPE 1er sem.'), nRs = prRestos().length;
+    const nP = Object.keys(pl).length, SYC = ['', 'sec', 'sec', 'qsp', 'qsp', 'qsp', 'perf', 'perf', 'perf', 'fin', 'fin', 'aud', 'aud', 'aud', 'aud', 'ev', 'oth'];
+    add('SYSTÈME DE PRIME', rows, [30, 16, 16, 16, 60, 10, 14, 14, 10, 10, 10, 10, 10, 10, 10, 12, 18], { merges: mTitle(6), ht: Object.fromEntries(hd.map(r => [r, 36])), sty: (r, c, v) => {
+      if (r === 0) return titleSty();
+      if (r === 2) return c === 0 ? S({ b: 1, c: 'FFFFFF', f: '767171', w: 1, bd: BD() }) : S({ b: 1, w: 1, f: (GR[SYC[c] || 'oth'][2] || GR.oth[2]), bd: BD() });
+      if (hd.includes(r)) return S({ b: 1, c: 'FFFFFF', f: '203864', w: 1, bd: BD() });
+      if (r >= 3 && r < 3 + nP) return c === 0 ? S({ b: 1, h: 'left', f: 'F2F2F2', bd: BD() }) : S({ f: (GR[SYC[c] || 'oth'][1]), nf: EUR, bd: BD() });
+      if (objHdr >= 0 && r > objHdr && r <= objHdr + nRs) return c === 0 ? S({ h: 'left', b: 1 }) : S({ nf: '0' });      // objectifs OEPE / R2P : des secondes, pas des euros
+      if (v !== '' && typeof v === 'string' && /^(POSTE|RESTAURANT|CRITÈRE)$/.test(v)) return S({ b: 1 });
+      if (typeof v === 'number') return S({ nf: EUR });
+      return S({ h: 'left', b: /^(MONTANTS POSSIBLES|OBJECTIFS OEPE|CRITÈRES D|PPV \()/.test(String(v)) });
+    } });
   }
   const co = [['RÉSULTATS COLLECTIFS']]; const coH = [];
   [0, 1].forEach(s => { co.push([], [s === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE']); coH.push(co.length); co.push(['RESTAURANT', 'PRÉLÈVEMENT T' + (s * 2 + 1), 'PRÉLÈVEMENT T' + (s * 2 + 2), 'AUDIT T' + (s * 2 + 1), 'AUDIT T' + (s * 2 + 2), 'OEPE moy. (s)', 'OEPE objectif', 'OEPE', 'R2P moy. (s)', 'R2P objectif', 'R2P', 'OPH', 'CA vs N-1', 'PAC (écart)']);
     prRestos().forEach(r => { const c = AC[s].coll[r]; if (!c) return; const d = c.detail || {}, o = AC[s].obj[r] || {}; co.push([prRestoLib(r), c.prel[0], c.prel[1], c.audit[0], c.audit[1], d.oepe == null ? '' : Math.round(d.oepe), o.oepe == null ? '' : o.oepe, c.oepe, d.r2p == null ? '' : Math.round(d.r2p), o.r2p == null ? '' : o.r2p, c.r2p, c.oph == null ? '' : Math.round(c.oph * 100) / 100, c.ca == null ? '' : Math.round(c.ca * 10000) / 10000, c.pac == null ? '' : Math.round(c.pac * 10000) / 10000]); }); });
-  add('COLLECTIVES', co, [18, 12, 12, 12, 12, 12, 12, 8, 12, 12, 8, 10, 12, 12], coH);
+  add('COLLECTIVES', co, [18, 12, 12, 12, 12, 12, 12, 8, 12, 12, 8, 10, 12, 12], { merges: mTitle(5), ht: Object.fromEntries(coH.map(r => [r, 36])), sty: (r, c, v) => {
+    if (r === 0) return titleSty();
+    if (coH.includes(r + 1)) return c === 0 ? S({ b: 1, c: 'FFFFFF', f: '535353', h: 'left' }) : S({ f: '535353' });
+    if (coH.includes(r)) return S({ b: 1, f: c === 0 ? 'C9C9C9' : 'BFBFBF', w: 1, bd: BD('A6A6A6') });
+    if (r < 2) return null;
+    return c === 0 ? S({ b: 1, h: 'left', f: 'DBDBDB', bd: BD() }) : S({ b: 1, f: 'EDEDED', bd: BD(), nf: (typeof v === 'number' && c >= 12) ? '0.00%' : undefined });
+  } });
   const og = [['ORGANIGRAMME ' + PRM.annee + ' (fraction de contrat par mois)'], [], ['RESTAURANT', 'NOM', 'POSTE'].concat(PR_MOIS_C)];
   PRM.personnes.forEach(p => { const ps = [...new Set(PRM.org.filter(o => o.personne_id === p.id).map(o => o.poste))]; ps.forEach(po => { const l = new Array(12).fill(''); PRM.org.filter(o => o.personne_id === p.id && o.poste === po).forEach(o => { l[o.mois - 1] = Math.round(+o.contrat * 10000) / 10000; }); og.push([prRestoLib(p.restaurant), p.nom, prPosteLib(po)].concat(l)); }); });
-  add('ORGANIGRAMME', og, [16, 22, 24].concat(new Array(12).fill(7)), [2]);
+  add('ORGANIGRAMME', og, [16, 22, 24].concat(new Array(12).fill(9)), { merges: mTitle(5), sty: (r, c, v) => {
+    if (r === 0) return titleSty();
+    if (r === 2) return S({ b: 1, f: c < 3 ? '000000' : 'E2F0D9', c: c < 3 ? 'FFFFFF' : '000000', bd: BD() });
+    if (r < 2) return null;
+    return c === 0 ? S({ f: 'E2F0D9', h: 'left', bd: BD() }) : (c < 3 ? S({ h: 'left', b: c === 1, bd: BD() }) : S({ nf: PCT, bd: BD() }));
+  } });
   const iv = [['PRIMES INDIVIDUELLES ' + PRM.annee], [], ['RESTAURANT', 'NOM', 'CFV T1', 'CFV T2', 'FOCUS T1', 'FOCUS T2', 'CERTIF S1', 'FIXE S1', 'CFV T3', 'CFV T4', 'FOCUS T3', 'FOCUS T4', 'CERTIF S2', 'FIXE S2']];
   const g = (pid, ind, per) => { const x = PRM.indiv.find(i => i.personne_id === pid && i.indic === ind && i.periode === per); return x ? prMontantIndiv(x) : 0; };
   PRM.personnes.forEach(p => iv.push([prRestoLib(p.restaurant), p.nom, g(p.id, 'cfv', 'T1'), g(p.id, 'cfv', 'T2'), g(p.id, 'focus', 'T1'), g(p.id, 'focus', 'T2'), g(p.id, 'certif', 'S1'), g(p.id, 'fixe', 'S1'), g(p.id, 'cfv', 'T3'), g(p.id, 'cfv', 'T4'), g(p.id, 'focus', 'T3'), g(p.id, 'focus', 'T4'), g(p.id, 'certif', 'S2'), g(p.id, 'fixe', 'S2')]));
-  add('INDIVIDUELLES', iv, [16, 22, 9, 9, 9, 9, 10, 9, 9, 9, 9, 9, 10, 9], [2]);
+  const IVC = ['', '', 'perf', 'perf', 'sec', 'sec', 'qsp', 'oth', 'perf', 'perf', 'sec', 'sec', 'qsp', 'oth'];
+  add('INDIVIDUELLES', iv, [16, 22, 10, 10, 10, 10, 11, 10, 10, 10, 10, 10, 11, 10], { merges: mTitle(5), ht: { 2: 30 }, sty: (r, c, v) => {
+    if (r === 0) return titleSty();
+    if (r === 2) return c < 2 ? S({ b: 1, c: 'FFFFFF', f: '767171', bd: BD() }) : S({ b: 1, f: GR[IVC[c]][2], w: 1, bd: BD() });
+    if (r < 2) return null;
+    return c < 2 ? S({ h: 'left', b: c === 1, f: 'DAE3F3', bd: BD() }) : S({ f: GR[IVC[c]][1], nf: EUR, bd: BD() });
+  } });
   const au = [['AUDITS RH / FORMATION / MARKETING / PEP ' + PRM.annee + ' (score en %)'], [], ['RESTAURANT', 'RH', 'FORMATION', 'MARKETING', 'PEP']];
   prRestos().forEach(r => { const A = prAudRest(r); au.push([prRestoLib(r)].concat(PRIMES.DOMAINES_AUDIT.map(dm => A[dm] == null ? '' : A[dm]))); });
-  add('AUDITS', au, [18, 10, 12, 12, 10], [2]);
+  add('AUDITS', au, [18, 10, 12, 12, 10], { merges: mTitle(4), ht: { 2: 30 }, sty: (r, c, v) => {
+    if (r === 0) return titleSty();
+    if (r === 2) return c === 0 ? S({ b: 1, c: 'FFFFFF', f: '767171', bd: BD() }) : S({ b: 1, f: GR.aud[2], bd: BD() });
+    if (r < 2) return null;
+    return c === 0 ? S({ h: 'left', b: 1, f: 'F2F2F2', bd: BD() }) : S({ f: GR.aud[1], bd: BD() });
+  } });
   PRIMES.SOCIETES.forEach(([feuille, r]) => {
-    if (!prRestos().includes(r)) return; const rows = [[feuille + ' · ' + prRestoLib(r)]], hd = [], tt = [];
-    [0, 1].forEach(s => { rows.push([], [s === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE']); hd.push(rows.length); rows.push(['POSTE', 'NOM', 'PRÉSENCE', 'PRÉLÈVEMENT', 'AUDIT', 'OEPE', 'R2P', 'OPH', 'CFV', 'FOCUS', 'CERTIF', 'CA', 'PAC', 'RH', 'FORMATION', 'MARKETING', 'PEP', 'ÉVALUATION', 'FIXE'].concat(prCfg().seuils.ppv.actif ? ['PPV'] : [], prCfg().perso.map(x => x.nom.toUpperCase()), ['TOTAL PRIME BRUT']));
-      const L = AC[s].lignes[r] || []; L.forEach(l => rows.push([prPosteLib(l.poste === 'fixe' ? ([...prPersPostes(l.nom)].find(x => x === 'adm' || x === 'hotesse') || 'adm') : l.poste), (P.get(l.nom) || {}).nom, l.coef == null ? '' : Math.round(l.coef * 10000) / 10000, l.prel, l.audit, l.oepe, l.r2p, Math.round(l.oph * 100) / 100, l.cfv, l.focus, l.certif, l.ca, l.pac].concat(l.aud || [0, 0, 0, 0], [l.eval || 0, l.fixe], prCfg().seuils.ppv.actif ? [l.ppv || 0] : [], prCfg().perso.map(x => (l.custom || {})[x.id] || 0), [Math.round(l.total * 100) / 100])));
-      tt.push(rows.length); rows.push(['TOTAL'].concat(new Array(18 + prCfg().perso.length + (prCfg().seuils.ppv.actif ? 1 : 0)).fill(''), [Math.round(L.reduce((a, l) => a + l.total, 0) * 100) / 100])); });
-    add(feuille, rows, [26, 22, 10, 12, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 12, 10].concat(prCfg().seuils.ppv.actif ? [10] : [], prCfg().perso.map(() => 14), [16]), hd, tt);
+    if (!prRestos().includes(r)) return;
+    const CF = prCfg(), ppv = CF.seuils.ppv.actif, per = CF.perso, nX = 1 + (ppv ? 1 : 0) + per.length, cT = 20 + nX, cE = 20 + nX - 1 + 0;     // colonnes : 0 marge · 1 semestre · 2 poste · 3 nom · 4 présence · 5-6 sécurité alim. · 7-9 QSP · 10-12 performance · 13-14 financier · 15-18 audit · 19 évaluation · 20.. autres · dernière = total
+    const total = 20 + nX, cg = []; cg[4] = 'pres'; [5, 6].forEach(i => cg[i] = 'sec'); [7, 8, 9].forEach(i => cg[i] = 'qsp'); [10, 11, 12].forEach(i => cg[i] = 'perf'); [13, 14].forEach(i => cg[i] = 'fin'); [15, 16, 17, 18].forEach(i => cg[i] = 'aud'); cg[19] = 'ev'; for (let i = 20; i < total; i++) cg[i] = 'oth';
+    const rows = [[], [], []], kind = ['blank', 'g', 'h'], mg = [], semRows = [];
+    const g1 = new Array(total + 1).fill(''), h1 = new Array(total + 1).fill('');
+    g1[1] = feuille + ' · ' + prRestoLib(r); g1[3] = 'NOM'; g1[4] = 'PRÉSENCE'; g1[5] = 'SÉCURITÉ ALIMENTAIRE'; g1[7] = 'QSP'; g1[10] = 'PERFORMANCE'; g1[13] = 'FINANCIER'; g1[15] = 'AUDIT'; g1[19] = 'PERFORMANCE'; g1[20] = 'AUTRES'; g1[total] = 'TOTAL PRIME BRUT';
+    ['PRÉLÈVEMENT', 'AUDIT', 'OEPE', 'R2P', 'OPH', 'CFV', 'FOCUS', 'CERTIF', 'CA', 'PAC', 'RH', 'FORMATION', 'MARKETING', 'PEP', 'ÉVALUATION', 'FIXE'].forEach((t, i) => { h1[5 + i] = t; if (i === 15) return; }); h1[19] = 'ÉVALUATION'; h1[20] = 'FIXE'; let k = 21; if (ppv) h1[k++] = 'PPV'; per.forEach(x => { h1[k++] = x.nom.toUpperCase(); });
+    rows[1] = g1; rows[2] = h1;
+    mg.push({ s: { r: 1, c: 1 }, e: { r: 2, c: 2 } }, { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, { s: { r: 1, c: 4 }, e: { r: 2, c: 4 } }, { s: { r: 1, c: 5 }, e: { r: 1, c: 6 } }, { s: { r: 1, c: 7 }, e: { r: 1, c: 9 } }, { s: { r: 1, c: 10 }, e: { r: 1, c: 12 } }, { s: { r: 1, c: 13 }, e: { r: 1, c: 14 } }, { s: { r: 1, c: 15 }, e: { r: 1, c: 18 } }, { s: { r: 1, c: 20 }, e: { r: 1, c: total - 1 } }, { s: { r: 1, c: total }, e: { r: 2, c: total } });
+    [0, 1].forEach(sem => {
+      const L = AC[sem].lignes[r] || [], r0 = rows.length;
+      L.forEach(l => { rows.push(['', '', prPosteLib(l.poste === 'fixe' ? ([...prPersPostes(l.nom)].find(x => x === 'adm' || x === 'hotesse') || 'adm') : l.poste), (P.get(l.nom) || {}).nom, l.coef == null ? '' : Math.round(l.coef * 10000) / 10000, l.prel, l.audit, l.oepe, l.r2p, Math.round(l.oph * 100) / 100, l.cfv, l.focus, l.certif, l.ca, l.pac].concat(l.aud || [0, 0, 0, 0], [l.eval || 0, l.fixe], ppv ? [l.ppv || 0] : [], per.map(x => (l.custom || {})[x.id] || 0), [Math.round(l.total * 100) / 100])); kind.push('line'); });
+      rows.push(['', '', 'TOTAL', '', ''].concat(new Array(total - 5).fill(''), [Math.round(L.reduce((a, l) => a + l.total, 0) * 100) / 100])); kind.push('tot');
+      rows[r0][1] = sem === 0 ? 'PREMIER SEMESTRE' : 'SECOND SEMESTRE'; mg.push({ s: { r: r0, c: 1 }, e: { r: rows.length - 1, c: 1 } }); semRows.push([r0, rows.length - 1]);
+    });
+    const ht = { 1: 24, 2: 24 };
+    const mg2 = mg.filter(m => m.s.r !== m.e.r || m.s.c !== m.e.c);
+    add(feuille, rows, [3, 5, 26, 24, 11, 14, 14, 13, 13, 13, 13, 13, 13, 14, 14, 13, 13, 13, 13, 16, 13].concat(ppv ? [13] : [], per.map(() => 15), [20]).slice(0, total + 1), { merges: mg2, ht, sty: (r, c, v) => {
+      const kd = kind[r]; if (kd === 'blank' || c === 0) return null;
+      if (kd === 'g') { if (c === 1) return S({ b: 1, c: 'FFFFFF', f: '000000', h: 'left' }); if (c === 3) return S({ b: 1, c: 'FFFFFF', f: '767171' }); if (c === total) return S({ b: 1, w: 1, f: 'D9D9D9', bd: BD('A6A6A6') }); return cg[c] ? S({ b: 1, f: GR[cg[c]][0] }) : null; }
+      if (kd === 'h') return cg[c] ? S({ b: 1, w: 1, f: (GR[cg[c]][2] || GR[cg[c]][0]) }) : (c === 3 ? S({ f: '767171' }) : null);
+      if (c === 1) return S({ b: 1, c: 'FFFFFF', f: '000000', rot: 90 });
+      if (kd === 'tot') return c === total ? S({ b: 1, nf: EUR, f: 'F2F2F2' }) : S({ b: 1, f: 'F2F2F2', h: c === 2 ? 'left' : 'center' });
+      if (c === 2) return S({ c: '8497B0', h: 'right' });
+      if (c === 3) return S({ b: 1, h: 'right' });
+      if (c === total) return S({ b: 1, nf: EUR });
+      if (c === 4) return S({ f: GR.pres[1], nf: PCT });
+      return cg[c] ? S({ f: GR[cg[c]][1], nf: EUR }) : null;
+    } });
   });
   X.writeFile(wb, 'Primes_EDG_' + PRM.annee + '.xlsx'); prMsg('Fichier Excel généré.');
 }
@@ -14717,7 +14785,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261115-211111';
+const BUILD_VERSION = '20261115-212344';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
