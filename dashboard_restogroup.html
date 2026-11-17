@@ -4915,7 +4915,7 @@ async function prIndiv(pid, ind, per, val) {
 
 // ── Personnes et présence (organigramme) ──
 function prHtmlPers() {
-  let h = '<div class="prm-card"><div class="prm-ct">Personnes et présence <span><button class="prm-btn" onclick="prLink()" title="Retrouve les profils d\'accès existants (même prénom et même initiale) et les relie aux fiches">Rapprocher avec les accès existants</button> <button class="prm-btn" onclick="prEdit(null)">+ Ajouter une personne</button></span></div><div class="prm-sub" style="margin-bottom:8px">Un manager, un responsable de zone ou une hôtesse principale sans compte se crée ici ; son accès à l\'application se choisit ensuite dans <b>Équipes</b> (« Sans accès à l\'application » puis « Donner un accès… »). Les mois à 0 % comptent dans la moyenne de présence (arrivée en cours de semestre, absence longue) ; un mois vide n\'est pas compté.</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Nom</th><th>Poste(s)</th><th>Présence ' + PRM.annee + '</th><th></th></tr></thead><tbody>';
+  let h = '<div class="prm-card"><div class="prm-ct">Personnes et présence <span><button class="prm-btn" onclick="prLink()" title="Relie chaque compte existant à sa fiche des primes (prénom, restaurant, poste), après votre validation">Rapprocher avec les accès existants</button> <button class="prm-btn" onclick="prEdit(null)">+ Ajouter une personne</button></span></div><div class="prm-sub" style="margin-bottom:8px">Un manager, un responsable de zone ou une hôtesse principale sans compte se crée ici ; son accès à l\'application se choisit ensuite dans <b>Équipes</b> (« Sans accès à l\'application » puis « Donner un accès… »). Les mois à 0 % comptent dans la moyenne de présence (arrivée en cours de semestre, absence longue) ; un mois vide n\'est pas compté.</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Nom</th><th>Poste(s)</th><th>Présence ' + PRM.annee + '</th><th></th></tr></thead><tbody>';
   PRM.personnes.filter(p => !PRM.sel || p.restaurant === PRM.sel).forEach(p => {
     const rows = PRM.org.filter(o => o.personne_id === p.id), ps = [...new Set(rows.map(o => prPosteLib(o.poste)))].join(' + ') || '—';
     const mois = new Set(rows.map(o => o.mois)), pres = PR_MOIS_C.map((m, i) => '<span class="prm-mo' + (mois.has(i + 1) ? ' on' : '') + '" title="' + m + '">' + m.charAt(0) + '</span>').join('');
@@ -5205,34 +5205,42 @@ function prCles(nom) {                                                // un nom 
   if (t.length > 1) r.push({ prenom: t.slice(0, -1).join(' '), ini: t[t.length - 1][0] });
   return r;
 }
+const PR_POSTE_MAP = { 'directeur': 'directeur', 'directeur adjoint': 'adjoint', 'assistant de direction': 'assistant', 'manager': 'manager', 'responsable de zone': 'rz', 'assistant administratif': 'adm', 'hotesse principale': 'hotesse' };
+// Une ligne par COMPTE sans fiche : les fiches possibles sont classées par prénom + initiale + restaurant + poste (ce qui lève la plupart des doutes) ; rien n'est lié sans validation de la ligne.
 async function prLink() {
   prMsg('Recherche des accès existants…');
-  const r = await prApi('/rest/v1/droits?franchise=eq.' + prFr() + '&select=email,nom,actif,restos_planning&limit=1000');
+  const [r, pr] = await Promise.all([prApi('/rest/v1/droits?franchise=eq.' + prFr() + '&select=email,nom,actif,restos_planning,poste_id&limit=1000'), prApi('/rest/v1/postes?franchise=eq.' + prFr() + '&select=id,nom&limit=200')]);
   if (!r.ok || !Array.isArray(r.j)) return prMsg('Lecture des accès impossible (droit de gérer les accès nécessaire).', true);
-  const pris = new Set(PRM.personnes.filter(p => p.email).map(p => String(p.email).toLowerCase())), libres = PRM.personnes.filter(p => !p.email && p.actif !== false), props = [], flou = [];
+  const pnom = {}; if (pr.ok && Array.isArray(pr.j)) pr.j.forEach(x => { pnom[x.id] = x.nom; });
+  const pris = new Set(PRM.personnes.filter(p => p.email).map(p => String(p.email).toLowerCase())), libres = PRM.personnes.filter(p => !p.email && p.actif !== false), rows = [];
+  const lies = r.j.filter(a => a.actif !== false && pris.has(String(a.email).toLowerCase())).length;
   r.j.filter(a => a.actif !== false && !pris.has(String(a.email).toLowerCase())).forEach(a => {
-    const ca = prCles(a.nom), rp = a.restos_planning || [];
-    const cands = libres.filter(p => { if (rp.length && !rp.includes(p.restaurant)) return false; const cp = prCles(p.nom).slice().reverse(); return ca.some(x => cp.some(y => x.prenom === y.prenom && (!x.ini || !y.ini || x.ini === y.ini))); });
-    const sur = cands.filter(p => { const cp = prCles(p.nom); return ca.some(x => x.ini && cp.some(y => y.prenom === x.prenom && y.ini === x.ini)); });
-    const choix = sur.length === 1 ? sur : (cands.length === 1 ? cands : []);
-    if (choix.length === 1) props.push({ p: choix[0], a, sur: sur.length === 1 }); else if (cands.length > 1) flou.push(a.nom + ' (' + cands.length + ' possibilités)');
+    const ca = prCles(a.nom), rp = a.restos_planning || [], pk = PR_POSTE_MAP[prNorm(pnom[a.poste_id])] || null;
+    const cand = libres.map(p => {
+      const cp = prCles(p.nom).slice().reverse(); if (!ca.some(x => cp.some(y => x.prenom === y.prenom && (!x.ini || !y.ini || x.ini === y.ini)))) return null;
+      const restoOk = !rp.length || rp.includes(p.restaurant), posteOk = !!pk && prPersPostes(p.id).has(pk), ini = ca.some(x => x.ini && cp.some(y => y.prenom === x.prenom && y.ini === x.ini));
+      return { p, restoOk, posteOk, ini, score: (restoOk ? 2 : 0) + (posteOk ? 2 : 0) + (ini ? 2 : 0) };
+    }).filter(Boolean).sort((x, y) => y.score - x.score || String(x.p.nom).localeCompare(String(y.p.nom)));
+    const top = cand[0], sur = !!top && (cand.length === 1 || top.score > cand[1].score) && top.restoOk && (top.posteOk || top.ini);
+    rows.push({ a, poste: pnom[a.poste_id] || '', rp, cand: cand.map(c => c.p), autres: cand.length ? [] : libres.filter(p => !rp.length || rp.includes(p.restaurant)), pre: sur ? top.p.id : '', fiab: sur ? 'Très probable' : (cand.length === 1 ? 'À vérifier' : cand.length ? 'Plusieurs possibilités' : 'Aucune proposition') });
   });
-  PRM.lk = { props, flou, n: r.j.length }; prMsg(''); prRender();
+  PRM.lk = { rows, lies, n: r.j.filter(a => a.actif !== false).length }; prMsg(''); prRender();
 }
 function prHtmlLk() {
-  const L = PRM.lk;
-  return '<div class="prm-ov"><div class="prm-md"><div class="prm-ct">Rapprochement avec les accès existants</div><div class="prm-sub" style="margin-bottom:8px">' + L.n + ' accès lus. Cochez les correspondances à valider : la fiche des primes est alors liée au compte (par l\'adresse e-mail), sans rien modifier côté accès.</div>' +
-    (L.props.length ? '<table class="prm-tb"><thead><tr><th></th><th>Fiche des primes</th><th>Restaurant</th><th>Accès existant</th><th>Fiabilité</th></tr></thead><tbody>' + L.props.map((x, i) => '<tr><td><input type="checkbox" id="prmLk' + i + '" ' + (x.sur ? 'checked' : '') + '></td><td class="prm-n">' + prEsc(x.p.nom) + '</td><td>' + prEsc(prRestoLib(x.p.restaurant)) + '</td><td>' + prEsc(x.a.nom) + '</td><td>' + (x.sur ? '<span class="prm-chip ok">prénom + initiale</span>' : '<span class="prm-chip mid">prénom seul : à vérifier</span>') + '</td></tr>').join('') + '</tbody></table>' : '<div class="prm-sub">Aucune nouvelle correspondance trouvée.</div>') +
-    (L.flou.length ? '<div class="prm-sub" style="margin-top:8px">Plusieurs fiches possibles (à lier à la main dans la fiche, champ e-mail) : ' + prEsc(L.flou.join(', ')) + '</div>' : '') +
-    '<div class="prm-sub" style="margin-top:8px">Les managers, responsables de zone et hôtesses sans compte restent « sans accès » : leur accès se choisit dans Équipes.</div>' +
-    '<div class="prm-actions"><button class="prm-btn" onclick="PRM.lk=null;prRender()">Fermer</button>' + (L.props.length ? '<button class="prm-btn pri" onclick="prLinkApply()">Lier la sélection</button>' : '') + '</div></div></div>';
+  const L = PRM.lk, opt = p => '<option value="' + p.id + '">' + prEsc(p.nom) + ' · ' + prEsc(prRestoLib(p.restaurant)) + ' · ' + prEsc([...prPersPostes(p.id)].map(prPosteLib).join(' + ') || '—') + '</option>';
+  return '<div class="prm-ov"><div class="prm-md" style="max-width:980px"><div class="prm-ct">Rapprochement des comptes et des fiches des primes</div><div class="prm-sub" style="margin-bottom:8px">' + L.n + ' comptes actifs, ' + L.lies + ' déjà liés à une fiche. Pour chaque compte, choisissez la fiche des primes qui correspond (le menu propose d\'abord les plus probables) : elle est alors liée au compte par l\'adresse e-mail. Rien n\'est lié sans votre validation, rien ne change côté accès, et un lien se défait dans la fiche de la personne (champ e-mail).</div>' +
+    (L.rows.length ? '<div class="prm-scroll"><table class="prm-tb"><thead><tr><th class="t-l">Compte</th><th class="t-l">Poste · restaurants du compte</th><th class="t-l">Fiche des primes à lier</th><th>Fiabilité</th></tr></thead><tbody>' + L.rows.map((x, i) => '<tr><td class="prm-n">' + prEsc(x.a.nom) + '</td><td>' + prEsc(x.poste || '—') + ' · ' + prEsc(x.rp.map(prRestoLib).join(', ') || 'tous') + '</td><td><select class="prm-in" id="prmLk' + i + '" style="min-width:300px"><option value="">— ne pas lier —</option>' + x.cand.concat(x.autres).map(opt).join('').replace('value="' + x.pre + '"', 'value="' + x.pre + '" selected') + '</select></td><td><span class="prm-chip ' + (x.fiab === 'Très probable' ? 'ok' : 'na') + '">' + x.fiab + '</span></td></tr>').join('') + '</tbody></table></div>' : '<div class="prm-sub">Tous les comptes actifs sont déjà liés à une fiche.</div>') +
+    '<div class="prm-sub" style="margin-top:8px">Un compte sans fiche (propriétaire, superviseur, bureau…) reste tel quel. Les managers, responsables de zone et hôtesses sans compte restent « sans accès » : leur accès se choisit dans Équipes.</div>' +
+    '<div class="prm-actions"><button class="prm-btn" onclick="PRM.lk=null;prRender()">Fermer</button>' + (L.rows.length ? '<button class="prm-btn pri" onclick="prLinkApply()">Lier la sélection</button>' : '') + '</div></div></div>';
 }
 async function prLinkApply() {
-  const L = PRM.lk; let n = 0;
+  const L = PRM.lk; let n = 0; const pick = [];
+  L.rows.forEach((x, i) => { const c = document.getElementById('prmLk' + i); if (c && c.value) pick.push({ a: x.a, id: c.value }); });
+  const dup = pick.find((x, i) => pick.findIndex(y => y.id === x.id) !== i); if (dup) return prMsg('Une même fiche est choisie pour deux comptes : corrigez avant de lier.', true);
   try {
-    for (let i = 0; i < L.props.length; i++) { const c = document.getElementById('prmLk' + i); if (!c || !c.checked) continue; const x = L.props[i], p = Object.assign({}, x.p, { email: String(x.a.email).toLowerCase() });
-      const out = await prSave('primes_personnes', [{ id: p.id, franchise: p.franchise, restaurant: p.restaurant, nom: p.nom, email: p.email, ordre: p.ordre, actif: p.actif }], 'id'); const k = PRM.personnes.findIndex(q => q.id === p.id); PRM.personnes[k] = out[0] || p; n++; }
-    PRM.lk = null; prRender(); prMsg(n + ' fiche' + (n > 1 ? 's' : '') + ' liée' + (n > 1 ? 's' : '') + ' à un accès existant.');
+    for (const x of pick) { const p = PRM.personnes.find(q => q.id === x.id); if (!p) continue; const email = String(x.a.email).toLowerCase();
+      const out = await prSave('primes_personnes', [{ id: p.id, franchise: p.franchise, restaurant: p.restaurant, nom: p.nom, email, ordre: p.ordre, actif: p.actif }], 'id'); const k = PRM.personnes.findIndex(q => q.id === p.id); PRM.personnes[k] = out[0] || Object.assign({}, p, { email }); n++; }
+    PRM.lk = null; prRender(); prMsg(n + ' fiche' + (n > 1 ? 's' : '') + ' liée' + (n > 1 ? 's' : '') + ' à un compte.' + (n ? ' Elles ne sont plus « sans accès » dans Équipes.' : ''));
   } catch (e) { prMsg('Liaison impossible : ' + e.message, true); }
 }
 
@@ -14978,7 +14986,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261117-074010';
+const BUILD_VERSION = '20261117-105220';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
