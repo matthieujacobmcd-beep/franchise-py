@@ -14522,6 +14522,10 @@ function pbdRender() {
 .prm-sub { display: block; font-size: .66rem; color: var(--muted); font-weight: 600; }
 span.prm-sub { display: inline; margin-left: 4px; }
 .prm-tb .prm-sub { display: block; margin-left: 0; }
+.prm-tb td.prm-sub, .prm-xl td.prm-sub { display: table-cell; margin: 0; white-space: normal; }   /* une cellule de tableau reste une cellule (sinon son colspan est ignoré et une colonne s'élargit) */
+.prm-md .prm-tb th, .prm-md .prm-tb td { padding-left: 3px; padding-right: 3px; }   /* fiche d'une personne : 12 mois + poste tiennent dans la fenêtre */
+.prm-md .prm-tb input.prm-in[type="number"] { width: 46px !important; padding: 6px 3px; text-align: center; }
+.prm-md .prm-tb select.prm-in { max-width: 170px; }
 .prm-chip { display: inline-block; font-size: .68rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
 .prm-chip.ok { background: rgba(30,132,73,.14); color: var(--green); }
 .prm-chip.ko { background: rgba(192,57,43,.14); color: var(--red); }
@@ -15159,7 +15163,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261118-193906';
+const BUILD_VERSION = '20261118-200120';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
