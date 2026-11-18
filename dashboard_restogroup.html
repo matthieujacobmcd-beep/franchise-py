@@ -4450,7 +4450,7 @@ const PRIMES = (() => {
   // PPV (prime de partage de la valeur) : levier qui fait bouger le montant des primes par restaurant et par poste.
   //  mode « montant » : € par personne (temps plein, présence complète), proratisé si pro ; mode « pct » : % des primes calculées de la personne (poste de sa ligne affichée)
   //  montants : { tous: { poste: valeur }, RESTAURANT: { poste: valeur } } — la valeur d'un restaurant remplace celle de « tous » (vide = « tous »)
-  const PPV_2026 = { actif: false, mode: 'montant', sens: '+', pro: true, periode: 'both', plafond: 3000, montants: {} };
+  const PPV_2026 = { actif: false, mode: 'montant', sens: '+', pro: true, periode: 'both', plafond: 3000, montants: {}, acces: {} };      // acces : critères d'accès réglés dans l'appli ({ anc, pres, quot, exclus… }) ; exclus : { idPersonne: motif } calculé par l'appli pour ce semestre
   const ppvMontant = (ppv, resto, poste) => { const m = (ppv && ppv.montants) || {}, v = (m[resto] || {})[poste]; return (v !== undefined && v !== null && v !== '') ? (+v || 0) : (+((m.tous || {})[poste]) || 0); };
   const seuilsDe = x => { const s = Object.assign({}, SEUILS_2026, x || {}); s.criteres = Object.assign({}, CRITERES_2026, (x && x.criteres) || {}); s.ppv = Object.assign({}, PPV_2026, (x && x.ppv) || {}); return s; };
   // Audits RH / Formation / Marketing / PEP (versés en janvier) : score d'audit saisi par restaurant → palier (≥ 96 % plein, ≥ 93 % palier 2, ≥ 90 % palier 3 ; paliers = montant ÷ 1,5 et ÷ 2,25 arrondis à 10)
@@ -4582,14 +4582,14 @@ const PRIMES = (() => {
   // indiv : { NOM : {cfv:[q1,q2], focus:[q1,q2], certif:x} } pour ce semestre ; fixes : { NOM : montant } (ADM / hôtesse, saisie manuelle) ; bareme : barème par poste
   // seuils : conditions réglées dans l'appli ; customs : [{id, montants:{poste:€}, pcts:[pct du/des période(s) du semestre, 0 à 1, null = pas de donnée]}] (primes personnalisées de ce restaurant)
   function calculSemestre(slots, sem, res, indiv, fixes, bareme, seuils, customs, resto, audits) {
-    const SX = seuilsDe(seuils), pal = paliersCollectifs(res, seuils), bar = bareme || BAREME_2026, cu = customs || [], cr = SX.criteres, pv = SX.ppv, pvOn = !!pv.actif && (pv.periode === 'both' || (pv.periode === 'S1' && sem === 0) || (pv.periode === 'S2' && sem === 1));
+    const SX = seuilsDe(seuils), pal = paliersCollectifs(res, seuils), bar = bareme || BAREME_2026, cu = customs || [], cr = SX.criteres, pv = SX.ppv, pvEx = pv.exclus || {}, pvOn = !!pv.actif && (pv.periode === 'both' || (pv.periode === 'S1' && sem === 0) || (pv.periode === 'S2' && sem === 1));
     const lignes = slots.map((s, k) => {
       const noms = sem === 0 ? s.noms.slice(0, 6) : s.noms.slice(6, 12); let cs = (sem === 0 ? s.contrats.slice(0, 6) : s.contrats.slice(6, 12));
       const ar = (s.arrets || []).slice(sem * 6, sem * 6 + 6);
       if (cr.probatoire > 0 && s.poste !== 'adjoint' && s.debut != null && s.id && slots.some(o => o !== s && o.id === s.id && o.debut != null && o.debut < s.debut)) cs = cs.map((v, i) => (isNum(v) && sem * 6 + i + 1 >= s.debut && sem * 6 + i + 1 < s.debut + cr.probatoire) ? 0 : v);      // évolution de poste : la nouvelle fonction ne compte qu'après la période probatoire
       const nom = noms[5] || '', cc = coefCrit(cs, ar, cr), c = (cc.supprime ? null : cc.c), poste = s.poste ? (s.poste === 'adm' || s.poste === 'hotesse' ? 'fixe' : s.poste) : posteDe(s.label);
       let comp = { prel: 0, audit: 0, oepe: 0, r2p: 0, oph: 0, ca: 0, pac: 0, custom: {}, ppv: 0, aud: [0, 0, 0, 0] };
-      if (nom && pvOn && pv.mode !== 'pct') { const mt = ppvMontant(pv, resto, poste) * (pv.sens === '-' ? -1 : 1); comp.ppv = pv.pro === false ? mt : (c === null ? 0 : xround(mt * c, 2)); }
+      if (nom && pvOn && pv.mode !== 'pct' && !pvEx[nom]) { const mt = ppvMontant(pv, resto, poste) * (pv.sens === '-' ? -1 : 1); comp.ppv = pv.pro === false ? mt : (c === null ? 0 : xround(mt * c, 2)); }
       if (nom && sem === 1 && audits) comp.aud = DOMAINES_AUDIT.map((dm, i) => c === null ? 0 : xround(montantAudit((bar[poste] || [])[10 + i], audits[dm], seuils) * c, 0));      // audits RH, formation, marketing, PEP : versés en janvier
       if (nom) {
         const m = montantsPoste(bar[poste], pal, seuils);
@@ -4619,7 +4619,7 @@ const PRIMES = (() => {
       const ev = indiv && indiv[l.nom] ? indiv[l.nom].eval : null;                       // évaluation de performance : palier saisi, non proratisée (sauf option), 2e semestre
       if (sem === 1 && ev !== null && ev !== undefined && ev !== '') r.eval = xround(montantEval(Math.max(0, ...lignes.filter(o => o.nom === l.nom).map(o => (bar[o.poste] || [])[14] || 0)), ev, seuils) * fi, 0);
       const avantPpv = r.prel + r.audit + r.oepe + r.r2p + r.oph + r.cfv + r.focus + r.certif + r.ca + r.pac + r.fixe + Object.values(r.custom).reduce((a, v) => a + v, 0) + r.aud.reduce((a, v) => a + v, 0) + r.eval;
-      r.ppv = (pvOn && pv.mode === 'pct') ? xround(avantPpv * ppvMontant(pv, resto, l.poste) * (pv.sens === '-' ? -1 : 1) / 100, 2) : tot('ppv');
+      r.ppv = (pvOn && pv.mode === 'pct' && !pvEx[l.nom]) ? xround(avantPpv * ppvMontant(pv, resto, l.poste) * (pv.sens === '-' ? -1 : 1) / 100, 2) : tot('ppv');
       if (avantPpv + r.ppv < 0) r.ppv = -avantPpv;                                           // une prime ne devient jamais négative
       r.total = avantPpv + r.ppv;
       return { ...l, affiche: true, ...r };
@@ -4683,6 +4683,7 @@ const prPct = (v, d) => v == null ? '—' : (v * 100).toLocaleString('fr-FR', { 
 const prFr = () => (typeof FRANCHISE_CFG !== 'undefined' && FRANCHISE_CFG.auth && FRANCHISE_CFG.auth.franchise) || 'PY';
 const PR_MOIS_C = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 const PR_POSTES_SEL = [['directeur', 'Directeur'], ['adjoint', 'Directeur adjoint'], ['assistant', 'Assistant de direction'], ['manager', 'Manager'], ['rz', 'Responsable de zone'], ['adm', 'Assistant administratif (ADM)'], ['hotesse', 'Hôtesse principale']];
+const prDateFr = d => d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) + '/' + String(d).slice(0, 4) : '';
 const prPosteLib = p => (PR_POSTES_SEL.find(x => x[0] === p) || [0, p])[1];
 const prRestoLib = r => r === 'AIX LES BAINS' ? 'Aix les Bains' : r.charAt(0) + r.slice(1).toLowerCase();
 
@@ -4715,7 +4716,7 @@ async function prLoad() {
     let [p, o, i, ob, rg] = await Promise.all([prAll('/rest/v1/primes_personnes?select=*&franchise=eq.' + f + '&order=restaurant,ordre,nom'), prAll('/rest/v1/primes_organigramme?select=*&annee=eq.' + a + '&order=personne_id,mois'),
       prAll('/rest/v1/primes_indiv?select=*&annee=eq.' + a), prAll('/rest/v1/primes_objectifs?select=*&franchise=eq.' + f + '&annee=eq.' + a), prAll('/rest/v1/primes_reglages?select=*&franchise=eq.' + f + '&annee=eq.' + a)]);
     if (!rg.length && a > 2026) { try { rg = await prAll('/rest/v1/primes_reglages?select=*&franchise=eq.' + f + '&annee=eq.' + (a - 1)); } catch (e) { rg = []; } }   // nouvelle année : mêmes conditions que l'année précédente tant qu'elles ne sont pas enregistrées
-    PRM.personnes = p; PRM.org = o; PRM.hasArret = o.length > 0 && Object.prototype.hasOwnProperty.call(o[0], 'arret'); PRM.indiv = i; PRM.obj = ob; PRM.reg = { bareme: null, seuils: null, perso: [] }; rg.forEach(x => { PRM.reg[x.cle] = x.valeur; });
+    PRM.personnes = p; PRM.hasEntree = p.length > 0 && Object.prototype.hasOwnProperty.call(p[0], 'date_entree'); PRM.org = o; PRM.hasArret = o.length > 0 && Object.prototype.hasOwnProperty.call(o[0], 'arret'); PRM.indiv = i; PRM.obj = ob; PRM.reg = { bareme: null, seuils: null, perso: [] }; rg.forEach(x => { PRM.reg[x.cle] = x.valeur; });
     try { PRM.aud = await prAll('/rest/v1/primes_audits?select=*&franchise=eq.' + f + '&annee=eq.' + a); PRM.hasAud = true; } catch (e) { PRM.aud = []; PRM.hasAud = false; } if (!Array.isArray(PRM.reg.perso)) PRM.reg.perso = []; PRM.draft = null; PRM.state = 'ok';
   } catch (e) { PRM.state = 'err'; PRM.err = String(e.message || e); }
   prRender();
@@ -4740,6 +4741,7 @@ function prCalc(semIdx, seuilsSimu) {                                // seuilsSi
   const CF = prCfg(), D = (typeof DASHBOARD_DATA !== 'undefined') ? DASHBOARD_DATA : {}, obj = {};
   PRM.obj.filter(o => o.semestre === semIdx + 1).forEach(o => { obj[o.restaurant] = { oepe: o.oepe == null ? null : +o.oepe, r2p: o.r2p == null ? null : +o.r2p }; });
   if (seuilsSimu) CF.seuils = seuilsSimu;
+  { const pvA = CF.seuils.ppv; if (pvA && pvA.actif) { const ac = prPpvAcces(semIdx, pvA.acces), ex = {}; Object.keys(ac).forEach(k => { ex[k] = 1; }); if (Object.keys(ex).length) CF.seuils = Object.assign({}, CF.seuils, { ppv: Object.assign({}, pvA, { exclus: ex }) }); } }      // personnes sans accès à la PPV ce semestre (critères d'accès) : 0 € de PPV
   const coll = PRIMES.resultatsCollectifs(D, D.ponctuel || [], obj, semIdx, PRM.annee, CF.seuils);
   const per = 'S' + (semIdx + 1), tr = semIdx === 0 ? ['T1', 'T2'] : ['T3', 'T4'], indiv = {}, fixes = {};
   PRM.indiv.forEach(i => {
@@ -4916,11 +4918,11 @@ async function prIndiv(pid, ind, per, val) {
 
 // ── Personnes et présence (organigramme) ──
 function prHtmlPers() {
-  let h = '<div class="prm-card"><div class="prm-ct">Personnes et présence <span><button class="prm-btn" onclick="prLink()" title="Relie chaque compte existant à sa fiche des primes (prénom, restaurant, poste), après votre validation">Rapprocher avec les accès existants</button> <button class="prm-btn" onclick="prEdit(null)">+ Ajouter une personne</button></span></div><div class="prm-sub" style="margin-bottom:8px">Un manager, un responsable de zone ou une hôtesse principale sans compte se crée ici ; son accès à l\'application se choisit ensuite dans <b>Équipes</b> (« Sans accès à l\'application » puis « Donner un accès… »). Les mois à 0 % comptent dans la moyenne de présence (arrivée en cours de semestre, absence longue) ; un mois vide n\'est pas compté.</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Nom</th><th>Poste(s)</th><th>Présence ' + PRM.annee + '</th><th></th></tr></thead><tbody>';
+  let h = '<div class="prm-card"><div class="prm-ct">Personnes et présence <span><button class="prm-btn" onclick="prLink()" title="Relie chaque compte existant à sa fiche des primes (prénom, restaurant, poste), après votre validation">Rapprocher avec les accès existants</button> <button class="prm-btn" onclick="prEdit(null)">+ Ajouter une personne</button></span></div><div class="prm-sub" style="margin-bottom:8px">Un manager, un responsable de zone ou une hôtesse principale sans compte se crée ici ; son accès à l\'application se choisit ensuite dans <b>Équipes</b> (« Sans accès à l\'application » puis « Donner un accès… »). Les mois à 0 % comptent dans la moyenne de présence (arrivée en cours de semestre, absence longue) ; un mois vide n\'est pas compté.</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Restaurant</th><th>Nom</th><th>Poste(s)</th>' + (PRM.hasEntree ? '<th>Entrée</th>' : '') + '<th>Présence ' + PRM.annee + '</th><th></th></tr></thead><tbody>';
   PRM.personnes.filter(p => !PRM.sel || p.restaurant === PRM.sel).forEach(p => {
     const rows = PRM.org.filter(o => o.personne_id === p.id), ps = [...new Set(rows.map(o => prPosteLib(o.poste)))].join(' + ') || '—';
     const mois = new Set(rows.map(o => o.mois)), pres = PR_MOIS_C.map((m, i) => '<span class="prm-mo' + (mois.has(i + 1) ? ' on' : '') + '" title="' + m + '">' + m.charAt(0) + '</span>').join('');
-    h += '<tr' + (p.actif === false ? ' style="opacity:.5"' : '') + '><td>' + prEsc(prRestoLib(p.restaurant)) + '</td><td class="prm-n">' + prEsc(p.nom) + (p.email ? ' <span class="prm-sub">· compte lié</span>' : '') + '</td><td>' + prEsc(ps) + '</td><td>' + pres + '</td><td><button class="prm-btn" onclick="prEdit(\'' + p.id + '\')">Modifier</button></td></tr>';
+    h += '<tr' + (p.actif === false ? ' style="opacity:.5"' : '') + '><td>' + prEsc(prRestoLib(p.restaurant)) + '</td><td class="prm-n">' + prEsc(p.nom) + (p.email ? ' <span class="prm-sub">· compte lié</span>' : '') + '</td><td>' + prEsc(ps) + '</td>' + (PRM.hasEntree ? '<td>' + (p.date_entree ? prDateFr(p.date_entree) : '<span class="prm-sub">—</span>') + '</td>' : '') + '<td>' + pres + '</td><td><button class="prm-btn" onclick="prEdit(\'' + p.id + '\')">Modifier</button></td></tr>';
   });
   return h + '</tbody></table></div></div>';
 }
@@ -4937,7 +4939,7 @@ function prHtmlEd() {
   let h = '<div class="prm-ov"><div class="prm-md"><div class="prm-ct">' + (p.id ? 'Modifier la personne' : 'Nouvelle personne') + '</div><div class="prm-form">' +
     '<label>Restaurant<select id="prmEdResto" ' + (p.id ? 'disabled' : '') + '>' + prRestos().map(r => '<option value="' + r + '"' + (r === p.restaurant ? ' selected' : '') + '>' + prEsc(prRestoLib(r)) + '</option>').join('') + '</select></label>' +
     '<label>Nom (prénom + initiale)<input id="prmEdNom" maxlength="60" value="' + prEsc(p.nom) + '" placeholder="ex. CLARA M"></label>' +
-    '<label>E-mail du compte (facultatif)<input id="prmEdMail" maxlength="120" value="' + prEsc(p.email || '') + '" placeholder="si la personne a déjà un accès"></label>' +
+    '<label>E-mail du compte (facultatif)<input id="prmEdMail" maxlength="120" value="' + prEsc(p.email || '') + '" placeholder="si la personne a déjà un accès"></label>' + (PRM.hasEntree ? '<label>Date d\'entrée dans l\'entreprise<input type="date" id="prmEdEntree" value="' + prEsc(p.date_entree || '') + '"></label>' : '') +
     '<label class="prm-chk"><input type="checkbox" id="prmEdActif" ' + (p.actif !== false ? 'checked' : '') + '> Active</label></div>' +
     '<div class="prm-sub" style="margin:8px 0 4px">Poste et fraction de contrat de chaque mois (100 = temps plein ; 0 = mois compté sans présence ; vide = mois non compté)</div><div class="prm-scroll"><table class="prm-tb"><thead><tr><th>Poste</th>' + PR_MOIS_C.map(m => '<th>' + m + '</th>').join('') + '<th></th></tr></thead><tbody>';
   e.L.forEach((l, i) => {
@@ -4950,7 +4952,7 @@ function prHtmlEd() {
 }
 function prEdAdd() { prEdKeep(); PRM.ed.L.push({ poste: 'manager', c: new Array(12).fill('') }); prRender(); }
 function prEdFill(i, v, a, b) { if (v === 'del') { PRM.ed.L.splice(i, 1); } else { for (let m = a; m <= b; m++) PRM.ed.L[i].c[m] = v; } prEdKeep(); prRender(); }
-function prEdKeep() { const g = id => document.getElementById(id); if (!PRM.ed || !g('prmEdNom')) return; PRM.ed.p.nom = g('prmEdNom').value; PRM.ed.p.email = g('prmEdMail').value; PRM.ed.p.actif = g('prmEdActif').checked; if (g('prmEdResto') && !g('prmEdResto').disabled) PRM.ed.p.restaurant = g('prmEdResto').value; }
+function prEdKeep() { const g = id => document.getElementById(id); if (!PRM.ed || !g('prmEdNom')) return; PRM.ed.p.nom = g('prmEdNom').value; PRM.ed.p.email = g('prmEdMail').value; PRM.ed.p.actif = g('prmEdActif').checked; if (g('prmEdEntree')) PRM.ed.p.date_entree = g('prmEdEntree').value || null; if (g('prmEdResto') && !g('prmEdResto').disabled) PRM.ed.p.restaurant = g('prmEdResto').value; }
 async function prSavePers() {
   prEdKeep(); const e = PRM.ed, p = e.p, err = t => { const m = document.getElementById('prmEdMsg'); if (m) m.textContent = t; };
   if (!String(p.nom).trim()) return err('Le nom est obligatoire.');
@@ -4958,8 +4960,8 @@ async function prSavePers() {
   for (const l of e.L) for (const v of l.c) if (v !== '' && !(+v >= 0 && +v <= 100)) return err('Les fractions de contrat sont comprises entre 0 et 100.');
   PRM.busy = true; try {
     let id = p.id, row;
-    if (!id) { const o = PRM.personnes.filter(x => x.restaurant === p.restaurant); row = (await prSave('primes_personnes', [{ franchise: prFr(), restaurant: p.restaurant, nom: String(p.nom).trim(), email: String(p.email || '').trim() || null, ordre: o.length ? Math.max(...o.map(x => x.ordre)) + 1 : 0, actif: p.actif !== false }], 'id'))[0]; id = row.id; PRM.personnes.push(row); }
-    else { row = (await prSave('primes_personnes', [{ id, franchise: prFr(), restaurant: p.restaurant, nom: String(p.nom).trim(), email: String(p.email || '').trim() || null, ordre: p.ordre, actif: p.actif !== false }], 'id'))[0]; const i = PRM.personnes.findIndex(x => x.id === id); PRM.personnes[i] = row; }
+    if (!id) { const o = PRM.personnes.filter(x => x.restaurant === p.restaurant); row = (await prSave('primes_personnes', [{ franchise: prFr(), restaurant: p.restaurant, nom: String(p.nom).trim(), email: String(p.email || '').trim() || null, ordre: o.length ? Math.max(...o.map(x => x.ordre)) + 1 : 0, actif: p.actif !== false }].map(r => PRM.hasEntree ? Object.assign(r, { date_entree: p.date_entree || null }) : r), 'id'))[0]; id = row.id; PRM.personnes.push(row); }
+    else { row = (await prSave('primes_personnes', [{ id, franchise: prFr(), restaurant: p.restaurant, nom: String(p.nom).trim(), email: String(p.email || '').trim() || null, ordre: p.ordre, actif: p.actif !== false }].map(r => PRM.hasEntree ? Object.assign(r, { date_entree: p.date_entree || null }) : r), 'id'))[0]; const i = PRM.personnes.findIndex(x => x.id === id); PRM.personnes[i] = row; }
     const voulu = []; e.L.forEach(l => l.c.forEach((v, m) => { if (v !== '' && v != null) voulu.push(Object.assign({ personne_id: id, annee: PRM.annee, mois: m + 1, poste: l.poste, contrat: Math.round(+v * 100) / 10000 }, PRM.hasArret ? { arret: Math.min(100, Math.max(0, +(e.ar || [])[m] || 0)) / 100 } : {})); }));
     const exist = PRM.org.filter(o => o.personne_id === id);
     for (const o of exist) if (!voulu.some(v => v.mois === o.mois && v.poste === o.poste)) await prDel('primes_organigramme', 'personne_id=eq.' + id + '&annee=eq.' + PRM.annee + '&mois=eq.' + o.mois + '&poste=eq.' + o.poste);
@@ -5003,6 +5005,7 @@ async function prExport() {
     const PV = CF.seuils.ppv;
     if (PV.actif) {
       rows.push([], ['PPV (PRIME DE PARTAGE DE LA VALEUR)'], ['Mode : ' + (PV.mode === 'pct' ? '% des primes calculées' : '€ par personne') + ' · versée : ' + ({ both: 'aux deux semestres', S1: '1er semestre', S2: '2e semestre' }[PV.periode] || '') + ' · proratisée : ' + (PV.pro !== false ? 'oui' : 'non') + ' · plafond annuel par personne : ' + PV.plafond + ' €'], []);
+      { const A = prAcc(PV.acces); if (prAccActif(A)) rows.push(['Critères d\'accès (fin de semestre) : ' + [A.anc.on ? 'ancienneté ≥ ' + A.anc.mois + ' mois' : '', A.pres.on ? 'présence effective ≥ ' + A.pres.pct + ' %' : '', A.quot.on ? 'temps de travail ≥ ' + A.quot.pct + ' %' : '', Object.keys(A.exclus).length ? Object.keys(A.exclus).length + ' exclusion(s) individuelle(s)' : ''].filter(Boolean).join(' · ')], []); }
       hd.push(rows.length); rows.push(['RESTAURANT'].concat(Object.keys(pl).map(k => pl[k])));
       [['tous', 'Tous les restaurants']].concat(prRestos().map(r => [r, prRestoLib(r)])).forEach(([key, lib]) => rows.push([lib].concat(Object.keys(pl).map(k => { const v = ((PV.montants || {})[key] || {})[k]; return v === undefined ? '' : v; }))));
     }
@@ -5258,7 +5261,8 @@ function prPossibles(k, CF) {                                         // lignes 
   [['cfv', 5, 'CFV (par trimestre)'], ['focus', 6, 'Focus (par trimestre)'], ['certif', 7, 'Certification (par semestre)']].forEach(([c, i, lib]) => { const m = PRIMES.montantsIndiv(b[i]); if (m) r.push([lib, m[0], m[1], m[2], 'Selon le score saisi : ' + m.slice(0, 5).join(' · ') + ' €']); });
   if (b[8] > 0) r.push(['CA vs N-1 (par semestre)', b[8], rd(b[8] / d[0]), rd(b[8] / d[1]), '≥ ' + pc(S.ca[0]) + ' · ≥ ' + pc(S.ca[1]) + ' · > ' + pc(S.ca[2])]);
   if (b[9] > 0) r.push(['PAC (par semestre)', b[9], rd(b[9] / d[0], -1), rd(b[9] / d[1], -1), 'Écart en points ≥ ' + pt(S.pac[0]) + ' · ≥ ' + pt(S.pac[1]) + ' · > ' + pt(S.pac[2])]);
-  ['RH', 'Formation', 'Marketing', 'PEP'].forEach((lib, i) => { const x = b[10 + i]; if (x > 0) r.push(['Audit ' + lib + ' (janvier)', x, rd(x / d[0], -1), rd(x / d[1], -1), 'Score d\'audit ≥ ' + S.auditDom[0] + ' % · ≥ ' + S.auditDom[1] + ' % · ≥ ' + S.auditDom[2] + ' %']); });
+  const autres = r.length;                                                                          // les 4 audits figurent pour tous les postes qui ont des primes : à 0 € = non prévu pour ce poste (réglable dans « Conditions des primes »)
+  ['RH', 'Formation', 'Marketing', 'PEP'].forEach((lib, i) => { const x = b[10 + i] || 0; if (x > 0) r.push(['Audit ' + lib + ' (janvier)', x, rd(x / d[0], -1), rd(x / d[1], -1), 'Score d\'audit ≥ ' + S.auditDom[0] + ' % · ≥ ' + S.auditDom[1] + ' % · ≥ ' + S.auditDom[2] + ' %']); else if (autres) r.push(['Audit ' + lib + ' (janvier)', 0, 0, 0, 'Non prévu pour ce poste (0 € au barème)']); });
   if (b[14] > 0) r.push(['Évaluation de performance (janvier)', PRIMES.montantEval(b[14], 0, S), PRIMES.montantEval(b[14], 1, S), PRIMES.montantEval(b[14], 2, S), 'Exceptionnel · significatif · conforme (insuffisant : ' + PRIMES.montantEval(b[14], 3, S) + ' €)']);
   const max = (b[0] || 0) * 4 + (b[1] || 0) * 4 + (b[2] || 0) * 2 + (b[3] || 0) * 2 + (b[4] || 0) * 2 + (b[5] || 0) * 4 + (b[6] || 0) * 4 + (b[7] || 0) * 2 + (b[8] || 0) * 2 + (b[9] || 0) * 2 + (b[10] || 0) + (b[11] || 0) + (b[12] || 0) + (b[13] || 0) + (b[14] || 0);
   return { rows: r, max };
@@ -5325,14 +5329,68 @@ function prPpvM(key, poste, v) {
   M[key] = M[key] || {}; if (String(v).trim() === '') delete M[key][poste]; else M[key][poste] = +String(v).replace(',', '.') || 0;
   if (!Object.keys(M[key]).length) delete M[key]; d.dirty = true; prPpvLive();
 }
+// ── PPV : critères d'accès propres à l'entreprise (ancienneté à la date d'entrée, présence effective, temps de travail, exclusion d'une personne) ──
+// Vérifiés à la fin de chaque semestre (30 juin / 31 décembre). Une personne qui ne les remplit pas a 0 € de PPV ce semestre. Poste et restaurant restent réglés par la matrice des montants.
+const PR_ACC_DEF = { anc: { on: false, mois: 12 }, pres: { on: false, pct: 50 }, quot: { on: false, pct: 50 } };
+const prAcc = a => { a = a || {}; return { anc: Object.assign({}, PR_ACC_DEF.anc, a.anc || {}), pres: Object.assign({}, PR_ACC_DEF.pres, a.pres || {}), quot: Object.assign({}, PR_ACC_DEF.quot, a.quot || {}), sansDate: a.sansDate === 'exclue' ? 'exclue' : 'admise', exclus: a.exclus || {} }; };
+const prAccActif = A => A.anc.on || A.pres.on || A.quot.on || Object.keys(A.exclus).length > 0;
+function prPresence(pid, semIdx) {                                  // présence effective du semestre (part des 6 mois avec un contrat, moins la part en arrêt) et temps de travail moyen des mois présents (fraction de contrat)
+  const par = {}; PRM.org.filter(o => o.personne_id === pid && o.mois > semIdx * 6 && o.mois <= semIdx * 6 + 6).forEach(o => { const m = par[o.mois] || (par[o.mois] = { c: 0, a: 0 }); m.c += +o.contrat || 0; m.a = Math.max(m.a, +o.arret || 0); });
+  let pres = 0, quot = 0, n = 0; for (let m = semIdx * 6 + 1; m <= semIdx * 6 + 6; m++) { const x = par[m]; if (x && x.c > 0) { pres += 1 - Math.min(1, x.a); quot += Math.min(1, x.c); n++; } }
+  return { pres: pres / 6, quot: n ? quot / n : 0, mois: n };
+}
+function prAncMois(dateEntree, semIdx) {                            // ancienneté en mois entiers à la fin du semestre (la fin du semestre est toujours un dernier jour de mois)
+  const d = new Date(String(dateEntree).slice(0, 10) + 'T00:00:00Z'), m = (PRM.annee - d.getUTCFullYear()) * 12 + (semIdx === 0 ? 5 : 11) - d.getUTCMonth();
+  return isNaN(m) ? null : m;
+}
+function prPpvAcces(semIdx, accesBrut) {                            // → { idPersonne: [motifs de refus] } pour les personnes sans accès à la PPV ce semestre
+  const A = prAcc(accesBrut), out = {}; if (!prAccActif(A)) return out;
+  const no = (id, t) => (out[id] = out[id] || []).push(t);
+  PRM.personnes.forEach(p => {
+    if (p.actif === false) return;
+    if (Object.prototype.hasOwnProperty.call(A.exclus, p.id)) no(p.id, 'Exclue' + (A.exclus[p.id] ? ' : ' + A.exclus[p.id] : ''));
+    if (A.anc.on) { if (!p.date_entree) { if (A.sansDate === 'exclue') no(p.id, 'Date d\'entrée manquante'); } else { const m = prAncMois(p.date_entree, semIdx); if (m !== null && m < A.anc.mois) no(p.id, 'Ancienneté ' + Math.max(0, m) + ' mois (minimum ' + A.anc.mois + ')'); } }
+    if (A.pres.on || A.quot.on) { const P = prPresence(p.id, semIdx);
+      if (A.pres.on && P.pres * 100 + 1e-9 < A.pres.pct) no(p.id, 'Présence ' + Math.round(P.pres * 100) + ' % (minimum ' + A.pres.pct + ' %)');
+      if (A.quot.on && P.mois > 0 && P.quot * 100 + 1e-9 < A.quot.pct) no(p.id, 'Temps de travail ' + Math.round(P.quot * 100) + ' % (minimum ' + A.quot.pct + ' %)'); }
+  });
+  return out;
+}
+function prPpvAccSet(chemin, v) {
+  if (PRM.lvl < 2) return;                                    // réglage d'un critère (brouillon) : « anc.on », « anc.mois », « pres.pct », « sansDate »…
+  const d = prDraft(), pv = (d.seuils.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {})), a = (pv.acces = JSON.parse(JSON.stringify(pv.acces || {}))), [k, f] = chemin.split('.');
+  if (k === 'sansDate') a.sansDate = v === 'exclue' ? 'exclue' : 'admise';
+  else { a[k] = Object.assign({}, PR_ACC_DEF[k], a[k] || {}); a[k][f] = f === 'on' ? !!v : Math.max(0, +String(v).replace(',', '.') || 0); }
+  d.dirty = true; prPpvLive();
+}
+function prPpvExAdd() {
+  if (PRM.lvl < 2) return;
+  const id = (document.getElementById('prPpvExSel') || {}).value, mo = String((document.getElementById('prPpvExMot') || {}).value || '').trim().slice(0, 60); if (!id) return;
+  const d = prDraft(), pv = (d.seuils.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {})), a = (pv.acces = JSON.parse(JSON.stringify(pv.acces || {})));
+  a.exclus = a.exclus || {}; a.exclus[id] = mo; d.dirty = true; prRender();
+}
+function prPpvExDel(id) { if (PRM.lvl < 2) return; const d = prDraft(), pv = (d.seuils.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {})), a = (pv.acces = JSON.parse(JSON.stringify(pv.acces || {}))); if (a.exclus) delete a.exclus[id]; d.dirty = true; prRender(); }
+function prHtmlPpvAcces(pv) {
+  const A = prAcc(pv.acces), nm = new Map(PRM.personnes.map(p => [p.id, p])), actifs = PRM.personnes.filter(p => p.actif !== false), sans = actifs.filter(p => !p.date_entree).length;
+  const num = (ch, v, w) => '<input class="prm-in" type="number" min="0" step="1" style="width:' + (w || 64) + 'px" value="' + v + '" oninput="prPpvAccSet(\'' + ch + '\',this.value)" onchange="prPpvAccSet(\'' + ch + '\',this.value)">';
+  const chk = (ch, on, txt, dis) => '<label class="prm-chk"><input class="prm-in" type="checkbox" ' + (on ? 'checked ' : '') + (dis ? 'disabled ' : '') + 'onchange="prPpvAccSet(\'' + ch + '\',this.checked)"> ' + txt + '</label>';
+  const cand = actifs.filter(p => !Object.prototype.hasOwnProperty.call(A.exclus, p.id)).sort((a, b) => (prRestoLib(a.restaurant) + a.nom).localeCompare(prRestoLib(b.restaurant) + b.nom));
+  return '<div class="prm-sub" style="margin:14px 0 4px"><b>Critères d\'accès à la PPV</b> · une personne qui ne les remplit pas a 0 € de PPV. Ils se vérifient à la fin de chaque semestre (30 juin, 31 décembre). Le poste et le restaurant restent réglés par la matrice ci-dessus. Critères de modulation admis par la loi, d\'après nos recherches : ancienneté, durée de présence effective, durée de travail, niveau de classification (poste) — à confirmer avec votre expert-comptable ; ils doivent figurer dans votre accord ou votre décision unilatérale.</div>' +
+    '<div class="prm-conds"><div>' + chk('anc.on', A.anc.on, '<b>Ancienneté</b> d\'au moins', !PRM.hasEntree) + ' ' + num('anc.mois', A.anc.mois) + ' mois à la fin du semestre (date d\'entrée de la fiche de la personne) ' +
+      (PRM.hasEntree ? '<label>· sans date d\'entrée : <select class="prm-in" onchange="prPpvAccSet(\'sansDate\',this.value)"><option value="admise"' + (A.sansDate === 'admise' ? ' selected' : '') + '>admise</option><option value="exclue"' + (A.sansDate === 'exclue' ? ' selected' : '') + '>exclue</option></select></label> ' + (sans ? '<span class="' + (A.anc.on ? 'prm-over' : 'prm-sub') + '">' + sans + ' personne' + (sans > 1 ? 's' : '') + ' sans date d\'entrée (fiche : « Modifier »)</span>' : '') : '<span class="prm-sub">La date d\'entrée n\'est pas encore activée dans la base.</span>') + '</div>' +
+    '<div>' + chk('pres.on', A.pres.on, '<b>Présence effective</b> d\'au moins') + ' ' + num('pres.pct', A.pres.pct) + ' % du semestre (mois présents, hors arrêts de travail)</div>' +
+    '<div>' + chk('quot.on', A.quot.on, '<b>Temps de travail</b> d\'au moins') + ' ' + num('quot.pct', A.quot.pct) + ' % d\'un temps plein (fraction de contrat des mois présents)</div>' +
+    '<div><b>Exclusion d\'une personne</b> : <select id="prPpvExSel" ' + (PRM.lvl < 2 ? 'disabled ' : '') + 'class="prm-in"><option value="">Choisir…</option>' + cand.map(p => '<option value="' + p.id + '">' + prEsc(prRestoLib(p.restaurant) + ' · ' + p.nom) + '</option>').join('') + '</select> <input id="prPpvExMot" ' + (PRM.lvl < 2 ? 'disabled ' : '') + 'class="prm-in" maxlength="60" placeholder="Motif (formulation neutre)" style="width:220px"> ' + (PRM.lvl < 2 ? '' : '<button class="prm-btn" onclick="prPpvExAdd()">Exclure</button>') +
+      (Object.keys(A.exclus).length ? '<div style="margin-top:6px">' + Object.entries(A.exclus).map(([id, mo]) => '<span class="prm-chip ko" style="margin-right:6px">' + prEsc((nm.get(id) || {}).nom || id) + (mo ? ' · ' + prEsc(mo) : '') + (PRM.lvl < 2 ? '' : ' <a href="#" onclick="prPpvExDel(\'' + id + '\');return false" title="Retirer l\'exclusion" style="color:inherit;font-weight:800">✕</a>') + '</span>').join('') + '</div>' : '') + '</div></div>';
+}
 // ── Impact de la PPV sur les primes, EN DIRECT : calculé avec les montants en cours de saisie (conditions enregistrées inchangées ; rien n'est enregistré) ──
 function prPpvSimu() {
   const d = prDraft(), S = PRIMES.seuilsDe(prCfg().seuils);
   S.ppv = Object.assign({}, PRIMES.PPV_2026, d.seuils.ppv || {}, { actif: true });                // la simulation montre l'effet « PPV activée » même si la case n'est pas encore cochée
-  const pers = {}, NM = new Map(PRM.personnes.map(p => [p.id, p.nom])); let prov = false;
+  const pers = {}, NM = new Map(PRM.personnes.map(p => [p.id, p.nom])), AC = [0, 1].map(i => prPpvAcces(i, S.ppv.acces)); let prov = false;
   [0, 1].forEach(i => { const C = prCalc(i, S); prov = prov || C.prov; Object.entries(C.lignes).forEach(([r, L]) => L.forEach(l => {
     const a = pers[l.nom] || (pers[l.nom] = { nom: l.nom, lib: NM.get(l.nom) || l.nom, resto: r, poste: l.poste, base: 0, ppv: 0, s: [0, 0] });
-    a.base += (+l.total || 0) - (+l.ppv || 0); a.ppv += +l.ppv || 0; a.s[i] = +l.ppv || 0; if (l.poste) a.poste = l.poste;
+    a.base += (+l.total || 0) - (+l.ppv || 0); a.ppv += +l.ppv || 0; a.s[i] = +l.ppv || 0; if (l.poste) a.poste = l.poste; a.mot = [AC[0][l.nom], AC[1][l.nom]];
   })); });
   const L = Object.values(pers), R = {}, P = {}, T = { base: 0, ppv: 0, s: [0, 0], n: L.length, nb: 0 };
   L.forEach(a => {
@@ -5340,7 +5398,8 @@ function prPpvSimu() {
     [r, q].forEach(x => { x.n++; x.ppv += a.ppv; if (Math.abs(a.ppv) > 0.004) x.nb++; }); r.base += a.base;
     T.base += a.base; T.ppv += a.ppv; T.s[0] += a.s[0]; T.s[1] += a.s[1]; if (Math.abs(a.ppv) > 0.004) T.nb++;
   });
-  return { L, R, P, T, prov, pl: +S.ppv.plafond || 0, pv: S.ppv };
+  const nex = L.filter(a => (a.mot || []).some(Boolean)).length;
+  return { L, R, P, T, prov, pl: +S.ppv.plafond || 0, pv: S.ppv, nex };
 }
 function prPpvSimHtml() {
   let X; try { X = prPpvSimu(); } catch (e) { return '<div class="prm-sub">Simulation indisponible : ' + prEsc(e.message) + '</div>'; }
@@ -5349,15 +5408,15 @@ function prPpvSimHtml() {
   let h = '<div class="prm-conds"><div><b>Impact de la PPV sur les primes</b> <span class="prm-sub">simulation en direct avec les montants saisis ci-dessus · ' + (d.dirty ? '<b style="color:var(--gold)">non enregistrés</b>' : 'identiques aux valeurs enregistrées') + (pv.periode === 'both' ? ' · année complète' : pv.periode === 'S1' ? ' · 1er semestre' : ' · 2e semestre') + '</span></div>';
   if (!(d.seuils.ppv || {}).actif) h += '<div class="prm-sub" style="color:var(--gold)">La PPV n\'est pas activée : voici l\'effet qu\'elle aurait une fois la case « PPV activée » cochée et enregistrée.</div>';
   if (X.prov) h += '<div class="prm-sub">Primes provisoires : le semestre en cours n\'est pas terminé, les montants peuvent encore évoluer.</div>';
-  h += '<div class="prm-ppvk"><div><span>PPV totale</span><b>' + sg(T.ppv) + '</b><i>1er sem. ' + sd(T.s[0]) + ' · 2e sem. ' + sd(T.s[1]) + '</i></div><div><span>Primes avant PPV</span><b>' + prEur(T.base) + '</b><i>' + T.n + ' personne' + (T.n > 1 ? 's' : '') + '</i></div><div><span>Primes avec PPV</span><b>' + prEur(T.base + T.ppv) + '</b><i>' + pct(T.ppv, T.base) + ' par rapport aux primes actuelles</i></div><div><span>Bénéficiaires</span><b>' + T.nb + ' / ' + T.n + '</b><i>PPV moyenne : ' + prEur(T.nb ? T.ppv / T.nb : 0) + ' par bénéficiaire</i></div></div>';
+  h += '<div class="prm-ppvk"><div><span>PPV totale</span><b>' + sg(T.ppv) + '</b><i>1er sem. ' + sd(T.s[0]) + ' · 2e sem. ' + sd(T.s[1]) + '</i></div><div><span>Primes avant PPV</span><b>' + prEur(T.base) + '</b><i>' + T.n + ' personne' + (T.n > 1 ? 's' : '') + '</i></div><div><span>Primes avec PPV</span><b>' + prEur(T.base + T.ppv) + '</b><i>' + pct(T.ppv, T.base) + ' par rapport aux primes actuelles</i></div><div><span>Bénéficiaires</span><b>' + T.nb + ' / ' + T.n + '</b><i>PPV moyenne : ' + prEur(T.nb ? T.ppv / T.nb : 0) + ' par bénéficiaire' + (X.nex ? ' · ' + X.nex + ' sans accès (critères)' : '') + '</i></div></div>';
   h += '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Restaurant</th><th>Personnes</th><th>Bénéficiaires</th><th>Primes avant PPV</th><th>PPV</th><th>Primes avec PPV</th><th>Variation</th></tr></thead><tbody>' +
     prRestos().filter(r => X.R[r]).map(r => { const x = X.R[r]; return '<tr><td class="t-l prm-n">' + prEsc(prRestoLib(r)) + '</td><td class="n">' + x.n + '</td><td class="n">' + x.nb + '</td><td class="n">' + prEur(x.base) + '</td><td class="n"><b>' + sg(x.ppv) + '</b></td><td class="n">' + prEur(x.base + x.ppv) + '</td><td class="n">' + pct(x.ppv, x.base) + '</td></tr>'; }).join('') +
     '<tr><td class="t-l"><b>Total</b></td><td class="n"><b>' + T.n + '</b></td><td class="n"><b>' + T.nb + '</b></td><td class="n"><b>' + prEur(T.base) + '</b></td><td class="n"><b>' + sg(T.ppv) + '</b></td><td class="n"><b>' + prEur(T.base + T.ppv) + '</b></td><td class="n"><b>' + pct(T.ppv, T.base) + '</b></td></tr></tbody></table></div>';
   h += '<div class="prm-scroll" style="margin-top:8px"><table class="prm-xl"><thead><tr><th class="t-l">Poste</th><th>Personnes</th><th>PPV totale</th><th>PPV moyenne par personne</th></tr></thead><tbody>' +
     PR_POSTES_SEL.filter(([k]) => X.P[k]).map(([k, lib]) => { const x = X.P[k]; return '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td><td class="n">' + x.n + '</td><td class="n">' + sg(x.ppv) + '</td><td class="n">' + prEur(x.n ? x.ppv / x.n : 0) + '</td></tr>'; }).join('') + '</tbody></table></div>';
   if (X.pl > 0) h += '<div class="prm-sub" style="margin-top:8px">' + (over.length ? '<span class="prm-over">' + over.length + ' personne' + (over.length > 1 ? 's' : '') + ' au-dessus du plafond de ' + prEur(X.pl) + '</span> : ' + over.slice(0, 8).map(a => prEsc(a.lib) + ' (' + prEur(a.ppv) + ')').join(', ') + (over.length > 8 ? '…' : '') : 'Personne au-dessus du plafond de ' + prEur(X.pl) + ' sur l\'année.') + '</div>';
-  h += '<details class="prm-det" ' + (PRM.ppvDet ? 'open' : '') + ' ontoggle="PRM.ppvDet=this.open"><summary>Détail par personne</summary><div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Restaurant</th><th class="t-l">Poste</th><th class="t-l">Nom</th><th>Primes avant PPV</th><th>PPV</th><th>Primes avec PPV</th><th>Variation</th></tr></thead><tbody>' +
-    X.L.slice().sort((a, b) => (a.resto < b.resto ? -1 : a.resto > b.resto ? 1 : b.ppv - a.ppv)).map(a => '<tr><td class="t-l">' + prEsc(prRestoLib(a.resto)) + '</td><td class="t-l">' + prEsc(prPosteLib(a.poste)) + '</td><td class="t-l">' + prEsc(a.lib) + '</td><td class="n">' + prEur(a.base) + '</td><td class="n' + (X.pl > 0 && a.ppv > X.pl ? ' prm-over' : '') + '"><b>' + sg(a.ppv) + '</b></td><td class="n">' + prEur(a.base + a.ppv) + '</td><td class="n">' + pct(a.ppv, a.base) + '</td></tr>').join('') + '</tbody></table></div></details></div>';
+  h += '<details class="prm-det" ' + (PRM.ppvDet ? 'open' : '') + ' ontoggle="PRM.ppvDet=this.open"><summary>Détail par personne</summary><div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Restaurant</th><th class="t-l">Poste</th><th class="t-l">Nom</th><th>Primes avant PPV</th><th>PPV</th><th>Primes avec PPV</th><th>Variation</th><th class="t-l">Accès à la PPV</th></tr></thead><tbody>' +
+    X.L.slice().sort((a, b) => (a.resto < b.resto ? -1 : a.resto > b.resto ? 1 : b.ppv - a.ppv)).map(a => '<tr><td class="t-l">' + prEsc(prRestoLib(a.resto)) + '</td><td class="t-l">' + prEsc(prPosteLib(a.poste)) + '</td><td class="t-l">' + prEsc(a.lib) + '</td><td class="n">' + prEur(a.base) + '</td><td class="n' + (X.pl > 0 && a.ppv > X.pl ? ' prm-over' : '') + '"><b>' + sg(a.ppv) + '</b></td><td class="n">' + prEur(a.base + a.ppv) + '</td><td class="n">' + pct(a.ppv, a.base) + '</td><td class="t-l">' + (((a.mot || []).some(Boolean)) ? '<span class="prm-over">' + [0, 1].map(i => (a.mot || [])[i] ? (i === 0 ? '1er sem. : ' : '2e sem. : ') + (a.mot[i]).map(prEsc).join(', ') : '').filter(Boolean).join(' · ') + '</span>' : '<span class="prm-sub">✓</span>') + '</td></tr>').join('') + '</tbody></table></div></details></div>';
   return h;
 }
 function prPpvLive() { clearTimeout(PRM.ppvT); PRM.ppvT = setTimeout(() => { const el = document.getElementById('prmPpvSim'); if (el) el.innerHTML = prPpvSimHtml(); }, 200); }
@@ -5376,7 +5435,7 @@ function prHtmlPpv() {
     '<div class="prm-sub" style="margin:10px 0 4px">' + (pct ? 'Pourcentage des primes calculées' : 'Montant par personne à temps plein, présence complète') + ' (' + u + ') ' + (pv.sens === '-' ? '— retranché du total de chaque personne (jamais en dessous de 0)' : '— ajouté au total de chaque personne') + ' ; une valeur négative inverse l\'effet — une case vide reprend la valeur de la ligne « Tous les restaurants ». Les valeurs ne sont pas converties quand on change de mode : ressaisissez-les.</div>' +
     '<div class="prm-scroll"><table class="prm-xl"><thead><tr><th class="t-l">Restaurant</th>' + PR_POSTES_SEL.map(([k, lib]) => '<th class="g-ppv">' + prEsc(lib.split(' (')[0]) + ' (' + u + ')</th>').join('') + '</tr></thead><tbody>' +
     rows.map(([key, lib]) => '<tr><td class="t-l prm-n">' + prEsc(lib) + '</td>' + PR_POSTES_SEL.map(([k]) => { const v = (M[key] || {})[k], t = (M.tous || {})[k]; return '<td class="n"><input class="prm-in" type="number" step="any" style="width:76px" value="' + (v === undefined ? '' : v) + '"' + (key !== 'tous' && t ? ' placeholder="' + t + '"' : '') + ' oninput="prPpvM(\'' + key + '\',\'' + k + '\',this.value)" onchange="prPpvM(\'' + key + '\',\'' + k + '\',this.value)"></td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>' +
-    '<div class="prm-sub" style="margin-top:8px">Repère légal à vérifier avec votre expert-comptable : la PPV est facultative, exonérée dans la limite de 3 000 € par bénéficiaire et par an (6 000 € avec un accord d\'intéressement), sous condition de rémunération ; le plafond ci-dessus sert d\'alerte (valeur modifiable) et n\'écrête pas les montants.</div>' + sim +
+    prHtmlPpvAcces(pv) + '<div class="prm-sub" style="margin-top:8px">Repère légal à vérifier avec votre expert-comptable : la PPV est facultative, exonérée dans la limite de 3 000 € par bénéficiaire et par an (6 000 € avec un accord d\'intéressement), sous condition de rémunération ; le plafond ci-dessus sert d\'alerte (valeur modifiable) et n\'écrête pas les montants.</div>' + sim +
     '<div class="prm-actions"><span class="prm-sub">Après enregistrement, tous les montants et l\'export Excel sont recalculés.</span><button class="prm-btn pri" onclick="prSaveCond()">Enregistrer la PPV</button></div></div>';
 }
 
@@ -15098,7 +15157,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261118-183230';
+const BUILD_VERSION = '20261118-184644';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
