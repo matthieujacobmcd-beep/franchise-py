@@ -5216,7 +5216,7 @@ async function prLink() {
   const [r, pr] = await Promise.all([prApi('/rest/v1/droits?franchise=eq.' + prFr() + '&select=email,nom,actif,restos_planning,poste_id&limit=1000'), prApi('/rest/v1/postes?franchise=eq.' + prFr() + '&select=id,nom&limit=200')]);
   if (!r.ok || !Array.isArray(r.j)) return prMsg('Lecture des accès impossible (droit de gérer les accès nécessaire).', true);
   const pnom = {}; if (pr.ok && Array.isArray(pr.j)) pr.j.forEach(x => { pnom[x.id] = x.nom; });
-  const pris = new Set(PRM.personnes.filter(p => p.email).map(p => String(p.email).toLowerCase())), libres = PRM.personnes.filter(p => !p.email && p.actif !== false), rows = [];
+  const pris = new Set(PRM.personnes.filter(p => p.email).map(p => String(p.email).toLowerCase())), cptMail = new Set(r.j.filter(a => a.actif !== false).map(a => String(a.email).toLowerCase())), libres = PRM.personnes.filter(p => p.actif !== false && (!p.email || !cptMail.has(String(p.email).toLowerCase()))), rows = [];      // fiches libres = sans adresse OU avec une adresse qui ne correspond à aucun compte actif (ex. une autre adresse de la même personne) : l'adresse du compte la remplace au rapprochement
   const lies = r.j.filter(a => a.actif !== false && pris.has(String(a.email).toLowerCase())).length;
   r.j.filter(a => a.actif !== false && !pris.has(String(a.email).toLowerCase())).forEach(a => {
     const ca = prCles(a.nom), rp = a.restos_planning || [], pk = PR_POSTE_MAP[prNorm(pnom[a.poste_id])] || null;
@@ -5231,7 +5231,7 @@ async function prLink() {
   PRM.lk = { rows, lies, n: r.j.filter(a => a.actif !== false).length }; prMsg(''); prRender();
 }
 function prHtmlLk() {
-  const L = PRM.lk, opt = p => '<option value="' + p.id + '">' + prEsc(p.nom) + ' · ' + prEsc(prRestoLib(p.restaurant)) + ' · ' + prEsc([...prPersPostes(p.id)].map(prPosteLib).join(' + ') || '—') + '</option>';
+  const L = PRM.lk, opt = p => '<option value="' + p.id + '">' + prEsc(p.nom) + ' · ' + prEsc(prRestoLib(p.restaurant)) + ' · ' + prEsc([...prPersPostes(p.id)].map(prPosteLib).join(' + ') || '—') + (p.email ? ' · adresse actuelle de la fiche : ' + prEsc(p.email) + ' (remplacée par celle du compte)' : '') + '</option>';
   return '<div class="prm-ov"><div class="prm-md" style="max-width:980px"><div class="prm-ct">Rapprochement des comptes et des fiches des primes</div><div class="prm-sub" style="margin-bottom:8px">' + L.n + ' comptes actifs, ' + L.lies + ' déjà liés à une fiche. Pour chaque compte, choisissez la fiche des primes qui correspond (le menu propose d\'abord les plus probables) : elle est alors liée au compte par l\'adresse e-mail. Rien n\'est lié sans votre validation, rien ne change côté accès, et un lien se défait dans la fiche de la personne (champ e-mail).</div>' +
     (L.rows.length ? '<div class="prm-scroll"><table class="prm-tb"><thead><tr><th class="t-l">Compte</th><th class="t-l">Poste · restaurants du compte</th><th class="t-l">Fiche des primes à lier</th><th>Fiabilité</th></tr></thead><tbody>' + L.rows.map((x, i) => '<tr><td class="prm-n">' + prEsc(x.a.nom) + '</td><td>' + prEsc(x.poste || '—') + ' · ' + prEsc(x.rp.map(prRestoLib).join(', ') || 'tous') + '</td><td><select class="prm-in" id="prmLk' + i + '" style="min-width:300px"><option value="">— ne pas lier —</option>' + x.cand.concat(x.autres).map(opt).join('').replace('value="' + x.pre + '"', 'value="' + x.pre + '" selected') + '</select></td><td><span class="prm-chip ' + (x.fiab === 'Très probable' ? 'ok' : 'na') + '">' + x.fiab + '</span></td></tr>').join('') + '</tbody></table></div>' : '<div class="prm-sub">Tous les comptes actifs sont déjà liés à une fiche.</div>') +
     '<div class="prm-sub" style="margin-top:8px">Un compte sans fiche (propriétaire, superviseur, bureau…) reste tel quel. Les managers, responsables de zone et hôtesses sans compte restent « sans accès » : leur accès se choisit dans Équipes.</div>' +
@@ -8287,6 +8287,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
         const p = `${m} ${y}`; const row = {};
         for (const s of STORES) row[s] = val(opts.table || MEN, p, s, sheetKey);
         const brow = base[m];
+        if (opts.fillBase && brow) for (const s of STORES) if (!isNum(row[s]) && isNum(brow[s])) row[s] = brow[s];      // case vide dans le Sheet : on garde la valeur de l'import intégré au site (le Sheet l'emporte dès qu'il a une valeur)
         if (opts.transform) for (const s of STORES) row[s] = opts.transform(row[s], s, m, y);
         const vals = STORES.map(s => row[s]).filter(isNum);
         const diff = STORES.filter(s => !same(row[s], brow ? brow[s] : null));
@@ -8339,7 +8340,7 @@ loadBanners(); // charge depuis GitHub puis appelle renderBanners()
           return (r != null && a) ? r / a : null;
         },
       });
-      Y.ecart_rendement_monthly = monthlyTable(y, 'ecart_rendement_monthly', 'ecart_rendement', wAlim(y), { filter: y === PYs ? 'any' : 'none' });
+      Y.ecart_rendement_monthly = monthlyTable(y, 'ecart_rendement_monthly', 'ecart_rendement', wAlim(y), { filter: y === PYs ? 'any' : 'none', fillBase: true });
       // Pertes (% du CA alim) : Σ pertes quotidiennes ÷ CA alim
       Y.pertes_monthly = monthlyTable(y, 'pertes_monthly', '__none__', wAlim(y), {
         filter: 'none',
@@ -15165,7 +15166,7 @@ function switchEspace(name) {
 
 <!-- ════════ DÉTECTION DE MISE À JOUR ════════ -->
 <script>
-const BUILD_VERSION = '20261124-090810';
+const BUILD_VERSION = '20261124-101247';
 (function () {
   if (BUILD_VERSION === '__BUILD' + '_VERSION__') return; // template non généré
   try {
